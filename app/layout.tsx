@@ -14,19 +14,33 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.pawboard.dev";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Pawboard",
   description: "Where ideas land on their feet",
   openGraph: {
     title: "Pawboard",
     description: "Where ideas land on their feet",
-    images: ["/Pawboard_OG.jpg"],
+    url: siteUrl,
+    siteName: "Pawboard",
+    images: [
+      {
+        url: `${siteUrl}/Pawboard_OG.jpg`,
+        width: 1200,
+        height: 630,
+        alt: "Pawboard",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
   },
   twitter: {
     card: "summary_large_image",
     title: "Pawboard",
     description: "Where ideas land on their feet",
-    images: ["/Pawboard_OG.jpg"],
+    images: [`${siteUrl}/Pawboard_OG.jpg`],
   },
 };
 

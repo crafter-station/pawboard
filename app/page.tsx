@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
 import { generateSessionId } from "@/lib/nanoid";
-import { CrafterStationLogo } from "@/components/logos/crafter-station";
+import { GithubLogo } from "@/components/logos/github";
 import { MoralejaDesignLogo } from "@/components/logos/moraleja-design";
 import { KeboLogo } from "@/components/logos/kebo";
 import { SupabaseLogo } from "@/components/logos/supabase";
@@ -395,16 +395,16 @@ export default function Home() {
           </span>
           <div className="flex items-center justify-center gap-6">
             <a
-              href="https://crafterstation.com"
+              href="https://github.com/crafter-station/pawboard"
               target="_blank"
               rel="noopener noreferrer"
               onClick={playSound}
               className="text-muted-foreground/30 hover:text-foreground/50 transition-colors"
             >
-              <CrafterStationLogo className="h-5 w-auto" />
+              <GithubLogo className="h-5 w-auto" />
             </a>
             <a
-              href="https://moralejadesign.com"
+              href="https://moraleja.co"
               target="_blank"
               rel="noopener noreferrer"
               onClick={playSound}
@@ -413,7 +413,7 @@ export default function Home() {
               <MoralejaDesignLogo className="h-5 w-auto" />
             </a>
             <a
-              href="https://kebo.dev"
+              href="https://kebo.app"
               target="_blank"
               rel="noopener noreferrer"
               onClick={playSound}
