@@ -439,7 +439,7 @@ export default function Home() {
           </span>
           <div className="flex items-center justify-center gap-6">
             <a
-              href="https://crafter.station"
+              href="https://crafterstation.com"
               target="_blank"
               rel="noopener noreferrer"
               onClick={playSound}
