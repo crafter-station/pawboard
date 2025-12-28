@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import FingerprintJS from "@fingerprintjs/fingerprintjs";
 
-const STORAGE_KEY = "brainstorm_user_id";
+const STORAGE_KEY = "pawboard_user_id";
 
 export function useFingerprint() {
   const [visitorId, setVisitorId] = useState<string | null>(null);

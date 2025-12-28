@@ -6,25 +6,35 @@ import { eq } from "drizzle-orm";
 import type { Card, NewCard } from "@/db/schema";
 
 export async function getOrCreateSession(id: string) {
-  let session = await db.query.sessions.findFirst({
-    where: eq(sessions.id, id),
-  });
+  try {
+    let session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, id),
+    });
 
-  if (!session) {
-    const [newSession] = await db
-      .insert(sessions)
-      .values({ id, name: "Untitled Session" })
-      .returning();
-    session = newSession;
+    if (!session) {
+      const [newSession] = await db
+        .insert(sessions)
+        .values({ id, name: "Untitled Session" })
+        .returning();
+      session = newSession;
+    }
+
+    return { session, error: null };
+  } catch (error) {
+    console.error("Database error in getOrCreateSession:", error);
+    return { session: null, error: "Failed to connect to database" };
   }
-
-  return session;
 }
 
 export async function getSessionCards(sessionId: string) {
-  return db.query.cards.findMany({
-    where: eq(cards.sessionId, sessionId),
-  });
+  try {
+    return await db.query.cards.findMany({
+      where: eq(cards.sessionId, sessionId),
+    });
+  } catch (error) {
+    console.error("Database error in getSessionCards:", error);
+    return [];
+  }
 }
 
 export async function createCard(data: NewCard): Promise<Card> {
