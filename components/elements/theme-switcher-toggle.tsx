@@ -55,7 +55,7 @@ export function ThemeSwitcherToggle({
 
         const maxRadius = Math.hypot(
           Math.max(x, window.innerWidth - x),
-          Math.max(y, window.innerHeight - y)
+          Math.max(y, window.innerHeight - y),
         );
 
         document.documentElement.animate(
@@ -69,7 +69,7 @@ export function ThemeSwitcherToggle({
             duration: 500,
             easing: "ease-out",
             pseudoElement: "::view-transition-new(root)",
-          }
+          },
         );
 
         await transition.finished;
@@ -77,7 +77,7 @@ export function ThemeSwitcherToggle({
         endTransition();
       }
     },
-    [theme, setTheme, startTransition, endTransition, playSound]
+    [theme, setTheme, startTransition, endTransition, playSound],
   );
 
   if (!mounted) {

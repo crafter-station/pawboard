@@ -32,7 +32,7 @@ export async function getOrCreateSession(id: string) {
 // User Actions
 
 export async function getOrCreateUser(
-  userId: string
+  userId: string,
 ): Promise<{ user: User | null; error: string | null }> {
   try {
     let user = await db.query.users.findFirst({
@@ -42,9 +42,9 @@ export async function getOrCreateUser(
     if (!user) {
       const [newUser] = await db
         .insert(users)
-        .values({ 
-          id: userId, 
-          username: generateUsername() 
+        .values({
+          id: userId,
+          username: generateUsername(),
         })
         .returning();
       user = newUser;
@@ -59,7 +59,7 @@ export async function getOrCreateUser(
 
 export async function updateUsername(
   userId: string,
-  newUsername: string
+  newUsername: string,
 ): Promise<{ user: User | null; error: string | null }> {
   try {
     const validation = validateUsername(newUsername);
@@ -87,23 +87,32 @@ export async function updateUsername(
 const USERNAME_MIN_LENGTH = 2;
 const USERNAME_MAX_LENGTH = 30;
 
-function validateUsername(username: string): { valid: boolean; error?: string } {
+function validateUsername(username: string): {
+  valid: boolean;
+  error?: string;
+} {
   const trimmed = username.trim();
-  
+
   if (trimmed.length < USERNAME_MIN_LENGTH) {
-    return { valid: false, error: `Name must be at least ${USERNAME_MIN_LENGTH} characters` };
+    return {
+      valid: false,
+      error: `Name must be at least ${USERNAME_MIN_LENGTH} characters`,
+    };
   }
-  
+
   if (trimmed.length > USERNAME_MAX_LENGTH) {
-    return { valid: false, error: `Name must be at most ${USERNAME_MAX_LENGTH} characters` };
+    return {
+      valid: false,
+      error: `Name must be at most ${USERNAME_MAX_LENGTH} characters`,
+    };
   }
-  
+
   // Basic sanitization - no special control characters (ASCII 0-31 and 127)
   const controlCharsRegex = new RegExp("[\\x00-\\x1F\\x7F]");
   if (controlCharsRegex.test(trimmed)) {
     return { valid: false, error: "Name contains invalid characters" };
   }
-  
+
   return { valid: true };
 }
 
@@ -111,7 +120,7 @@ function validateUsername(username: string): { valid: boolean; error?: string } 
 
 export async function joinSession(
   userId: string,
-  sessionId: string
+  sessionId: string,
 ): Promise<{ success: boolean; error: string | null }> {
   try {
     // Ensure user exists first
@@ -124,7 +133,7 @@ export async function joinSession(
     const existing = await db.query.sessionParticipants.findFirst({
       where: and(
         eq(sessionParticipants.userId, userId),
-        eq(sessionParticipants.sessionId, sessionId)
+        eq(sessionParticipants.sessionId, sessionId),
       ),
     });
 
@@ -143,7 +152,7 @@ export async function joinSession(
 }
 
 export async function getSessionParticipants(
-  sessionId: string
+  sessionId: string,
 ): Promise<{ visitorId: string; username: string }[]> {
   try {
     // Get participants who explicitly joined the session
@@ -207,7 +216,7 @@ export async function createCard(data: NewCard): Promise<Card> {
 
 export async function updateCard(
   id: string,
-  data: Partial<Pick<Card, "content" | "color" | "x" | "y">>
+  data: Partial<Pick<Card, "content" | "color" | "x" | "y">>,
 ): Promise<Card> {
   const [card] = await db
     .update(cards)
@@ -219,7 +228,7 @@ export async function updateCard(
 
 export async function voteCard(
   id: string,
-  visitorId: string
+  visitorId: string,
 ): Promise<{ card: Card; action: "added" | "removed" | "denied" }> {
   const existing = await db.query.cards.findFirst({
     where: eq(cards.id, id),

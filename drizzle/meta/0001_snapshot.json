@@ -88,12 +88,8 @@
           "name": "cards_session_id_sessions_id_fk",
           "tableFrom": "cards",
           "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -140,12 +136,8 @@
           "name": "session_participants_session_id_sessions_id_fk",
           "tableFrom": "session_participants",
           "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -153,10 +145,7 @@
       "compositePrimaryKeys": {
         "session_participants_visitor_id_session_id_pk": {
           "name": "session_participants_visitor_id_session_id_pk",
-          "columns": [
-            "visitor_id",
-            "session_id"
-          ]
+          "columns": ["visitor_id", "session_id"]
         }
       },
       "uniqueConstraints": {},

@@ -17,4 +17,3 @@ export const useThemeStore = create<ThemeStore>((set) => ({
   startTransition: (x, y) => set({ transition: { x, y, isAnimating: true } }),
   endTransition: () => set({ transition: null }),
 }));
-

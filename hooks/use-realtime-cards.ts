@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase/client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { REALTIME_SUBSCRIBE_STATES, RealtimeChannel } from "@supabase/supabase-js";
+import {
+  REALTIME_SUBSCRIBE_STATES,
+  RealtimeChannel,
+} from "@supabase/supabase-js";
 import type { Card } from "@/db/schema";
 
 const supabase = createClient();
@@ -9,7 +12,7 @@ const THROTTLE_MS = 50;
 
 function useThrottleCallback<Params extends unknown[], Return>(
   callback: (...args: Params) => Return,
-  delay: number
+  delay: number,
 ) {
   const lastCall = useRef(0);
   const timeout = useRef<NodeJS.Timeout | null>(null);
@@ -34,7 +37,7 @@ function useThrottleCallback<Params extends unknown[], Return>(
         }, remainingTime);
       }
     },
-    [callback, delay]
+    [callback, delay],
   );
 }
 
@@ -55,7 +58,7 @@ export function useRealtimeCards(
   initialCards: Card[],
   userId: string,
   username: string | null,
-  onUserJoinOrRename?: (visitorId: string, username: string) => void
+  onUserJoinOrRename?: (visitorId: string, username: string) => void,
 ) {
   const [cards, setCards] = useState<Card[]>(initialCards);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -75,11 +78,11 @@ export function useRealtimeCards(
       channelRef.current.send({
         type: "broadcast",
         event: "card-event",
-        payload: { 
-          type: "user:join", 
-          visitorId: userId, 
+        payload: {
+          type: "user:join",
+          visitorId: userId,
           username: username,
-          odilUserId: userId 
+          odilUserId: userId,
         },
       });
     }
@@ -97,33 +100,39 @@ export function useRealtimeCards(
         payload: { ...event, odilUserId: userId },
       });
     },
-    [userId]
+    [userId],
   );
 
   const broadcastMove = useCallback(
     (id: string, x: number, y: number) => {
       broadcast({ type: "card:move", id, x, y });
     },
-    [broadcast]
+    [broadcast],
   );
 
-  const throttledBroadcastMove = useThrottleCallback(broadcastMove, THROTTLE_MS);
+  const throttledBroadcastMove = useThrottleCallback(
+    broadcastMove,
+    THROTTLE_MS,
+  );
 
   const broadcastTyping = useCallback(
     (id: string, content: string) => {
       broadcast({ type: "card:typing", id, content });
     },
-    [broadcast]
+    [broadcast],
   );
 
-  const throttledBroadcastTyping = useThrottleCallback(broadcastTyping, THROTTLE_MS);
+  const throttledBroadcastTyping = useThrottleCallback(
+    broadcastTyping,
+    THROTTLE_MS,
+  );
 
   const addCard = useCallback(
     (card: Card) => {
       setCards((prev) => [...prev, card]);
       broadcast({ type: "card:add", card });
     },
-    [broadcast]
+    [broadcast],
   );
 
   const updateCard = useCallback(
@@ -131,7 +140,7 @@ export function useRealtimeCards(
       setCards((prev) => prev.map((c) => (c.id === card.id ? card : c)));
       broadcast({ type: "card:update", card });
     },
-    [broadcast]
+    [broadcast],
   );
 
   const moveCard = useCallback(
@@ -139,17 +148,17 @@ export function useRealtimeCards(
       setCards((prev) => prev.map((c) => (c.id === id ? { ...c, x, y } : c)));
       throttledBroadcastMove(id, x, y);
     },
-    [throttledBroadcastMove]
+    [throttledBroadcastMove],
   );
 
   const typeCard = useCallback(
     (id: string, content: string) => {
       setCards((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, content } : c))
+        prev.map((c) => (c.id === id ? { ...c, content } : c)),
       );
       throttledBroadcastTyping(id, content);
     },
-    [throttledBroadcastTyping]
+    [throttledBroadcastTyping],
   );
 
   const changeColor = useCallback(
@@ -157,7 +166,7 @@ export function useRealtimeCards(
       setCards((prev) => prev.map((c) => (c.id === id ? { ...c, color } : c)));
       broadcast({ type: "card:color", id, color });
     },
-    [broadcast]
+    [broadcast],
   );
 
   const removeCard = useCallback(
@@ -165,15 +174,17 @@ export function useRealtimeCards(
       setCards((prev) => prev.filter((c) => c.id !== id));
       broadcast({ type: "card:delete", id });
     },
-    [broadcast]
+    [broadcast],
   );
 
   const voteCard = useCallback(
     (id: string, votes: number, votedBy: string[]) => {
-      setCards((prev) => prev.map((c) => (c.id === id ? { ...c, votes, votedBy } : c)));
+      setCards((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, votes, votedBy } : c)),
+      );
       broadcast({ type: "card:vote", id, votes, votedBy });
     },
-    [broadcast]
+    [broadcast],
   );
 
   // Broadcast name change to other participants (no local card update needed - cards reference users table)
@@ -181,12 +192,12 @@ export function useRealtimeCards(
     (visitorId: string, newUsername: string) => {
       broadcast({ type: "user:rename", visitorId, newUsername });
     },
-    [broadcast]
+    [broadcast],
   );
 
   useEffect(() => {
     if (!userId) return;
-    
+
     const channel = supabase.channel(`cards:${sessionId}`);
 
     channel
@@ -195,7 +206,11 @@ export function useRealtimeCards(
           channelRef.current?.send({
             type: "broadcast",
             event: "card-event",
-            payload: { type: "cards:sync", cards: cardsRef.current, odilUserId: userId },
+            payload: {
+              type: "cards:sync",
+              cards: cardsRef.current,
+              odilUserId: userId,
+            },
           });
         }
       })
@@ -214,28 +229,30 @@ export function useRealtimeCards(
               break;
             case "card:update":
               setCards((prev) =>
-                prev.map((c) => (c.id === payload.card.id ? payload.card : c))
+                prev.map((c) => (c.id === payload.card.id ? payload.card : c)),
               );
               break;
             case "card:move":
               setCards((prev) =>
                 prev.map((c) =>
-                  c.id === payload.id ? { ...c, x: payload.x, y: payload.y } : c
-                )
+                  c.id === payload.id
+                    ? { ...c, x: payload.x, y: payload.y }
+                    : c,
+                ),
               );
               break;
             case "card:typing":
               setCards((prev) =>
                 prev.map((c) =>
-                  c.id === payload.id ? { ...c, content: payload.content } : c
-                )
+                  c.id === payload.id ? { ...c, content: payload.content } : c,
+                ),
               );
               break;
             case "card:color":
               setCards((prev) =>
                 prev.map((c) =>
-                  c.id === payload.id ? { ...c, color: payload.color } : c
-                )
+                  c.id === payload.id ? { ...c, color: payload.color } : c,
+                ),
               );
               break;
             case "card:delete":
@@ -244,14 +261,16 @@ export function useRealtimeCards(
             case "card:vote":
               setCards((prev) =>
                 prev.map((c) =>
-                  c.id === payload.id ? { ...c, votes: payload.votes, votedBy: payload.votedBy } : c
-                )
+                  c.id === payload.id
+                    ? { ...c, votes: payload.votes, votedBy: payload.votedBy }
+                    : c,
+                ),
               );
               break;
             case "cards:sync":
               setCards((prev) => {
                 const newCards = payload.cards.filter(
-                  (nc) => !prev.some((c) => c.id === nc.id)
+                  (nc) => !prev.some((c) => c.id === nc.id),
                 );
                 if (newCards.length === 0) return prev;
                 return [...prev, ...newCards];
@@ -259,35 +278,43 @@ export function useRealtimeCards(
               break;
             case "user:join":
               // New user joined - add them to participants map
-              onUserJoinOrRenameRef.current?.(payload.visitorId, payload.username);
+              onUserJoinOrRenameRef.current?.(
+                payload.visitorId,
+                payload.username,
+              );
               break;
             case "user:rename":
               // Notify parent component to update participants map
-              onUserJoinOrRenameRef.current?.(payload.visitorId, payload.newUsername);
+              onUserJoinOrRenameRef.current?.(
+                payload.visitorId,
+                payload.newUsername,
+              );
               break;
           }
-        }
+        },
       )
       .subscribe(async (status) => {
         if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
           await channel.track({ odilUserId: userId });
           channelRef.current = channel;
-          
+
           // Broadcast that we joined with our username
           if (usernameRef.current) {
             channel.send({
               type: "broadcast",
               event: "card-event",
-              payload: { 
-                type: "user:join", 
-                visitorId: userId, 
+              payload: {
+                type: "user:join",
+                visitorId: userId,
                 username: usernameRef.current,
-                odilUserId: userId 
+                odilUserId: userId,
               },
             });
           }
-        } else if (status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR || 
-                   status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT) {
+        } else if (
+          status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
+          status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT
+        ) {
           channelRef.current = null;
         }
       });

@@ -31,7 +31,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
       x: (screen.x - pan.x) / zoom,
       y: (screen.y - pan.y) / zoom,
     }),
-    [pan, zoom]
+    [pan, zoom],
   );
 
   // Convert world coordinates to screen coordinates
@@ -40,7 +40,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
       x: world.x * zoom + pan.x,
       y: world.y * zoom + pan.y,
     }),
-    [pan, zoom]
+    [pan, zoom],
   );
 
   // Zoom toward a specific point (keeps that point fixed on screen)
@@ -61,7 +61,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
       setZoom(clampedZoom);
       setPan(newPan);
     },
-    [zoom, pan]
+    [zoom, pan],
   );
 
   // Reset view to default
@@ -81,7 +81,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
       const scaleY = window.innerHeight / contentHeight;
       const newZoom = Math.max(
         MIN_ZOOM,
-        Math.min(MAX_ZOOM, Math.min(scaleX, scaleY))
+        Math.min(MAX_ZOOM, Math.min(scaleX, scaleY)),
       );
 
       const centerX = (bounds.minX + bounds.maxX) / 2;
@@ -93,7 +93,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
       });
       setZoom(newZoom);
     },
-    []
+    [],
   );
 
   // Center view on a point
@@ -108,7 +108,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
         setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom)));
       }
     },
-    [zoom]
+    [zoom],
   );
 
   // Handle middle mouse button pan
@@ -122,7 +122,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
         panStartPanRef.current = { ...pan };
       }
     },
-    [pan]
+    [pan],
   );
 
   // Handle wheel for zoom (Ctrl/Cmd + scroll) or pan (regular scroll)
@@ -144,7 +144,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
         }));
       }
     },
-    [zoom, zoomTo]
+    [zoom, zoomTo],
   );
 
   // Handle touch start for two-finger gestures
@@ -165,7 +165,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
         panStartPanRef.current = { ...pan };
       }
     },
-    [pan]
+    [pan],
   );
 
   // Handle touch move for pan and pinch zoom
@@ -207,7 +207,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
         lastTouchCenterRef.current = currentCenter;
       }
     },
-    [zoom, pan]
+    [zoom, pan],
   );
 
   // Handle touch end

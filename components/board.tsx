@@ -16,28 +16,30 @@ import { CommandMenu } from "@/components/command-menu";
 import { ParticipantsDialog } from "@/components/participants-dialog";
 import { generateCardId } from "@/lib/nanoid";
 import { getAvatarForUser } from "@/lib/utils";
-import { createCard, updateCard, deleteCard, voteCard as voteCardAction } from "@/app/actions";
+import {
+  createCard,
+  updateCard,
+  deleteCard,
+  voteCard as voteCardAction,
+} from "@/app/actions";
 import type { Card } from "@/db/schema";
-import { Share2, Home, Plus, Command, Copy, Check, Minus, Maximize2 } from "lucide-react";
+import {
+  Share2,
+  Home,
+  Plus,
+  Command,
+  Copy,
+  Check,
+  Minus,
+  Maximize2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
 import Link from "next/link";
 
-const LIGHT_COLORS = [
-  "#D4B8F0",
-  "#FFCAB0",
-  "#C4EDBA",
-  "#C5E8EC",
-  "#F9E9A8",
-];
+const LIGHT_COLORS = ["#D4B8F0", "#FFCAB0", "#C4EDBA", "#C5E8EC", "#F9E9A8"];
 
-const DARK_COLORS = [
-  "#9B7BC7",
-  "#E8936A",
-  "#7BC96A",
-  "#7ABCC5",
-  "#D4C468",
-];
+const DARK_COLORS = ["#9B7BC7", "#E8936A", "#7BC96A", "#7ABCC5", "#D4C468"];
 
 export interface Participant {
   visitorId: string;
@@ -56,24 +58,28 @@ const CARD_HEIGHT = 160;
 const CARD_WIDTH_MOBILE = 160;
 const CARD_HEIGHT_MOBILE = 120;
 
-export function Board({ sessionId, initialCards, initialParticipants }: BoardProps) {
+export function Board({
+  sessionId,
+  initialCards,
+  initialParticipants,
+}: BoardProps) {
   const [copied, setCopied] = useState(false);
   const [sessionIdCopied, setSessionIdCopied] = useState(false);
   const [newCardId, setNewCardId] = useState<string | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [participants, setParticipants] = useState<Map<string, string>>(
-    () => new Map(initialParticipants.map(p => [p.visitorId, p.username]))
+    () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
   const hasInitializedViewRef = useRef(false);
   const { resolvedTheme } = useTheme();
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
   const playSound = useCatSound();
-  
-  const { 
-    username, 
-    isLoading: isUsernameLoading, 
-    updateUsername 
+
+  const {
+    username,
+    isLoading: isUsernameLoading,
+    updateUsername,
   } = useSessionUsername({
     sessionId,
     visitorId,
@@ -82,7 +88,7 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
   // Update participants map when current user's username changes
   useEffect(() => {
     if (visitorId && username) {
-      setParticipants(prev => {
+      setParticipants((prev) => {
         const next = new Map(prev);
         next.set(visitorId, username);
         return next;
@@ -91,9 +97,12 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
   }, [visitorId, username]);
 
   // Helper to get username for a user ID
-  const getUsernameForId = useCallback((userId: string): string => {
-    return participants.get(userId) ?? "Unknown";
-  }, [participants]);
+  const getUsernameForId = useCallback(
+    (userId: string): string => {
+      return participants.get(userId) ?? "Unknown";
+    },
+    [participants],
+  );
 
   const {
     pan,
@@ -108,13 +117,16 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
   } = useCanvasGestures();
 
   // Handle incoming name change events from realtime
-  const handleRemoteNameChange = useCallback((userId: string, newName: string) => {
-    setParticipants(prev => {
-      const next = new Map(prev);
-      next.set(userId, newName);
-      return next;
-    });
-  }, []);
+  const handleRemoteNameChange = useCallback(
+    (userId: string, newName: string) => {
+      setParticipants((prev) => {
+        const next = new Map(prev);
+        next.set(userId, newName);
+        return next;
+      });
+    },
+    [],
+  );
 
   const {
     cards,
@@ -125,7 +137,13 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
     removeCard,
     voteCard,
     broadcastNameChange,
-  } = useRealtimeCards(sessionId, initialCards, visitorId || "", username, handleRemoteNameChange);
+  } = useRealtimeCards(
+    sessionId,
+    initialCards,
+    visitorId || "",
+    username,
+    handleRemoteNameChange,
+  );
 
   // Fit all cards in view
   const fitAllCards = useCallback(() => {
@@ -145,7 +163,7 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
         maxX: Math.max(acc.maxX, card.x + cardWidth),
         maxY: Math.max(acc.maxY, card.y + cardHeight),
       }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
     );
 
     fitToBounds(bounds);
@@ -155,7 +173,7 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
   useEffect(() => {
     if (hasInitializedViewRef.current) return;
     hasInitializedViewRef.current = true;
-    
+
     if (initialCards.length === 0) {
       return;
     }
@@ -171,7 +189,7 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
         maxX: Math.max(acc.maxX, card.x + cardWidth),
         maxY: Math.max(acc.maxY, card.y + cardHeight),
       }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
     );
 
     // Center on cards at 100% zoom
@@ -219,8 +237,14 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
 
     // Random offset (+-100px) to avoid stacking
     const offsetRange = 100;
-    const x = worldCenter.x - (cardWidth / 2) + (Math.random() * offsetRange * 2 - offsetRange);
-    const y = worldCenter.y - (cardHeight / 2) + (Math.random() * offsetRange * 2 - offsetRange);
+    const x =
+      worldCenter.x -
+      cardWidth / 2 +
+      (Math.random() * offsetRange * 2 - offsetRange);
+    const y =
+      worldCenter.y -
+      cardHeight / 2 +
+      (Math.random() * offsetRange * 2 - offsetRange);
 
     const cardId = generateCardId();
     const newCard: Card = {
@@ -260,7 +284,7 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
 
   const handleVote = async (id: string) => {
     if (!visitorId) return;
-    
+
     const card = cards.find((c) => c.id === id);
     if (!card) return;
 
@@ -309,10 +333,10 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
 
   return (
     <div className="min-h-screen overflow-hidden relative">
-      <CommandMenu 
-        open={commandOpen} 
-        onOpenChange={setCommandOpen} 
-        onAddCard={handleAddCard} 
+      <CommandMenu
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        onAddCard={handleAddCard}
         onShare={handleShare}
         onChangeName={() => setEditNameOpen(true)}
       />
@@ -340,9 +364,9 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
           currentName={username}
           onSave={handleUpdateUsername}
           trigger={
-            <UserBadge 
-              username={username} 
-              avatar={getAvatarForUser(visitorId)} 
+            <UserBadge
+              username={username}
+              avatar={getAvatarForUser(visitorId)}
               editable
             />
           }
@@ -401,7 +425,10 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
 
       {/* Fixed UI - Bottom Right */}
       <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center gap-2">
-        <ParticipantsDialog participants={participants} currentUserId={visitorId} />
+        <ParticipantsDialog
+          participants={participants}
+          currentUserId={visitorId}
+        />
         <AddCardButton onClick={handleAddCard} />
       </div>
 
@@ -441,7 +468,7 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
       </div>
 
       {/* Viewport with gesture handlers */}
-      <div 
+      <div
         role="application"
         aria-label="Idea board canvas - use mouse wheel to pan, Ctrl+scroll to zoom"
         className="relative w-full h-screen overflow-hidden"
@@ -483,8 +510,8 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
           ))}
 
           {/* Cursors - rendered in world space */}
-          <RealtimeCursors 
-            roomName={`session:${sessionId}`} 
+          <RealtimeCursors
+            roomName={`session:${sessionId}`}
             username={username}
             screenToWorld={screenToWorld}
           />
@@ -496,7 +523,11 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
             <div className="text-center text-muted-foreground">
               <p className="text-lg">No ideas yet</p>
               <p className="text-sm mt-1">
-                Press <kbd className="px-1.5 py-0.5 rounded bg-muted text-xs font-mono">⌘K</kbd> or click + to add one
+                Press{" "}
+                <kbd className="px-1.5 py-0.5 rounded bg-muted text-xs font-mono">
+                  ⌘K
+                </kbd>{" "}
+                or click + to add one
               </p>
             </div>
           </div>

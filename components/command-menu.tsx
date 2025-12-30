@@ -22,7 +22,13 @@ interface CommandMenuProps {
   onChangeName: () => void;
 }
 
-export function CommandMenu({ open, onOpenChange, onAddCard, onShare, onChangeName }: CommandMenuProps) {
+export function CommandMenu({
+  open,
+  onOpenChange,
+  onAddCard,
+  onShare,
+  onChangeName,
+}: CommandMenuProps) {
   const { setTheme } = useTheme();
   const router = useRouter();
 
@@ -80,4 +86,3 @@ export function CommandMenu({ open, onOpenChange, onAddCard, onShare, onChangeNa
     </CommandDialog>
   );
 }
-

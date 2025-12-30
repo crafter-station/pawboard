@@ -49,4 +49,3 @@ export function generateUsername(): string {
   const catName = catNames[Math.floor(Math.random() * catNames.length)];
   return `${adjective} ${catName}`;
 }
-

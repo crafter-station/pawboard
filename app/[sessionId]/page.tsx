@@ -1,4 +1,8 @@
-import { getOrCreateSession, getSessionCards, getSessionParticipants } from "@/app/actions";
+import {
+  getOrCreateSession,
+  getSessionCards,
+  getSessionParticipants,
+} from "@/app/actions";
 import { Board } from "@/components/board";
 import Link from "next/link";
 
@@ -8,14 +12,16 @@ interface Props {
 
 export default async function SessionPage({ params }: Props) {
   const { sessionId } = await params;
-  
+
   const { session, error } = await getOrCreateSession(sessionId);
-  
+
   if (error || !session) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="text-center space-y-4 max-w-md">
-          <h1 className="text-2xl font-bold text-foreground">Connection Error</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            Connection Error
+          </h1>
           <p className="text-muted-foreground">
             Unable to connect to the database. Please try again in a moment.
           </p>
@@ -44,11 +50,10 @@ export default async function SessionPage({ params }: Props) {
   ]);
 
   return (
-    <Board 
-      sessionId={sessionId} 
-      initialCards={initialCards} 
+    <Board
+      sessionId={sessionId}
+      initialCards={initialCards}
       initialParticipants={initialParticipants}
     />
   );
 }
-

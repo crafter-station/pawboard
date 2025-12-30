@@ -17,14 +17,19 @@ interface ParticipantsDialogProps {
   currentUserId: string;
 }
 
-export function ParticipantsDialog({ participants, currentUserId }: ParticipantsDialogProps) {
+export function ParticipantsDialog({
+  participants,
+  currentUserId,
+}: ParticipantsDialogProps) {
   const [open, setOpen] = useState(false);
-  
-  const participantsList = Array.from(participants.entries()).map(([visitorId, username]) => ({
-    visitorId,
-    username,
-    isCurrentUser: visitorId === currentUserId,
-  }));
+
+  const participantsList = Array.from(participants.entries()).map(
+    ([visitorId, username]) => ({
+      visitorId,
+      username,
+      isCurrentUser: visitorId === currentUserId,
+    }),
+  );
 
   // Sort: current user first, then alphabetically
   participantsList.sort((a, b) => {
@@ -56,30 +61,32 @@ export function ParticipantsDialog({ participants, currentUserId }: Participants
             </p>
           ) : (
             <ul className="space-y-2">
-              {participantsList.map(({ visitorId, username, isCurrentUser }) => {
-                const avatar = getAvatarForUser(visitorId);
-                return (
-                  <li
-                    key={visitorId}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 transition-colors"
-                  >
-                    <img
-                      src={avatar}
-                      alt=""
-                      className="w-8 h-8"
-                      draggable={false}
-                    />
-                    <span className="text-sm font-medium flex-1 truncate">
-                      {username}
-                    </span>
-                    {isCurrentUser && (
-                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                        You
+              {participantsList.map(
+                ({ visitorId, username, isCurrentUser }) => {
+                  const avatar = getAvatarForUser(visitorId);
+                  return (
+                    <li
+                      key={visitorId}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 transition-colors"
+                    >
+                      <img
+                        src={avatar}
+                        alt=""
+                        className="w-8 h-8"
+                        draggable={false}
+                      />
+                      <span className="text-sm font-medium flex-1 truncate">
+                        {username}
                       </span>
-                    )}
-                  </li>
-                );
-              })}
+                      {isCurrentUser && (
+                        <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                          You
+                        </span>
+                      )}
+                    </li>
+                  );
+                },
+              )}
             </ul>
           )}
         </div>

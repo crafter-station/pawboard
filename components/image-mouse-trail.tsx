@@ -67,7 +67,7 @@ export function ImageMouseTrail({
     if (distanceFromLast(e.clientX, e.clientY) > window.innerWidth / distance) {
       const lead =
         refs.current[globalIndexRef.current % refs.current.length].current;
-      
+
       const tailIndex =
         globalIndexRef.current >= maxNumberOfImages
           ? (globalIndexRef.current - maxNumberOfImages) % refs.current.length
@@ -87,7 +87,7 @@ export function ImageMouseTrail({
       ref={containerRef}
       className={cn(
         "grid place-content-center h-screen w-full relative overflow-visible",
-        className
+        className,
       )}
     >
       {items.map((item, index) => (
@@ -99,7 +99,7 @@ export function ImageMouseTrail({
             "data-[status='active']:scale-100 data-[status='active']:opacity-100 data-[status='active']:rotate-[var(--rotation)]",
             "transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
             "data-[status='inactive']:duration-300 data-[status='inactive']:ease-[cubic-bezier(0.4,0,0.2,1)]",
-            imgClass
+            imgClass,
           )}
           data-index={index}
           data-status="inactive"
@@ -112,4 +112,3 @@ export function ImageMouseTrail({
     </section>
   );
 }
-

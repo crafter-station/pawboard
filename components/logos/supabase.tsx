@@ -23,4 +23,3 @@ export function SupabaseLogo({ ...props }: SupabaseLogoProps) {
     </svg>
   );
 }
-

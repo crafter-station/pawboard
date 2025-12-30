@@ -14,4 +14,3 @@ export function useCatSound() {
 
   return playSound;
 }
-

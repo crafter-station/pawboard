@@ -1,30 +1,30 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { motion } from 'motion/react'
-import { useCatSound } from '@/hooks/use-cat-sound'
-import { GithubLogo } from '@/components/logos/github'
+import { useState, useEffect } from "react";
+import { motion } from "motion/react";
+import { useCatSound } from "@/hooks/use-cat-sound";
+import { GithubLogo } from "@/components/logos/github";
 
 export function GithubBadge() {
-  const [githubStars, setGithubStars] = useState<number | null>(null)
-  const playSound = useCatSound()
+  const [githubStars, setGithubStars] = useState<number | null>(null);
+  const playSound = useCatSound();
 
   useEffect(() => {
     const fetchGithubStars = async () => {
       try {
         const response = await fetch(
-          'https://api.github.com/repos/crafter-station/pawboard'
-        )
+          "https://api.github.com/repos/crafter-station/pawboard",
+        );
         if (response.ok) {
-          const data = await response.json()
-          setGithubStars(data.stargazers_count)
+          const data = await response.json();
+          setGithubStars(data.stargazers_count);
         }
       } catch (error) {
-        console.warn('Failed to fetch GitHub stars:', error)
+        console.warn("Failed to fetch GitHub stars:", error);
       }
-    }
-    fetchGithubStars()
-  }, [])
+    };
+    fetchGithubStars();
+  }, []);
 
   return (
     <>
@@ -63,6 +63,5 @@ export function GithubBadge() {
         )}
       </motion.a>
     </>
-  )
+  );
 }
-

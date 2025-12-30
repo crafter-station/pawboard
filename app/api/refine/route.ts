@@ -39,4 +39,3 @@ export async function POST(req: Request) {
     return Response.json({ error: "Failed to refine text" }, { status: 500 });
   }
 }
-

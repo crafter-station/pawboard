@@ -11,15 +11,21 @@ interface UserBadgeProps {
   editable?: boolean;
 }
 
-export function UserBadge({ username, avatar, onClick, editable = false }: UserBadgeProps) {
+export function UserBadge({
+  username,
+  avatar,
+  onClick,
+  editable = false,
+}: UserBadgeProps) {
   const Component = onClick ? "button" : "div";
-  
+
   return (
     <Component
       onClick={onClick}
       className={cn(
         "inline-flex items-center gap-2 px-2 sm:px-3 h-8 sm:h-9 rounded-md bg-card/80 backdrop-blur-sm border border-border shadow-xs dark:bg-input/30 dark:border-input group",
-        onClick && "cursor-pointer hover:bg-card/90 dark:hover:bg-input/40 transition-colors"
+        onClick &&
+          "cursor-pointer hover:bg-card/90 dark:hover:bg-input/40 transition-colors",
       )}
     >
       <Image

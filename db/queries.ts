@@ -1,6 +1,12 @@
 import { eq } from "drizzle-orm";
 import { db } from "./index";
-import { sessions, cards, type NewSession, type NewCard, type Card } from "./schema";
+import {
+  sessions,
+  cards,
+  type NewSession,
+  type NewCard,
+  type Card,
+} from "./schema";
 
 export async function createSession(data: NewSession) {
   const [session] = await db.insert(sessions).values(data).returning();
@@ -26,7 +32,7 @@ export async function createCard(data: NewCard) {
 
 export async function updateCard(
   id: string,
-  data: Partial<Pick<Card, "content" | "color" | "x" | "y">>
+  data: Partial<Pick<Card, "content" | "color" | "x" | "y">>,
 ) {
   const [card] = await db
     .update(cards)
@@ -39,4 +45,3 @@ export async function updateCard(
 export async function deleteCard(id: string) {
   await db.delete(cards).where(eq(cards.id, id));
 }
-

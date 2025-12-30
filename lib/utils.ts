@@ -1,8 +1,8 @@
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 const CAT_AVATARS = [
@@ -19,7 +19,7 @@ const CAT_AVATARS = [
 export function getAvatarForUser(identifier: string): string {
   let hash = 0;
   for (let i = 0; i < identifier.length; i++) {
-    hash = ((hash << 5) - hash) + identifier.charCodeAt(i);
+    hash = (hash << 5) - hash + identifier.charCodeAt(i);
     hash = hash & hash;
   }
   return CAT_AVATARS[Math.abs(hash) % CAT_AVATARS.length];

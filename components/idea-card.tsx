@@ -17,26 +17,25 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from "@/components/ui/tooltip";
-import { X, GripVertical, ChevronUp, Sparkles, Loader2, Undo2, Maximize2, Minimize2, Copy, Check } from "lucide-react";
+import {
+  X,
+  GripVertical,
+  ChevronUp,
+  Sparkles,
+  Loader2,
+  Undo2,
+  Maximize2,
+  Minimize2,
+  Copy,
+  Check,
+} from "lucide-react";
 import Markdown from "react-markdown";
 import { getAvatarForUser } from "@/lib/utils";
 import type { Card } from "@/db/schema";
 
-const LIGHT_COLORS = [
-  "#D4B8F0",
-  "#FFCAB0",
-  "#C4EDBA",
-  "#C5E8EC",
-  "#F9E9A8",
-];
+const LIGHT_COLORS = ["#D4B8F0", "#FFCAB0", "#C4EDBA", "#C5E8EC", "#F9E9A8"];
 
-const DARK_COLORS = [
-  "#9B7BC7",
-  "#E8936A",
-  "#7BC96A",
-  "#7ABCC5",
-  "#D4C468",
-];
+const DARK_COLORS = ["#9B7BC7", "#E8936A", "#7BC96A", "#7ABCC5", "#D4C468"];
 
 const COLOR_MAP: Record<string, string> = {
   "#D4B8F0": "#9B7BC7",
@@ -210,7 +209,15 @@ export function IdeaCard({
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleEnd);
     };
-  }, [isDragging, card.id, card.x, card.y, onMove, onPersistMove, screenToWorld]);
+  }, [
+    isDragging,
+    card.id,
+    card.x,
+    card.y,
+    onMove,
+    onPersistMove,
+    screenToWorld,
+  ]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onType(card.id, e.target.value);
@@ -239,7 +246,7 @@ export function IdeaCard({
 
   const handleRefine = async () => {
     if (!card.content.trim() || isRefining || !isOwnCard) return;
-    
+
     const contentBeforeRefine = card.content;
     setIsRefining(true);
     try {
@@ -248,7 +255,7 @@ export function IdeaCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: card.content }),
       });
-      
+
       if (res.ok) {
         const { refined } = await res.json();
         if (refined && refined.trim()) {
@@ -291,9 +298,13 @@ export function IdeaCard({
   const iconClass = isDark ? "text-stone-300/70" : "text-stone-500";
   const iconActiveClass = isDark ? "text-stone-100" : "text-stone-700";
   const hoverBgClass = isDark ? "hover:bg-white/10" : "hover:bg-stone-900/8";
-  const actionsBgClass = isDark 
-    ? (isMobile ? "bg-black/10" : "bg-transparent group-hover:bg-black/10") 
-    : (isMobile ? "bg-stone-900/5" : "bg-transparent group-hover:bg-stone-900/5");
+  const actionsBgClass = isDark
+    ? isMobile
+      ? "bg-black/10"
+      : "bg-transparent group-hover:bg-black/10"
+    : isMobile
+      ? "bg-stone-900/5"
+      : "bg-transparent group-hover:bg-stone-900/5";
 
   return (
     <div
@@ -304,7 +315,9 @@ export function IdeaCard({
         top: card.y,
         cursor: isOwnCard ? (isDragging ? "grabbing" : "grab") : "default",
         zIndex: isDragging ? 1000 : isExpanded ? 100 : 1,
-        transition: isDragging ? "width 200ms" : "left 20ms ease-out, top 20ms ease-out, width 200ms",
+        transition: isDragging
+          ? "width 200ms"
+          : "left 20ms ease-out, top 20ms ease-out, width 200ms",
       }}
       onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
@@ -313,8 +326,12 @@ export function IdeaCard({
         className="rounded-lg shadow-lg transition-shadow hover:shadow-xl"
         style={{ backgroundColor: displayColor }}
       >
-        <div className={`flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 border-b ${borderClass}`}>
-          <GripVertical className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${isDark ? "opacity-50" : "opacity-40"}`} />
+        <div
+          className={`flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 border-b ${borderClass}`}
+        >
+          <GripVertical
+            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${isDark ? "opacity-50" : "opacity-40"}`}
+          />
           <TooltipProvider delayDuration={400}>
             <div
               className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded-md ${actionsBgClass} transition-all duration-200`}
@@ -335,9 +352,9 @@ export function IdeaCard({
                     </TooltipTrigger>
                     <TooltipContent side="bottom">Color</TooltipContent>
                   </Tooltip>
-                  <PopoverContent 
-                    className="w-auto p-2 z-[1001]" 
-                    align="end" 
+                  <PopoverContent
+                    className="w-auto p-2 z-[1001]"
+                    align="end"
                     sideOffset={5}
                     onMouseDown={(e) => e.stopPropagation()}
                   >
@@ -349,7 +366,10 @@ export function IdeaCard({
                           className="w-6 h-6 sm:w-7 sm:h-7 rounded-full border-2 hover:scale-110 transition-all cursor-pointer"
                           style={{
                             backgroundColor: color,
-                            borderColor: displayColor === color ? "rgba(0,0,0,0.5)" : "transparent",
+                            borderColor:
+                              displayColor === color
+                                ? "rgba(0,0,0,0.5)"
+                                : "transparent",
                           }}
                           onClick={() => handleColorChange(color)}
                         />
@@ -368,7 +388,9 @@ export function IdeaCard({
                       whileHover={{ scale: 1.1 }}
                       className={`p-1 sm:p-1.5 rounded-md ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"} ${hoverBgClass} transition-all cursor-pointer`}
                     >
-                      <Undo2 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} group-hover:${iconActiveClass}`} />
+                      <Undo2
+                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} group-hover:${iconActiveClass}`}
+                      />
                     </motion.button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">Undo</TooltipContent>
@@ -386,9 +408,13 @@ export function IdeaCard({
                       className={`p-1 sm:p-1.5 rounded-md ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"} ${hoverBgClass} transition-all cursor-pointer disabled:cursor-wait`}
                     >
                       {isRefining ? (
-                        <Loader2 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} animate-spin`} />
+                        <Loader2
+                          className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} animate-spin`}
+                        />
                       ) : (
-                        <Sparkles className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`} />
+                        <Sparkles
+                          className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
+                        />
                       )}
                     </motion.button>
                   </TooltipTrigger>
@@ -405,13 +431,19 @@ export function IdeaCard({
                     className={`p-1 sm:p-1.5 rounded-md ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"} ${hoverBgClass} transition-all cursor-pointer`}
                   >
                     {isExpanded ? (
-                      <Minimize2 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`} />
+                      <Minimize2
+                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
+                      />
                     ) : (
-                      <Maximize2 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`} />
+                      <Maximize2
+                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
+                      />
                     )}
                   </motion.button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">{isExpanded ? "Collapse" : "Expand"}</TooltipContent>
+                <TooltipContent side="bottom">
+                  {isExpanded ? "Collapse" : "Expand"}
+                </TooltipContent>
               </Tooltip>
               {isOwnCard && (
                 <Tooltip>
@@ -432,8 +464,8 @@ export function IdeaCard({
             </div>
           </TooltipProvider>
         </div>
-        <div 
-          className="p-2.5 sm:p-3.5 relative" 
+        <div
+          className="p-2.5 sm:p-3.5 relative"
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
@@ -454,23 +486,63 @@ export function IdeaCard({
               {card.content ? (
                 <Markdown
                   components={{
-                    p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
-                    ul: ({ children }) => <ul className="list-disc list-inside mb-2 last:mb-0 space-y-1">{children}</ul>,
-                    ol: ({ children }) => <ol className="list-decimal list-inside mb-2 last:mb-0 space-y-1">{children}</ol>,
-                    li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                    strong: ({ children }) => <strong className="font-semibold text-stone-900">{children}</strong>,
-                    em: ({ children }) => <em className="italic text-stone-700">{children}</em>,
-                    code: ({ children }) => <code className="px-1.5 py-0.5 rounded text-[10px] sm:text-xs bg-stone-900/8 text-stone-700 font-mono">{children}</code>,
-                    h1: ({ children }) => <h1 className="font-bold text-sm sm:text-base mb-1.5 text-stone-900">{children}</h1>,
-                    h2: ({ children }) => <h2 className="font-bold text-[13px] sm:text-sm mb-1.5 text-stone-900">{children}</h2>,
-                    h3: ({ children }) => <h3 className="font-semibold text-xs sm:text-[13px] mb-1 text-stone-800">{children}</h3>,
+                    p: ({ children }) => (
+                      <p className="mb-2 last:mb-0 leading-relaxed">
+                        {children}
+                      </p>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="list-disc list-inside mb-2 last:mb-0 space-y-1">
+                        {children}
+                      </ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="list-decimal list-inside mb-2 last:mb-0 space-y-1">
+                        {children}
+                      </ol>
+                    ),
+                    li: ({ children }) => (
+                      <li className="leading-relaxed">{children}</li>
+                    ),
+                    strong: ({ children }) => (
+                      <strong className="font-semibold text-stone-900">
+                        {children}
+                      </strong>
+                    ),
+                    em: ({ children }) => (
+                      <em className="italic text-stone-700">{children}</em>
+                    ),
+                    code: ({ children }) => (
+                      <code className="px-1.5 py-0.5 rounded text-[10px] sm:text-xs bg-stone-900/8 text-stone-700 font-mono">
+                        {children}
+                      </code>
+                    ),
+                    h1: ({ children }) => (
+                      <h1 className="font-bold text-sm sm:text-base mb-1.5 text-stone-900">
+                        {children}
+                      </h1>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="font-bold text-[13px] sm:text-sm mb-1.5 text-stone-900">
+                        {children}
+                      </h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="font-semibold text-xs sm:text-[13px] mb-1 text-stone-800">
+                        {children}
+                      </h3>
+                    ),
                   }}
                 >
                   {card.content}
                 </Markdown>
               ) : (
                 <span className={mutedTextClass}>
-                  {isOwnCard ? (isMobile ? "Tap to edit..." : "Click to add idea...") : "No content yet"}
+                  {isOwnCard
+                    ? isMobile
+                      ? "Tap to edit..."
+                      : "Click to add idea..."
+                    : "No content yet"}
                 </span>
               )}
             </div>
@@ -506,18 +578,24 @@ export function IdeaCard({
                           exit={{ scale: 0.5, opacity: 0 }}
                           transition={{ duration: 0.15 }}
                         >
-                          <Copy className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${iconClass}`} />
+                          <Copy
+                            className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${iconClass}`}
+                          />
                         </motion.div>
                       )}
                     </AnimatePresence>
                   </motion.button>
                 </TooltipTrigger>
-                <TooltipContent side="left">{isCopied ? "Copied!" : "Copy"}</TooltipContent>
+                <TooltipContent side="left">
+                  {isCopied ? "Copied!" : "Copy"}
+                </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}
         </div>
-        <div className={`flex items-center justify-between px-2.5 sm:px-3.5 py-2 sm:py-2.5 border-t ${borderClass}`}>
+        <div
+          className={`flex items-center justify-between px-2.5 sm:px-3.5 py-2 sm:py-2.5 border-t ${borderClass}`}
+        >
           <div className="flex items-center gap-1 sm:gap-1.5">
             <Image
               src={getAvatarForUser(card.createdById)}
@@ -526,7 +604,9 @@ export function IdeaCard({
               height={16}
               className="w-4 h-4 sm:w-5 sm:h-5"
             />
-            <span className={`text-[10px] sm:text-[11px] ${mutedTextClass} truncate max-w-[55px] sm:max-w-[80px] font-medium`}>
+            <span
+              className={`text-[10px] sm:text-[11px] ${mutedTextClass} truncate max-w-[55px] sm:max-w-[80px] font-medium`}
+            >
               {creatorName}
             </span>
           </div>
@@ -536,8 +616,13 @@ export function IdeaCard({
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             >
-              <span className={`text-[10px] sm:text-[11px] font-semibold tabular-nums ${mutedTextClass}`}>
-                <NumberFlow value={card.votes} format={{ notation: "compact" }} />
+              <span
+                className={`text-[10px] sm:text-[11px] font-semibold tabular-nums ${mutedTextClass}`}
+              >
+                <NumberFlow
+                  value={card.votes}
+                  format={{ notation: "compact" }}
+                />
               </span>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -554,11 +639,17 @@ export function IdeaCard({
                           : `${hoverBgClass} cursor-pointer`
                     }`}
                   >
-                    <ChevronUp className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${hasVoted ? "text-stone-800" : iconClass}`} />
+                    <ChevronUp
+                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${hasVoted ? "text-stone-800" : iconClass}`}
+                    />
                   </motion.button>
                 </TooltipTrigger>
                 <TooltipContent side="top">
-                  {isOwnCard ? "Can't vote on your own" : hasVoted ? "Remove vote" : "Vote"}
+                  {isOwnCard
+                    ? "Can't vote on your own"
+                    : hasVoted
+                      ? "Remove vote"
+                      : "Vote"}
                 </TooltipContent>
               </Tooltip>
             </div>
