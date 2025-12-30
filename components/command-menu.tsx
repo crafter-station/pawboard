@@ -51,7 +51,7 @@ export function CommandMenu({ open, onOpenChange, onAddCard, onShare, onChangeNa
           <CommandItem onSelect={() => runCommand(onAddCard)}>
             <Plus className="mr-2 h-4 w-4" />
             Add new card
-            <CommandShortcut>⌘N</CommandShortcut>
+            <CommandShortcut>N</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => runCommand(onShare)}>
             <Share2 className="mr-2 h-4 w-4" />

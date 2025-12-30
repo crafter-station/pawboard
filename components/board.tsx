@@ -197,12 +197,12 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [fitAllCards]);
 
-  const getRandomColor = () => {
+  const getRandomColor = useCallback(() => {
     const colors = resolvedTheme === "dark" ? DARK_COLORS : LIGHT_COLORS;
     return colors[Math.floor(Math.random() * colors.length)];
-  };
+  }, [resolvedTheme]);
 
-  const handleAddCard = async () => {
+  const handleAddCard = useCallback(async () => {
     if (!username || !visitorId) return;
     playSound();
 
@@ -239,7 +239,7 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
     setNewCardId(cardId);
     addCard(newCard);
     await createCard(newCard);
-  };
+  }, [username, visitorId, playSound, screenToWorld, sessionId, getRandomColor, addCard]);
 
   const handlePersistContent = async (id: string, content: string) => {
     await updateCard(id, { content });
@@ -298,6 +298,32 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
     }
     return result;
   };
+
+  // Keyboard shortcut for new card (key "N")
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if user is typing in an input or textarea
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+      
+      // Skip if command menu is open
+      if (commandOpen) {
+        return;
+      }
+
+      // "N" to create a new card
+      if (e.key === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        handleAddCard();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [commandOpen, handleAddCard]);
 
   if (!username || isFingerprintLoading || isUsernameLoading || !visitorId) {
     return (
@@ -369,6 +395,7 @@ export function Board({ sessionId, initialCards, initialParticipants }: BoardPro
           size="icon"
           onClick={handleAddCard}
           className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+          title="Add card (N)"
         >
           <Plus className="w-4 h-4" />
         </Button>
