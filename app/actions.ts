@@ -3,8 +3,8 @@
 import { db } from "@/db";
 import { sessions, cards, sessionParticipants, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { generateUsername } from "@/lib/names";
-import type { Card, NewCard, User } from "@/db/schema";
+import { generateUsername, generateSessionName } from "@/lib/names";
+import type { Card, NewCard, User, Session } from "@/db/schema";
 
 // Session Actions
 
@@ -17,7 +17,7 @@ export async function getOrCreateSession(id: string) {
     if (!session) {
       const [newSession] = await db
         .insert(sessions)
-        .values({ id, name: "Untitled Session" })
+        .values({ id, name: generateSessionName() })
         .returning();
       session = newSession;
     }
@@ -26,6 +26,68 @@ export async function getOrCreateSession(id: string) {
   } catch (error) {
     console.error("Database error in getOrCreateSession:", error);
     return { session: null, error: "Failed to connect to database" };
+  }
+}
+
+const SESSION_NAME_MIN_LENGTH = 2;
+const SESSION_NAME_MAX_LENGTH = 50;
+
+function validateSessionName(name: string): {
+  valid: boolean;
+  error?: string;
+} {
+  const trimmed = name.trim();
+
+  if (trimmed.length < SESSION_NAME_MIN_LENGTH) {
+    return {
+      valid: false,
+      error: `Session name must be at least ${SESSION_NAME_MIN_LENGTH} characters`,
+    };
+  }
+
+  if (trimmed.length > SESSION_NAME_MAX_LENGTH) {
+    return {
+      valid: false,
+      error: `Session name must be at most ${SESSION_NAME_MAX_LENGTH} characters`,
+    };
+  }
+
+  // Basic sanitization - no special control characters (ASCII 0-31 and 127)
+  const controlCharsRegex = new RegExp("[\\x00-\\x1F\\x7F]");
+  if (controlCharsRegex.test(trimmed)) {
+    return { valid: false, error: "Session name contains invalid characters" };
+  }
+
+  return { valid: true };
+}
+
+export async function updateSessionName(
+  sessionId: string,
+  newName: string,
+): Promise<{ session: Session | null; error: string | null }> {
+  try {
+    const validation = validateSessionName(newName);
+    if (!validation.valid) {
+      return {
+        session: null,
+        error: validation.error ?? "Invalid session name",
+      };
+    }
+
+    const [session] = await db
+      .update(sessions)
+      .set({ name: newName.trim() })
+      .where(eq(sessions.id, sessionId))
+      .returning();
+
+    if (!session) {
+      return { session: null, error: "Session not found" };
+    }
+
+    return { session, error: null };
+  } catch (error) {
+    console.error("Database error in updateSessionName:", error);
+    return { session: null, error: "Failed to update session name" };
   }
 }
 
