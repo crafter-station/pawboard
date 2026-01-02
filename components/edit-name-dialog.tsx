@@ -14,8 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-const USERNAME_MIN_LENGTH = 2;
-const USERNAME_MAX_LENGTH = 30;
+const DEFAULT_MIN_LENGTH = 2;
+const DEFAULT_MAX_LENGTH = 30;
 
 interface EditNameDialogProps {
   currentName: string;
@@ -23,6 +23,10 @@ interface EditNameDialogProps {
   trigger?: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  title?: string;
+  description?: string;
+  placeholder?: string;
+  maxLength?: number;
 }
 
 export function EditNameDialog({
@@ -31,6 +35,10 @@ export function EditNameDialog({
   trigger,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
+  title = "Edit your name",
+  description = "This name will be visible to other participants in this session.",
+  placeholder = "Enter your name",
+  maxLength = DEFAULT_MAX_LENGTH,
 }: EditNameDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [name, setName] = useState(currentName);
@@ -55,11 +63,11 @@ export function EditNameDialog({
 
   const validateName = (value: string): string | null => {
     const trimmed = value.trim();
-    if (trimmed.length < USERNAME_MIN_LENGTH) {
-      return `Name must be at least ${USERNAME_MIN_LENGTH} characters`;
+    if (trimmed.length < DEFAULT_MIN_LENGTH) {
+      return `Name must be at least ${DEFAULT_MIN_LENGTH} characters`;
     }
-    if (trimmed.length > USERNAME_MAX_LENGTH) {
-      return `Name must be at most ${USERNAME_MAX_LENGTH} characters`;
+    if (trimmed.length > maxLength) {
+      return `Name must be at most ${maxLength} characters`;
     }
     return null;
   };
@@ -99,11 +107,9 @@ export function EditNameDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Pencil className="h-4 w-4" />
-            Edit your name
+            {title}
           </DialogTitle>
-          <DialogDescription>
-            This name will be visible to other participants in this session.
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           <Input
@@ -113,14 +119,14 @@ export function EditNameDialog({
               setError(null);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Enter your name"
-            maxLength={USERNAME_MAX_LENGTH}
+            placeholder={placeholder}
+            maxLength={maxLength}
             autoFocus
             aria-invalid={!!error}
           />
           {error && <p className="text-sm text-destructive">{error}</p>}
           <p className="text-xs text-muted-foreground">
-            {name.trim().length}/{USERNAME_MAX_LENGTH} characters
+            {name.trim().length}/{maxLength} characters
           </p>
         </div>
         <DialogFooter>
