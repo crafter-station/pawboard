@@ -51,7 +51,8 @@ type CardEvent =
   | { type: "card:vote"; id: string; votes: number; votedBy: string[] }
   | { type: "cards:sync"; cards: Card[] }
   | { type: "user:join"; visitorId: string; username: string }
-  | { type: "user:rename"; visitorId: string; newUsername: string };
+  | { type: "user:rename"; visitorId: string; newUsername: string }
+  | { type: "session:rename"; newName: string };
 
 export function useRealtimeCards(
   sessionId: string,
@@ -59,17 +60,23 @@ export function useRealtimeCards(
   userId: string,
   username: string | null,
   onUserJoinOrRename?: (visitorId: string, username: string) => void,
+  onSessionRename?: (newName: string) => void,
 ) {
   const [cards, setCards] = useState<Card[]>(initialCards);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const cardsRef = useRef<Card[]>(initialCards);
   const onUserJoinOrRenameRef = useRef(onUserJoinOrRename);
+  const onSessionRenameRef = useRef(onSessionRename);
   const usernameRef = useRef(username);
 
   // Keep refs updated
   useEffect(() => {
     onUserJoinOrRenameRef.current = onUserJoinOrRename;
   }, [onUserJoinOrRename]);
+
+  useEffect(() => {
+    onSessionRenameRef.current = onSessionRename;
+  }, [onSessionRename]);
 
   useEffect(() => {
     usernameRef.current = username;
@@ -195,6 +202,14 @@ export function useRealtimeCards(
     [broadcast],
   );
 
+  // Broadcast session rename to other participants
+  const broadcastSessionRename = useCallback(
+    (newName: string) => {
+      broadcast({ type: "session:rename", newName });
+    },
+    [broadcast],
+  );
+
   useEffect(() => {
     if (!userId) return;
 
@@ -290,6 +305,10 @@ export function useRealtimeCards(
                 payload.newUsername,
               );
               break;
+            case "session:rename":
+              // Notify parent component to update session name
+              onSessionRenameRef.current?.(payload.newName);
+              break;
           }
         },
       )
@@ -335,5 +354,6 @@ export function useRealtimeCards(
     removeCard,
     voteCard,
     broadcastNameChange,
+    broadcastSessionRename,
   };
 }

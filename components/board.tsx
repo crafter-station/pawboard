@@ -21,6 +21,7 @@ import {
   updateCard,
   deleteCard,
   voteCard as voteCardAction,
+  updateSessionName,
 } from "@/app/actions";
 import type { Card } from "@/db/schema";
 import {
@@ -32,8 +33,19 @@ import {
   Check,
   Minus,
   Maximize2,
+  Pencil,
+  Menu,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
 import Link from "next/link";
 
@@ -48,6 +60,7 @@ export interface Participant {
 
 interface BoardProps {
   sessionId: string;
+  initialSessionName: string;
   initialCards: Card[];
   initialParticipants: Participant[];
 }
@@ -60,6 +73,7 @@ const CARD_HEIGHT_MOBILE = 120;
 
 export function Board({
   sessionId,
+  initialSessionName,
   initialCards,
   initialParticipants,
 }: BoardProps) {
@@ -68,6 +82,9 @@ export function Board({
   const [newCardId, setNewCardId] = useState<string | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [editNameOpen, setEditNameOpen] = useState(false);
+  const [editSessionNameOpen, setEditSessionNameOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sessionName, setSessionName] = useState(initialSessionName);
   const [participants, setParticipants] = useState<Map<string, string>>(
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
@@ -128,6 +145,11 @@ export function Board({
     [],
   );
 
+  // Handle incoming session rename events from realtime
+  const handleRemoteSessionRename = useCallback((newName: string) => {
+    setSessionName(newName);
+  }, []);
+
   const {
     cards,
     addCard,
@@ -137,12 +159,14 @@ export function Board({
     removeCard,
     voteCard,
     broadcastNameChange,
+    broadcastSessionRename,
   } = useRealtimeCards(
     sessionId,
     initialCards,
     visitorId || "",
     username,
     handleRemoteNameChange,
+    handleRemoteSessionRename,
   );
 
   // Fit all cards in view
@@ -263,7 +287,15 @@ export function Board({
     setNewCardId(cardId);
     addCard(newCard);
     await createCard(newCard);
-  }, [username, visitorId, playSound, screenToWorld, sessionId, getRandomColor, addCard]);
+  }, [
+    username,
+    visitorId,
+    playSound,
+    screenToWorld,
+    sessionId,
+    getRandomColor,
+    addCard,
+  ]);
 
   const handlePersistContent = async (id: string, content: string) => {
     await updateCard(id, { content });
@@ -323,6 +355,18 @@ export function Board({
     return result;
   };
 
+  const handleUpdateSessionName = async (newName: string) => {
+    const { session, error } = await updateSessionName(sessionId, newName);
+    if (session && !error) {
+      // Update local state
+      setSessionName(session.name);
+      // Broadcast to other participants
+      broadcastSessionRename(session.name);
+      return { success: true };
+    }
+    return { success: false, error: error ?? "Failed to update session name" };
+  };
+
   // Keyboard shortcut for new card (key "N")
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -333,7 +377,7 @@ export function Board({
       ) {
         return;
       }
-      
+
       // Skip if command menu is open
       if (commandOpen) {
         return;
@@ -367,12 +411,24 @@ export function Board({
         onChangeName={() => setEditNameOpen(true)}
       />
 
-      {/* Edit Name Dialog - controlled by command menu */}
+      {/* Edit Username Dialog - controlled by command menu */}
       <EditNameDialog
         currentName={username}
         onSave={handleUpdateUsername}
         open={editNameOpen}
         onOpenChange={setEditNameOpen}
+      />
+
+      {/* Edit Session Name Dialog */}
+      <EditNameDialog
+        currentName={sessionName}
+        onSave={handleUpdateSessionName}
+        open={editSessionNameOpen}
+        onOpenChange={setEditSessionNameOpen}
+        title="Edit board name"
+        description="This name will be visible to all participants."
+        placeholder="Enter board name"
+        maxLength={50}
       />
 
       {/* Fixed UI - Top Left */}
@@ -386,6 +442,7 @@ export function Board({
             <Home className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </Button>
         </Link>
+        {/* User badge - compact on mobile, full on desktop */}
         <EditNameDialog
           currentName={username}
           onSave={handleUpdateUsername}
@@ -394,17 +451,31 @@ export function Board({
               username={username}
               avatar={getAvatarForUser(visitorId)}
               editable
+              compact
             />
           }
         />
       </div>
 
-      {/* Fixed UI - Top Right */}
-      <div className="fixed top-2 sm:top-4 right-2 sm:right-4 z-50 flex items-center gap-1.5 sm:gap-2">
+      {/* Fixed UI - Top Center: Session Name */}
+      <div className="fixed top-2 sm:top-4 left-1/2 -translate-x-1/2 z-50">
+        <button
+          type="button"
+          onClick={() => setEditSessionNameOpen(true)}
+          className="group flex items-center gap-2 bg-card/80 backdrop-blur-sm px-3 sm:px-4 h-8 sm:h-9 rounded-lg border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer max-w-[120px] sm:max-w-xs"
+          title="Click to rename board"
+        >
+          <span className="text-sm font-medium truncate">{sessionName}</span>
+          <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity shrink-0 hidden sm:block" />
+        </button>
+      </div>
+
+      {/* Fixed UI - Top Right: Desktop */}
+      <div className="fixed top-2 sm:top-4 right-2 sm:right-4 z-50 hidden sm:flex items-center gap-2">
         <button
           type="button"
           onClick={handleCopySessionId}
-          className="hidden sm:flex text-muted-foreground text-sm font-mono bg-card/80 backdrop-blur-sm px-3 h-8 sm:h-9 items-center justify-center gap-2 rounded-md border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer"
+          className="flex text-muted-foreground text-sm font-mono bg-card/80 backdrop-blur-sm px-3 h-9 items-center justify-center gap-2 rounded-md border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer"
           title={sessionIdCopied ? "Copied!" : "Copy session ID"}
         >
           {sessionId}
@@ -418,7 +489,7 @@ export function Board({
           variant="outline"
           size="icon"
           onClick={handleAddCard}
-          className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+          className="bg-card/80 backdrop-blur-sm h-9 w-9"
           title="Add card (N)"
         >
           <Plus className="w-4 h-4" />
@@ -427,7 +498,7 @@ export function Board({
           variant="outline"
           size="icon"
           onClick={handleShare}
-          className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+          className="bg-card/80 backdrop-blur-sm h-9 w-9"
           title={copied ? "Copied!" : "Share"}
         >
           {copied ? (
@@ -440,15 +511,118 @@ export function Board({
           variant="outline"
           size="icon"
           onClick={() => setCommandOpen(true)}
-          className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+          className="bg-card/80 backdrop-blur-sm h-9 w-9"
           title="Command menu (⌘K)"
         >
           <Command className="w-4 h-4" />
         </Button>
-        <div className="bg-card/80 backdrop-blur-sm h-8 sm:h-9 flex items-center px-1.5 sm:px-2 rounded-lg border border-border">
+        <div className="bg-card/80 backdrop-blur-sm h-9 flex items-center px-2 rounded-lg border border-border">
           <ThemeSwitcherToggle />
         </div>
       </div>
+
+      {/* Fixed UI - Top Right: Mobile Hamburger Menu */}
+      <div className="fixed top-2 right-2 z-50 sm:hidden">
+        <Button
+          variant="outline"
+          size="icon"
+          className="bg-card/80 backdrop-blur-sm h-8 w-8"
+          onClick={() => setMobileMenuOpen(true)}
+        >
+          <Menu className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {/* Mobile Menu Drawer */}
+      <Drawer open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>Menu</DrawerTitle>
+          </DrawerHeader>
+          <div className="px-4 pb-6 space-y-2">
+            {/* Add Card */}
+            <DrawerClose asChild>
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-3 h-11"
+                onClick={handleAddCard}
+              >
+                <Plus className="w-4 h-4" />
+                Add new card
+              </Button>
+            </DrawerClose>
+
+            {/* Share Link */}
+            <DrawerClose asChild>
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-3 h-11"
+                onClick={handleShare}
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-sky-500" />
+                ) : (
+                  <Share2 className="w-4 h-4" />
+                )}
+                {copied ? "Link copied!" : "Copy share link"}
+              </Button>
+            </DrawerClose>
+
+            {/* Copy Session ID */}
+            <DrawerClose asChild>
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-3 h-11"
+                onClick={handleCopySessionId}
+              >
+                {sessionIdCopied ? (
+                  <Check className="w-4 h-4 text-sky-500" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+                <span className="flex-1 text-left">
+                  {sessionIdCopied ? "Copied!" : "Copy session ID"}
+                </span>
+                <span className="text-xs font-mono text-muted-foreground">
+                  {sessionId}
+                </span>
+              </Button>
+            </DrawerClose>
+
+            {/* Edit Username */}
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-11"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setEditNameOpen(true);
+              }}
+            >
+              <Pencil className="w-4 h-4" />
+              Change your name
+            </Button>
+
+            {/* Command Menu */}
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-11"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setCommandOpen(true);
+              }}
+            >
+              <Command className="w-4 h-4" />
+              Command menu
+            </Button>
+
+            {/* Theme Toggle */}
+            <div className="flex items-center justify-between h-11 px-4 rounded-md border border-input bg-background">
+              <span className="text-sm">Theme</span>
+              <ThemeSwitcherToggle />
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
 
       {/* Fixed UI - Bottom Right */}
       <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center gap-2">
