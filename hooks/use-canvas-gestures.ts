@@ -21,6 +21,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
   const [isPanning, setIsPanning] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
 
+  const canvasRef = useRef<HTMLDivElement>(null);
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
   const panStartPanRef = useRef<Point>({ x: 0, y: 0 });
   const lastTouchDistanceRef = useRef<number | null>(null);
@@ -128,26 +129,33 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
   );
 
   // Handle wheel for zoom (Ctrl/Cmd + scroll) or pan (regular scroll)
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      // Prevent default browser zoom
+  // Using native event listener with { passive: false } to properly prevent browser zoom
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Always prevent default to block native browser zoom/scroll
+      e.preventDefault();
+
       if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        // Zoom toward cursor
+        // Pinch-to-zoom or Ctrl+scroll = canvas zoom
         const delta = -e.deltaY * 0.001;
         const newZoom = zoom * (1 + delta);
         zoomTo(newZoom, { x: e.clientX, y: e.clientY });
       } else {
         // Regular scroll = pan
-        e.preventDefault();
         setPan((prev) => ({
           x: prev.x - e.deltaX,
           y: prev.y - e.deltaY,
         }));
       }
-    },
-    [zoom, zoomTo],
-  );
+    };
+
+    // CRITICAL: { passive: false } allows preventDefault() to work
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleWheel);
+  }, [zoom, zoomTo]);
 
   // Handle touch start for two-finger gestures
   const handleTouchStart = useCallback(
@@ -315,9 +323,9 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
     resetView,
     fitToBounds,
     centerOn,
+    canvasRef,
     handlers: {
       onMouseDown: handleMouseDown,
-      onWheel: handleWheel,
       onTouchStart: handleTouchStart,
       onTouchMove: handleTouchMove,
       onTouchEnd: handleTouchEnd,
