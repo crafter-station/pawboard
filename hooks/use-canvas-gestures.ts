@@ -140,7 +140,8 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
 
       if (e.ctrlKey || e.metaKey) {
         // Pinch-to-zoom or Ctrl+scroll = canvas zoom
-        const delta = -e.deltaY * 0.001;
+        // Higher multiplier = more sensitive zoom
+        const delta = -e.deltaY * 0.003;
         const newZoom = zoom * (1 + delta);
         zoomTo(newZoom, { x: e.clientX, y: e.clientY });
       } else {
