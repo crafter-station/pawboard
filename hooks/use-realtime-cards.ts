@@ -4,7 +4,7 @@ import {
   REALTIME_SUBSCRIBE_STATES,
   RealtimeChannel,
 } from "@supabase/supabase-js";
-import type { Card } from "@/db/schema";
+import type { Card, Session } from "@/db/schema";
 
 const supabase = createClient();
 
@@ -41,6 +41,11 @@ function useThrottleCallback<Params extends unknown[], Return>(
   );
 }
 
+export type SessionSettings = Pick<
+  Session,
+  "isLocked" | "movePermission" | "deletePermission"
+>;
+
 type CardEvent =
   | { type: "card:add"; card: Card }
   | { type: "card:update"; card: Card }
@@ -52,7 +57,8 @@ type CardEvent =
   | { type: "cards:sync"; cards: Card[] }
   | { type: "user:join"; visitorId: string; username: string }
   | { type: "user:rename"; visitorId: string; newUsername: string }
-  | { type: "session:rename"; newName: string };
+  | { type: "session:rename"; newName: string }
+  | { type: "session:settings"; settings: SessionSettings };
 
 export function useRealtimeCards(
   sessionId: string,
@@ -61,12 +67,14 @@ export function useRealtimeCards(
   username: string | null,
   onUserJoinOrRename?: (visitorId: string, username: string) => void,
   onSessionRename?: (newName: string) => void,
+  onSessionSettingsChange?: (settings: SessionSettings) => void,
 ) {
   const [cards, setCards] = useState<Card[]>(initialCards);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const cardsRef = useRef<Card[]>(initialCards);
   const onUserJoinOrRenameRef = useRef(onUserJoinOrRename);
   const onSessionRenameRef = useRef(onSessionRename);
+  const onSessionSettingsChangeRef = useRef(onSessionSettingsChange);
   const usernameRef = useRef(username);
 
   // Keep refs updated
@@ -77,6 +85,10 @@ export function useRealtimeCards(
   useEffect(() => {
     onSessionRenameRef.current = onSessionRename;
   }, [onSessionRename]);
+
+  useEffect(() => {
+    onSessionSettingsChangeRef.current = onSessionSettingsChange;
+  }, [onSessionSettingsChange]);
 
   useEffect(() => {
     usernameRef.current = username;
@@ -210,6 +222,14 @@ export function useRealtimeCards(
     [broadcast],
   );
 
+  // Broadcast session settings change to other participants
+  const broadcastSessionSettings = useCallback(
+    (settings: SessionSettings) => {
+      broadcast({ type: "session:settings", settings });
+    },
+    [broadcast],
+  );
+
   useEffect(() => {
     if (!userId) return;
 
@@ -309,6 +329,10 @@ export function useRealtimeCards(
               // Notify parent component to update session name
               onSessionRenameRef.current?.(payload.newName);
               break;
+            case "session:settings":
+              // Notify parent component to update session settings
+              onSessionSettingsChangeRef.current?.(payload.settings);
+              break;
           }
         },
       )
@@ -355,5 +379,6 @@ export function useRealtimeCards(
     voteCard,
     broadcastNameChange,
     broadcastSessionRename,
+    broadcastSessionSettings,
   };
 }
