@@ -52,7 +52,7 @@ export default async function SessionPage({ params }: Props) {
   return (
     <Board
       sessionId={sessionId}
-      initialSessionName={session.name}
+      initialSession={session}
       initialCards={initialCards}
       initialParticipants={initialParticipants}
     />

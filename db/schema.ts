@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   integer,
   jsonb,
   pgTable,
@@ -8,6 +9,10 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
+
+// Permission types
+export type MovePermission = "creator" | "everyone";
+export type DeletePermission = "creator" | "everyone";
 
 // Tables
 
@@ -20,6 +25,15 @@ export const users = pgTable("users", {
 export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
+  isLocked: boolean("is_locked").notNull().default(false),
+  movePermission: text("move_permission")
+    .$type<MovePermission>()
+    .notNull()
+    .default("creator"),
+  deletePermission: text("delete_permission")
+    .$type<DeletePermission>()
+    .notNull()
+    .default("creator"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -98,6 +112,7 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+export type SessionRole = "creator" | "participant";
 export type Card = typeof cards.$inferSelect;
 export type NewCard = typeof cards.$inferInsert;
 export type SessionParticipant = typeof sessionParticipants.$inferSelect;

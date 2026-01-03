@@ -22,8 +22,12 @@ import {
   deleteCard,
   voteCard as voteCardAction,
   updateSessionName,
+  updateSessionSettings,
+  deleteSession,
+  joinSession,
 } from "@/app/actions";
-import type { Card } from "@/db/schema";
+import type { Card, Session, SessionRole } from "@/db/schema";
+import type { SessionSettings } from "@/hooks/use-realtime-cards";
 import {
   Share2,
   Home,
@@ -35,8 +39,8 @@ import {
   Maximize2,
   Pencil,
   Menu,
-  Moon,
-  Sun,
+  Lock,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +51,10 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
+import { SessionSettingsDialog } from "@/components/session-settings-dialog";
+import { canAddCard } from "@/lib/permissions";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 const LIGHT_COLORS = ["#D4B8F0", "#FFCAB0", "#C4EDBA", "#C5E8EC", "#F9E9A8"];
 
@@ -60,7 +67,7 @@ export interface Participant {
 
 interface BoardProps {
   sessionId: string;
-  initialSessionName: string;
+  initialSession: Session;
   initialCards: Card[];
   initialParticipants: Participant[];
 }
@@ -73,10 +80,11 @@ const CARD_HEIGHT_MOBILE = 120;
 
 export function Board({
   sessionId,
-  initialSessionName,
+  initialSession,
   initialCards,
   initialParticipants,
 }: BoardProps) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [sessionIdCopied, setSessionIdCopied] = useState(false);
   const [newCardId, setNewCardId] = useState<string | null>(null);
@@ -84,7 +92,8 @@ export function Board({
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [editSessionNameOpen, setEditSessionNameOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [sessionName, setSessionName] = useState(initialSessionName);
+  const [session, setSession] = useState<Session>(initialSession);
+  const [userRole, setUserRole] = useState<SessionRole | null>(null);
   const [participants, setParticipants] = useState<Map<string, string>>(
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
@@ -92,6 +101,10 @@ export function Board({
   const { resolvedTheme } = useTheme();
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
   const playSound = useCatSound();
+
+  // Derived state
+  const isSessionCreator = userRole === "creator";
+  const isLocked = session.isLocked;
 
   const {
     username,
@@ -101,6 +114,20 @@ export function Board({
     sessionId,
     visitorId,
   });
+
+  // Join session and get user role
+  useEffect(() => {
+    if (!visitorId) return;
+
+    const doJoin = async () => {
+      const { role } = await joinSession(visitorId, sessionId);
+      if (role) {
+        setUserRole(role);
+      }
+    };
+
+    doJoin();
+  }, [visitorId, sessionId]);
 
   // Update participants map when current user's username changes
   useEffect(() => {
@@ -147,8 +174,16 @@ export function Board({
 
   // Handle incoming session rename events from realtime
   const handleRemoteSessionRename = useCallback((newName: string) => {
-    setSessionName(newName);
+    setSession((prev) => ({ ...prev, name: newName }));
   }, []);
+
+  // Handle incoming session settings change events from realtime
+  const handleRemoteSessionSettingsChange = useCallback(
+    (settings: SessionSettings) => {
+      setSession((prev) => ({ ...prev, ...settings }));
+    },
+    [],
+  );
 
   const {
     cards,
@@ -160,6 +195,7 @@ export function Board({
     voteCard,
     broadcastNameChange,
     broadcastSessionRename,
+    broadcastSessionSettings,
   } = useRealtimeCards(
     sessionId,
     initialCards,
@@ -167,6 +203,7 @@ export function Board({
     username,
     handleRemoteNameChange,
     handleRemoteSessionRename,
+    handleRemoteSessionSettingsChange,
   );
 
   // Fit all cards in view
@@ -246,6 +283,10 @@ export function Board({
 
   const handleAddCard = useCallback(async () => {
     if (!username || !visitorId) return;
+
+    // Check if session allows adding cards
+    if (!canAddCard(session)) return;
+
     playSound();
 
     const isMobile = window.innerWidth < 640;
@@ -286,10 +327,11 @@ export function Board({
 
     setNewCardId(cardId);
     addCard(newCard);
-    await createCard(newCard);
+    await createCard(newCard, visitorId);
   }, [
     username,
     visitorId,
+    session,
     playSound,
     screenToWorld,
     sessionId,
@@ -298,15 +340,18 @@ export function Board({
   ]);
 
   const handlePersistContent = async (id: string, content: string) => {
-    await updateCard(id, { content });
+    if (!visitorId) return;
+    await updateCard(id, { content }, visitorId);
   };
 
   const handlePersistMove = async (id: string, x: number, y: number) => {
-    await updateCard(id, { x, y });
+    if (!visitorId) return;
+    await updateCard(id, { x, y }, visitorId);
   };
 
   const handlePersistColor = async (id: string, color: string) => {
-    await updateCard(id, { color });
+    if (!visitorId) return;
+    await updateCard(id, { color }, visitorId);
   };
 
   const handlePersistDelete = async (id: string) => {
@@ -356,15 +401,58 @@ export function Board({
   };
 
   const handleUpdateSessionName = async (newName: string) => {
-    const { session, error } = await updateSessionName(sessionId, newName);
-    if (session && !error) {
+    if (!visitorId) return { success: false, error: "Not logged in" };
+
+    const { session: updatedSession, error } = await updateSessionName(
+      sessionId,
+      newName,
+      visitorId,
+    );
+    if (updatedSession && !error) {
       // Update local state
-      setSessionName(session.name);
+      setSession((prev) => ({ ...prev, name: updatedSession.name }));
       // Broadcast to other participants
-      broadcastSessionRename(session.name);
+      broadcastSessionRename(updatedSession.name);
       return { success: true };
     }
     return { success: false, error: error ?? "Failed to update session name" };
+  };
+
+  const handleUpdateSessionSettings = async (settings: {
+    isLocked?: boolean;
+    movePermission?: Session["movePermission"];
+    deletePermission?: Session["deletePermission"];
+  }) => {
+    if (!visitorId) return { success: false, error: "Not logged in" };
+
+    const { session: updatedSession, error } = await updateSessionSettings(
+      sessionId,
+      settings,
+      visitorId,
+    );
+    if (updatedSession && !error) {
+      // Update local state
+      setSession(updatedSession);
+      // Broadcast to other participants
+      broadcastSessionSettings({
+        isLocked: updatedSession.isLocked,
+        movePermission: updatedSession.movePermission,
+        deletePermission: updatedSession.deletePermission,
+      });
+      return { success: true };
+    }
+    return { success: false, error: error ?? "Failed to update settings" };
+  };
+
+  const handleDeleteSession = async () => {
+    if (!visitorId) return { success: false, error: "Not logged in" };
+
+    const { success, error } = await deleteSession(sessionId, visitorId);
+    if (success) {
+      router.push("/");
+      return { success: true };
+    }
+    return { success: false, error: error ?? "Failed to delete session" };
   };
 
   // Keyboard shortcut for new card (key "N")
@@ -421,7 +509,7 @@ export function Board({
 
       {/* Edit Session Name Dialog */}
       <EditNameDialog
-        currentName={sessionName}
+        currentName={session.name}
         onSave={handleUpdateSessionName}
         open={editSessionNameOpen}
         onOpenChange={setEditSessionNameOpen}
@@ -457,17 +545,49 @@ export function Board({
         />
       </div>
 
-      {/* Fixed UI - Top Center: Session Name */}
-      <div className="fixed top-2 sm:top-4 left-1/2 -translate-x-1/2 z-50">
-        <button
-          type="button"
-          onClick={() => setEditSessionNameOpen(true)}
-          className="group flex items-center gap-2 bg-card/80 backdrop-blur-sm px-3 sm:px-4 h-8 sm:h-9 rounded-lg border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer max-w-[120px] sm:max-w-xs"
-          title="Click to rename board"
-        >
-          <span className="text-sm font-medium truncate">{sessionName}</span>
-          <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity shrink-0 hidden sm:block" />
-        </button>
+      {/* Fixed UI - Top Center: Session Name + Lock Indicator */}
+      <div className="fixed top-2 sm:top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+        {isLocked && (
+          <div
+            className="flex items-center gap-1.5 bg-destructive/10 text-destructive px-2.5 h-8 sm:h-9 rounded-lg border border-destructive/20"
+            title="Session is locked"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span className="text-xs font-medium hidden sm:inline">Locked</span>
+          </div>
+        )}
+        {isSessionCreator ? (
+          <button
+            type="button"
+            onClick={() => setEditSessionNameOpen(true)}
+            className="group flex items-center gap-2 bg-card/80 backdrop-blur-sm px-3 sm:px-4 h-8 sm:h-9 rounded-lg border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer max-w-[120px] sm:max-w-xs"
+            title="Click to rename board"
+          >
+            <span className="text-sm font-medium truncate">{session.name}</span>
+            <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity shrink-0 hidden sm:block" />
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 bg-card/80 backdrop-blur-sm px-3 sm:px-4 h-8 sm:h-9 rounded-lg border border-border shadow-xs max-w-[120px] sm:max-w-xs">
+            <span className="text-sm font-medium truncate">{session.name}</span>
+          </div>
+        )}
+        {isSessionCreator && (
+          <SessionSettingsDialog
+            session={session}
+            onUpdateSettings={handleUpdateSessionSettings}
+            onDeleteSession={handleDeleteSession}
+            trigger={
+              <Button
+                variant="outline"
+                size="icon"
+                className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+                title="Session Settings"
+              >
+                <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </Button>
+            }
+          />
+        )}
       </div>
 
       {/* Fixed UI - Top Right: Desktop */}
@@ -489,8 +609,9 @@ export function Board({
           variant="outline"
           size="icon"
           onClick={handleAddCard}
+          disabled={isLocked}
           className="bg-card/80 backdrop-blur-sm h-9 w-9"
-          title="Add card (N)"
+          title={isLocked ? "Session is locked" : "Add card (N)"}
         >
           <Plus className="w-4 h-4" />
         </Button>
@@ -546,9 +667,10 @@ export function Board({
                 variant="outline"
                 className="w-full justify-start gap-3 h-11"
                 onClick={handleAddCard}
+                disabled={isLocked}
               >
                 <Plus className="w-4 h-4" />
-                Add new card
+                {isLocked ? "Session is locked" : "Add new card"}
               </Button>
             </DrawerClose>
 
@@ -630,7 +752,7 @@ export function Board({
           participants={participants}
           currentUserId={visitorId}
         />
-        <AddCardButton onClick={handleAddCard} />
+        <AddCardButton onClick={handleAddCard} disabled={isLocked} />
       </div>
 
       {/* Fixed UI - Bottom Left: Zoom Controls */}
@@ -692,6 +814,8 @@ export function Board({
             <IdeaCard
               key={card.id}
               card={card}
+              session={session}
+              userRole={userRole}
               creatorName={getUsernameForId(card.createdById)}
               visitorId={visitorId}
               autoFocus={card.id === newCardId}

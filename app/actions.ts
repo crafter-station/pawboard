@@ -4,7 +4,23 @@ import { db } from "@/db";
 import { sessions, cards, sessionParticipants, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { generateUsername, generateSessionName } from "@/lib/names";
-import type { Card, NewCard, User, Session } from "@/db/schema";
+import {
+  canAddCard,
+  canDeleteCard,
+  canEditCard,
+  canMoveCard,
+  canVote,
+  canChangeColor,
+} from "@/lib/permissions";
+import type {
+  Card,
+  NewCard,
+  User,
+  Session,
+  SessionRole,
+  MovePermission,
+  DeletePermission,
+} from "@/db/schema";
 
 // Session Actions
 
@@ -64,8 +80,18 @@ function validateSessionName(name: string): {
 export async function updateSessionName(
   sessionId: string,
   newName: string,
+  userId: string,
 ): Promise<{ session: Session | null; error: string | null }> {
   try {
+    // Check if user is session creator
+    const userRole = await getUserRoleInSession(userId, sessionId);
+    if (userRole !== "creator") {
+      return {
+        session: null,
+        error: "Only the session creator can rename the session",
+      };
+    }
+
     const validation = validateSessionName(newName);
     if (!validation.valid) {
       return {
@@ -88,6 +114,90 @@ export async function updateSessionName(
   } catch (error) {
     console.error("Database error in updateSessionName:", error);
     return { session: null, error: "Failed to update session name" };
+  }
+}
+
+// Session Settings Actions
+
+export interface SessionSettings {
+  isLocked: boolean;
+  movePermission: MovePermission;
+  deletePermission: DeletePermission;
+}
+
+export async function updateSessionSettings(
+  sessionId: string,
+  settings: Partial<SessionSettings>,
+  userId: string,
+): Promise<{ session: Session | null; error: string | null }> {
+  try {
+    // Check if user is session creator
+    const userRole = await getUserRoleInSession(userId, sessionId);
+    if (userRole !== "creator") {
+      return {
+        session: null,
+        error: "Only the session creator can change settings",
+      };
+    }
+
+    const [session] = await db
+      .update(sessions)
+      .set(settings)
+      .where(eq(sessions.id, sessionId))
+      .returning();
+
+    if (!session) {
+      return { session: null, error: "Session not found" };
+    }
+
+    return { session, error: null };
+  } catch (error) {
+    console.error("Database error in updateSessionSettings:", error);
+    return { session: null, error: "Failed to update session settings" };
+  }
+}
+
+export async function deleteSession(
+  sessionId: string,
+  userId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    // Check if user is session creator
+    const userRole = await getUserRoleInSession(userId, sessionId);
+    if (userRole !== "creator") {
+      return {
+        success: false,
+        error: "Only the session creator can delete the session",
+      };
+    }
+
+    await db.delete(sessions).where(eq(sessions.id, sessionId));
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in deleteSession:", error);
+    return { success: false, error: "Failed to delete session" };
+  }
+}
+
+export async function getUserRoleInSession(
+  userId: string,
+  sessionId: string,
+): Promise<SessionRole | null> {
+  try {
+    const participant = await db.query.sessionParticipants.findFirst({
+      where: and(
+        eq(sessionParticipants.userId, userId),
+        eq(sessionParticipants.sessionId, sessionId),
+      ),
+    });
+
+    if (!participant) return null;
+
+    return participant.role as SessionRole;
+  } catch (error) {
+    console.error("Database error in getUserRoleInSession:", error);
+    return null;
   }
 }
 
@@ -183,12 +293,20 @@ function validateUsername(username: string): {
 export async function joinSession(
   userId: string,
   sessionId: string,
-): Promise<{ success: boolean; error: string | null }> {
+): Promise<{
+  success: boolean;
+  role: SessionRole | null;
+  error: string | null;
+}> {
   try {
     // Ensure user exists first
     const { user, error: userError } = await getOrCreateUser(userId);
     if (userError || !user) {
-      return { success: false, error: userError ?? "Failed to create user" };
+      return {
+        success: false,
+        role: null,
+        error: userError ?? "Failed to create user",
+      };
     }
 
     // Check if already a participant
@@ -199,17 +317,28 @@ export async function joinSession(
       ),
     });
 
-    if (!existing) {
-      await db.insert(sessionParticipants).values({
-        userId,
-        sessionId,
-      });
+    if (existing) {
+      return { success: true, role: existing.role as SessionRole, error: null };
     }
 
-    return { success: true, error: null };
+    // Check if session has any participants (first user becomes creator)
+    const existingParticipants = await db.query.sessionParticipants.findMany({
+      where: eq(sessionParticipants.sessionId, sessionId),
+    });
+
+    const role: SessionRole =
+      existingParticipants.length === 0 ? "creator" : "participant";
+
+    await db.insert(sessionParticipants).values({
+      userId,
+      sessionId,
+      role,
+    });
+
+    return { success: true, role, error: null };
   } catch (error) {
     console.error("Database error in joinSession:", error);
-    return { success: false, error: "Failed to join session" };
+    return { success: false, role: null, error: "Failed to join session" };
   }
 }
 
@@ -271,67 +400,198 @@ export async function getSessionCards(sessionId: string) {
   }
 }
 
-export async function createCard(data: NewCard): Promise<Card> {
-  const [card] = await db.insert(cards).values(data).returning();
-  return card;
+export async function createCard(
+  data: NewCard,
+  _userId: string,
+): Promise<{ card: Card | null; error: string | null }> {
+  try {
+    // Get session to check if locked
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, data.sessionId),
+    });
+
+    if (!session) {
+      return { card: null, error: "Session not found" };
+    }
+
+    if (!canAddCard(session)) {
+      return { card: null, error: "Session is locked. Cannot add new cards." };
+    }
+
+    const [card] = await db.insert(cards).values(data).returning();
+    return { card, error: null };
+  } catch (error) {
+    console.error("Database error in createCard:", error);
+    return { card: null, error: "Failed to create card" };
+  }
 }
 
 export async function updateCard(
   id: string,
   data: Partial<Pick<Card, "content" | "color" | "x" | "y">>,
-): Promise<Card> {
-  const [card] = await db
-    .update(cards)
-    .set({ ...data, updatedAt: new Date() })
-    .where(eq(cards.id, id))
-    .returning();
-  return card;
+  userId: string,
+): Promise<{ card: Card | null; error: string | null }> {
+  try {
+    // Get the card and its session
+    const existingCard = await db.query.cards.findFirst({
+      where: eq(cards.id, id),
+    });
+
+    if (!existingCard) {
+      return { card: null, error: "Card not found" };
+    }
+
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, existingCard.sessionId),
+    });
+
+    if (!session) {
+      return { card: null, error: "Session not found" };
+    }
+
+    // Check permissions based on what's being updated
+    if (data.content !== undefined) {
+      if (!canEditCard(session, existingCard, userId)) {
+        return {
+          card: null,
+          error: "You don't have permission to edit this card",
+        };
+      }
+    }
+
+    if (data.x !== undefined || data.y !== undefined) {
+      if (!canMoveCard(session, existingCard, userId)) {
+        return {
+          card: null,
+          error: "You don't have permission to move this card",
+        };
+      }
+    }
+
+    if (data.color !== undefined) {
+      if (!canChangeColor(session, existingCard, userId)) {
+        return {
+          card: null,
+          error: "You don't have permission to change this card's color",
+        };
+      }
+    }
+
+    const [card] = await db
+      .update(cards)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(cards.id, id))
+      .returning();
+
+    return { card, error: null };
+  } catch (error) {
+    console.error("Database error in updateCard:", error);
+    return { card: null, error: "Failed to update card" };
+  }
 }
 
 export async function voteCard(
   id: string,
   visitorId: string,
-): Promise<{ card: Card; action: "added" | "removed" | "denied" }> {
-  const existing = await db.query.cards.findFirst({
-    where: eq(cards.id, id),
-  });
+): Promise<{
+  card: Card | null;
+  action: "added" | "removed" | "denied";
+  error: string | null;
+}> {
+  try {
+    const existing = await db.query.cards.findFirst({
+      where: eq(cards.id, id),
+    });
 
-  if (!existing) throw new Error("Card not found");
+    if (!existing) {
+      return { card: null, action: "denied", error: "Card not found" };
+    }
 
-  if (existing.createdById === visitorId) {
-    return { card: existing, action: "denied" };
+    // Get session to check if locked
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, existing.sessionId),
+    });
+
+    if (!session) {
+      return { card: null, action: "denied", error: "Session not found" };
+    }
+
+    if (!canVote(session, existing, visitorId)) {
+      if (existing.createdById === visitorId) {
+        return { card: existing, action: "denied", error: null }; // Can't vote on own card
+      }
+      return {
+        card: existing,
+        action: "denied",
+        error: "Session is locked. Cannot vote.",
+      };
+    }
+
+    const votedBy = existing.votedBy || [];
+    const hasVoted = votedBy.includes(visitorId);
+
+    let newVotedBy: string[];
+    let newVotes: number;
+
+    if (hasVoted) {
+      newVotedBy = votedBy.filter((v) => v !== visitorId);
+      newVotes = existing.votes - 1;
+    } else {
+      newVotedBy = [...votedBy, visitorId];
+      newVotes = existing.votes + 1;
+    }
+
+    const [card] = await db
+      .update(cards)
+      .set({ votes: newVotes, votedBy: newVotedBy, updatedAt: new Date() })
+      .where(eq(cards.id, id))
+      .returning();
+
+    return { card, action: hasVoted ? "removed" : "added", error: null };
+  } catch (error) {
+    console.error("Database error in voteCard:", error);
+    return { card: null, action: "denied", error: "Failed to vote on card" };
   }
-
-  const votedBy = existing.votedBy || [];
-  const hasVoted = votedBy.includes(visitorId);
-
-  let newVotedBy: string[];
-  let newVotes: number;
-
-  if (hasVoted) {
-    newVotedBy = votedBy.filter((v) => v !== visitorId);
-    newVotes = existing.votes - 1;
-  } else {
-    newVotedBy = [...votedBy, visitorId];
-    newVotes = existing.votes + 1;
-  }
-
-  const [card] = await db
-    .update(cards)
-    .set({ votes: newVotes, votedBy: newVotedBy, updatedAt: new Date() })
-    .where(eq(cards.id, id))
-    .returning();
-
-  return { card, action: hasVoted ? "removed" : "added" };
 }
 
-export async function deleteCard(id: string, visitorId: string) {
-  const existing = await db.query.cards.findFirst({
-    where: eq(cards.id, id),
-  });
+export async function deleteCard(
+  id: string,
+  visitorId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const existing = await db.query.cards.findFirst({
+      where: eq(cards.id, id),
+    });
 
-  if (!existing) return;
-  if (existing.createdById !== visitorId) return;
+    if (!existing) {
+      return { success: false, error: "Card not found" };
+    }
 
-  await db.delete(cards).where(eq(cards.id, id));
+    // Get session to check permissions
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, existing.sessionId),
+    });
+
+    if (!session) {
+      return { success: false, error: "Session not found" };
+    }
+
+    // Get user's role from database - don't trust client-supplied role
+    const userRole = await getUserRoleInSession(visitorId, existing.sessionId);
+
+    if (
+      !canDeleteCard(session, existing, visitorId, userRole ?? "participant")
+    ) {
+      return {
+        success: false,
+        error: "You don't have permission to delete this card",
+      };
+    }
+
+    await db.delete(cards).where(eq(cards.id, id));
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in deleteCard:", error);
+    return { success: false, error: "Failed to delete card" };
+  }
 }
