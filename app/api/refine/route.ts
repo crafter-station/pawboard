@@ -1,5 +1,9 @@
 import { createGroq } from "@ai-sdk/groq";
 import { generateText } from "ai";
+import { db } from "@/db";
+import { cards, sessions } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { canRefine } from "@/lib/permissions";
 
 const groq = createGroq({
   apiKey: process.env.GROQ_API_KEY,
@@ -7,10 +11,36 @@ const groq = createGroq({
 
 export async function POST(req: Request) {
   try {
-    const { text } = await req.json();
+    const { text, cardId, userId } = await req.json();
 
     if (!text || text.trim().length === 0) {
       return Response.json({ error: "No text provided" }, { status: 400 });
+    }
+
+    // If cardId and userId are provided, validate permissions
+    if (cardId && userId) {
+      const card = await db.query.cards.findFirst({
+        where: eq(cards.id, cardId),
+      });
+
+      if (!card) {
+        return Response.json({ error: "Card not found" }, { status: 404 });
+      }
+
+      const session = await db.query.sessions.findFirst({
+        where: eq(sessions.id, card.sessionId),
+      });
+
+      if (!session) {
+        return Response.json({ error: "Session not found" }, { status: 404 });
+      }
+
+      if (!canRefine(session, card, userId)) {
+        return Response.json(
+          { error: "You don't have permission to refine this card" },
+          { status: 403 },
+        );
+      }
     }
 
     const prompt = [
