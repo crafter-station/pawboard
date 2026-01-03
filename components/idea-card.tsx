@@ -31,7 +31,15 @@ import {
 } from "lucide-react";
 import Markdown from "react-markdown";
 import { getAvatarForUser } from "@/lib/utils";
-import type { Card } from "@/db/schema";
+import {
+  canEditCard,
+  canMoveCard,
+  canDeleteCard,
+  canChangeColor,
+  canRefine,
+  canVote,
+} from "@/lib/permissions";
+import type { Card, Session, SessionRole } from "@/db/schema";
 
 const LIGHT_COLORS = ["#D4B8F0", "#FFCAB0", "#C4EDBA", "#C5E8EC", "#F9E9A8"];
 
@@ -57,6 +65,8 @@ interface Point {
 
 interface IdeaCardProps {
   card: Card;
+  session: Session;
+  userRole: SessionRole | null;
   creatorName: string;
   visitorId: string;
   autoFocus?: boolean;
@@ -76,6 +86,8 @@ interface IdeaCardProps {
 
 export function IdeaCard({
   card,
+  session,
+  userRole,
   creatorName,
   visitorId,
   autoFocus,
@@ -106,9 +118,20 @@ export function IdeaCard({
   const dragOffset = useRef({ x: 0, y: 0 });
   const startPos = useRef({ x: 0, y: 0 });
 
+  // Permission checks
   const isOwnCard = card.createdById === visitorId;
   const hasVoted = card.votedBy?.includes(visitorId) || false;
-  const canVote = !isOwnCard;
+  const allowMove = canMoveCard(session, card, visitorId);
+  const allowEdit = canEditCard(session, card, visitorId);
+  const allowDelete = canDeleteCard(
+    session,
+    card,
+    visitorId,
+    userRole ?? "participant",
+  );
+  const allowChangeColor = canChangeColor(session, card, visitorId);
+  const allowRefine = canRefine(session, card, visitorId);
+  const allowVote = canVote(session, card, visitorId);
 
   useEffect(() => {
     setMounted(true);
@@ -119,11 +142,11 @@ export function IdeaCard({
   }, []);
 
   useEffect(() => {
-    if (autoFocus && isOwnCard) {
+    if (autoFocus && allowEdit) {
       setIsEditing(true);
       onFocused?.();
     }
-  }, [autoFocus, isOwnCard, onFocused]);
+  }, [autoFocus, allowEdit, onFocused]);
 
   const isDark = mounted && resolvedTheme === "dark";
   const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
@@ -143,7 +166,7 @@ export function IdeaCard({
   const displayColor = getDisplayColor(card.color);
 
   const handleDragStart = (clientX: number, clientY: number) => {
-    if (!isOwnCard) return;
+    if (!allowMove) return;
     setIsDragging(true);
     startPos.current = { x: card.x, y: card.y };
     // Calculate the offset in world coordinates
@@ -239,13 +262,13 @@ export function IdeaCard({
   };
 
   const handleVote = () => {
-    if (canVote) {
+    if (allowVote) {
       onVote(card.id);
     }
   };
 
   const handleRefine = async () => {
-    if (!card.content.trim() || isRefining || !isOwnCard) return;
+    if (!card.content.trim() || isRefining || !allowRefine) return;
 
     const contentBeforeRefine = card.content;
     setIsRefining(true);
@@ -253,7 +276,11 @@ export function IdeaCard({
       const res = await fetch("/api/refine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: card.content }),
+        body: JSON.stringify({
+          text: card.content,
+          cardId: card.id,
+          userId: visitorId,
+        }),
       });
 
       if (res.ok) {
@@ -278,8 +305,8 @@ export function IdeaCard({
     }
   };
 
-  const canRefine = isOwnCard && card.content.trim().length > 10;
-  const canUndo = isOwnCard && previousContent !== null;
+  const showRefineButton = allowRefine && card.content.trim().length > 10;
+  const showUndoButton = allowEdit && previousContent !== null;
 
   const handleCopy = async () => {
     if (!card.content.trim()) return;
@@ -313,7 +340,7 @@ export function IdeaCard({
       style={{
         left: card.x,
         top: card.y,
-        cursor: isOwnCard ? (isDragging ? "grabbing" : "grab") : "default",
+        cursor: allowMove ? (isDragging ? "grabbing" : "grab") : "default",
         zIndex: isDragging ? 1000 : isExpanded ? 100 : 1,
         transition: isDragging
           ? "width 200ms"
@@ -338,7 +365,7 @@ export function IdeaCard({
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             >
-              {isOwnCard && (
+              {allowChangeColor && (
                 <Popover>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -378,7 +405,7 @@ export function IdeaCard({
                   </PopoverContent>
                 </Popover>
               )}
-              {canUndo && (
+              {showUndoButton && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <motion.button
@@ -396,7 +423,7 @@ export function IdeaCard({
                   <TooltipContent side="bottom">Undo</TooltipContent>
                 </Tooltip>
               )}
-              {canRefine && (
+              {showRefineButton && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <motion.button
@@ -445,7 +472,7 @@ export function IdeaCard({
                   {isExpanded ? "Collapse" : "Expand"}
                 </TooltipContent>
               </Tooltip>
-              {isOwnCard && (
+              {allowDelete && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <motion.button
@@ -480,8 +507,8 @@ export function IdeaCard({
             />
           ) : (
             <div
-              onClick={() => isOwnCard && setIsEditing(true)}
-              className={`overflow-y-auto leading-relaxed ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} ${isOwnCard ? "cursor-text" : "cursor-default"} transition-all duration-200 ${isExpanded ? "min-h-[120px] sm:min-h-[200px] max-h-[300px] sm:max-h-[400px]" : "min-h-[60px] sm:min-h-[80px] max-h-[120px] sm:max-h-[160px]"}`}
+              onClick={() => allowEdit && setIsEditing(true)}
+              className={`overflow-y-auto leading-relaxed ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} ${allowEdit ? "cursor-text" : "cursor-default"} transition-all duration-200 ${isExpanded ? "min-h-[120px] sm:min-h-[200px] max-h-[300px] sm:max-h-[400px]" : "min-h-[60px] sm:min-h-[80px] max-h-[120px] sm:max-h-[160px]"}`}
             >
               {card.content ? (
                 <Markdown
@@ -538,7 +565,7 @@ export function IdeaCard({
                 </Markdown>
               ) : (
                 <span className={mutedTextClass}>
-                  {isOwnCard
+                  {allowEdit
                     ? isMobile
                       ? "Tap to edit..."
                       : "Click to add idea..."
@@ -628,11 +655,11 @@ export function IdeaCard({
                 <TooltipTrigger asChild>
                   <motion.button
                     type="button"
-                    whileTap={canVote ? { scale: 0.85 } : undefined}
+                    whileTap={allowVote ? { scale: 0.85 } : undefined}
                     onClick={handleVote}
-                    disabled={!canVote}
+                    disabled={!allowVote}
                     className={`p-0.5 sm:p-1 rounded-full transition-all ${
-                      !canVote
+                      !allowVote
                         ? "opacity-30 cursor-not-allowed"
                         : hasVoted
                           ? "bg-stone-900/15 text-stone-800"
@@ -647,9 +674,11 @@ export function IdeaCard({
                 <TooltipContent side="top">
                   {isOwnCard
                     ? "Can't vote on your own"
-                    : hasVoted
-                      ? "Remove vote"
-                      : "Vote"}
+                    : session.isLocked
+                      ? "Session is locked"
+                      : hasVoted
+                        ? "Remove vote"
+                        : "Vote"}
                 </TooltipContent>
               </Tooltip>
             </div>
