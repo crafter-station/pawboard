@@ -26,7 +26,27 @@
 
 ```bash
 bun install
-bun dev
+bun run db:push
+cp env.example .env
+```
+
+## Commands
+
+### Development
+
+```bash
+bun run dev          # Start dev server
+bun run build        # Production build
+bun run start        # Start production server
+bun run check        # Run linter
+```
+
+### Database
+
+```bash
+bun run db:generate  # Generate migrations from schema changes
+bun run db:migrate   # Apply pending migrations to database
+bun run db:push      # Sync schema directly to database (dev only)
 ```
 
 ## Tech
