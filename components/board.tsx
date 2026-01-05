@@ -796,7 +796,7 @@ export function Board({
       <div
         ref={canvasRef}
         role="application"
-        aria-label="Idea board canvas - use mouse wheel to pan, Ctrl+scroll to zoom, hold Space+drag to pan"
+        aria-label="Idea board canvas - use mouse wheel to pan, Shift+scroll to pan horizontally, Ctrl+scroll to zoom, hold Space+drag to pan"
         className="relative w-full h-screen overflow-hidden"
         style={{
           cursor: isPanning ? "grabbing" : isSpacePressed ? "grab" : "default",

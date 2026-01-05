@@ -135,7 +135,7 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
     [pan, isSpacePressed],
   );
 
-  // Handle wheel for zoom (Ctrl/Cmd + scroll) or pan (regular scroll)
+  // Handle wheel for zoom (Ctrl/Cmd + scroll), horizontal pan (Shift + scroll) or pan (regular scroll)
   // Using native event listener with { passive: false } to properly prevent browser zoom
   useEffect(() => {
     if (!canvasElement) return;
@@ -150,6 +150,12 @@ export function useCanvasGestures(options: UseCanvasGesturesOptions = {}) {
         const delta = -e.deltaY * 0.003;
         const newZoom = zoom * (1 + delta);
         zoomTo(newZoom, { x: e.clientX, y: e.clientY });
+      } else if (e.shiftKey) {
+        // Shift + scroll = horizontal pan
+        setPan((prev) => ({
+          x: prev.x - e.deltaY, // Use deltaY for horizontal scroll (natural scrolling)
+          y: prev.y,
+        }));
       } else {
         // Regular scroll = pan
         setPan((prev) => ({
