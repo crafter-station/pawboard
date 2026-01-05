@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Trash, Check } from "lucide-react";
+import { Check, Trash } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,12 +12,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import type { Card } from "@/db/schema";
 
 interface CleanupCardsDialogProps {
   cards: Card[];
-  onCleanup: () => Promise<{ success: boolean; deletedCount: number; error?: string }>;
+  onCleanup: () => Promise<{
+    success: boolean;
+    deletedCount: number;
+    error?: string;
+  }>;
   trigger?: React.ReactNode;
 }
 
@@ -33,9 +37,8 @@ export function CleanupCardsDialog({
   const [deletedCount, setDeletedCount] = useState(0);
 
   const emptyCardsCount = useMemo(() => {
-    return cards.filter(
-      (card) => !card.content || card.content.trim() === ""
-    ).length;
+    return cards.filter((card) => !card.content || card.content.trim() === "")
+      .length;
   }, [cards]);
 
   const handleOpenChange = (newOpen: boolean) => {

@@ -31,6 +31,7 @@ import {
   voteCard as voteCardAction,
 } from "@/app/actions";
 import { AddCardButton } from "@/components/add-card-button";
+import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
@@ -46,7 +47,6 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
 import { UserBadge } from "@/components/user-badge";
 import type { Card, Session, SessionRole } from "@/db/schema";
 import { useCanvasGestures } from "@/hooks/use-canvas-gestures";

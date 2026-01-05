@@ -10,12 +10,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "format": "biome format --write .",
-    "format:check": "biome format .",
-    "check": "biome check --write .",
-    "db:push": "bun --env-file .env.local drizzle-kit push",
-    "db:generate": "bun --env-file .env.local drizzle-kit generate",
-    "db:migrate": "bun --env-file .env.local drizzle-kit migrate"
+    "format": "biome format .",
+    "check": "biome check ."
   },
   "dependencies": {
     "@ai-sdk/groq": "^3.0.1",

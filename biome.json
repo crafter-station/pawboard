@@ -22,7 +22,14 @@
     }
   },
   "files": {
-    "includes": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.json"],
-    "experimentalScannerIgnores": ["**/components/ui/**", "**/drizzle/**"]
+    "includes": [
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.js",
+      "**/*.mjs",
+      "**/*.json",
+      "!components/ui",
+      "!drizzle"
+    ]
   }
 }
