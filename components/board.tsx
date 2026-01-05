@@ -25,6 +25,7 @@ import {
   updateSessionSettings,
   deleteSession,
   joinSession,
+  deleteEmptyCards,
 } from "@/app/actions";
 import type { Card, Session, SessionRole } from "@/db/schema";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
@@ -41,6 +42,7 @@ import {
   Menu,
   Lock,
   Settings,
+  Trash,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,6 +54,7 @@ import {
 } from "@/components/ui/drawer";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
 import { SessionSettingsDialog } from "@/components/session-settings-dialog";
+import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
 import { canAddCard } from "@/lib/permissions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -457,6 +460,23 @@ export function Board({
     return { success: false, error: error ?? "Failed to delete session" };
   };
 
+  const handleCleanupEmptyCards = async () => {
+    if (!visitorId) return { success: false, deletedCount: 0, error: "Not logged in" };
+
+    const { deletedIds, deletedCount, error } = await deleteEmptyCards(sessionId, visitorId);
+
+    if (error) {
+      return { success: false, deletedCount: 0, error };
+    }
+
+    // Remove cards locally and broadcast deletions
+    deletedIds.forEach((id) => {
+      removeCard(id);
+    });
+
+    return { success: true, deletedCount };
+  };
+
   // Keyboard shortcut for new card (key "N")
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -574,21 +594,37 @@ export function Board({
           </div>
         )}
         {isSessionCreator && (
-          <SessionSettingsDialog
-            session={session}
-            onUpdateSettings={handleUpdateSessionSettings}
-            onDeleteSession={handleDeleteSession}
-            trigger={
-              <Button
-                variant="outline"
-                size="icon"
-                className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                title="Session Settings"
-              >
-                <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </Button>
-            }
-          />
+          <>
+            <CleanupCardsDialog
+              cards={cards}
+              onCleanup={handleCleanupEmptyCards}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+                  title="Clean up empty cards"
+                >
+                  <Trash className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </Button>
+              }
+            />
+            <SessionSettingsDialog
+              session={session}
+              onUpdateSettings={handleUpdateSessionSettings}
+              onDeleteSession={handleDeleteSession}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+                  title="Session Settings"
+                >
+                  <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </Button>
+              }
+            />
+          </>
         )}
       </div>
 
@@ -725,6 +761,24 @@ export function Board({
               <Pencil className="w-4 h-4" />
               Change your name
             </Button>
+
+            {/* Clean up Empty Cards (Session Creator Only) */}
+            {isSessionCreator && (
+              <CleanupCardsDialog
+                cards={cards}
+                onCleanup={handleCleanupEmptyCards}
+                trigger={
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start gap-3 h-11"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <Trash className="w-4 h-4" />
+                    Clean up empty cards
+                  </Button>
+                }
+              />
+            )}
 
             {/* Command Menu */}
             <Button
