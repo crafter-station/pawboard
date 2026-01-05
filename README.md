@@ -26,8 +26,8 @@
 
 ```bash
 bun install
-bun run db:push
 cp env.example .env
+bun run db:push
 ```
 
 ## Commands
