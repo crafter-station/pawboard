@@ -33,12 +33,8 @@ export const RealtimeCursors = ({
       {Object.keys(cursors).map((id) => (
         <Cursor
           key={id}
-          className="absolute transition-all ease-out"
-          style={{
-            transitionDuration: "50ms",
-            left: cursors[id].position.x,
-            top: cursors[id].position.y,
-          }}
+          x={cursors[id].position.x}
+          y={cursors[id].position.y}
           color={cursors[id].color}
           cursorImage={cursors[id].cursorImage}
           name={cursors[id].user.name}
