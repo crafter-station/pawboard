@@ -1,10 +1,10 @@
-import { createClient } from "@/lib/supabase/client";
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
   REALTIME_SUBSCRIBE_STATES,
   RealtimeChannel,
 } from "@supabase/supabase-js";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Card, Session } from "@/db/schema";
+import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 

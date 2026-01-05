@@ -1,10 +1,10 @@
+import Link from "next/link";
 import {
   getOrCreateSession,
   getSessionCards,
   getSessionParticipants,
 } from "@/app/actions";
 import { Board } from "@/components/board";
-import Link from "next/link";
 
 interface Props {
   params: Promise<{ sessionId: string }>;

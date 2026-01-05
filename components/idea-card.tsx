@@ -1,45 +1,45 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useTheme } from "next-themes";
-import Image from "next/image";
 import NumberFlow from "@number-flow/react";
-import { motion, AnimatePresence } from "motion/react";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  Check,
+  ChevronUp,
+  Copy,
+  GripVertical,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+  Undo2,
+  X,
+} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import Image from "next/image";
+import { useTheme } from "next-themes";
+import { useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
-  TooltipTrigger,
   TooltipProvider,
+  TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { Card, Session, SessionRole } from "@/db/schema";
 import {
-  X,
-  GripVertical,
-  ChevronUp,
-  Sparkles,
-  Loader2,
-  Undo2,
-  Maximize2,
-  Minimize2,
-  Copy,
-  Check,
-} from "lucide-react";
-import Markdown from "react-markdown";
-import { getAvatarForUser } from "@/lib/utils";
-import {
+  canChangeColor,
+  canDeleteCard,
   canEditCard,
   canMoveCard,
-  canDeleteCard,
-  canChangeColor,
   canRefine,
   canVote,
 } from "@/lib/permissions";
-import type { Card, Session, SessionRole } from "@/db/schema";
+import { getAvatarForUser } from "@/lib/utils";
 
 const LIGHT_COLORS = ["#D4B8F0", "#FFCAB0", "#C4EDBA", "#C5E8EC", "#F9E9A8"];
 
@@ -356,8 +356,6 @@ export function IdeaCard({
       onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
     >
-
-
       <div
         className="rounded-lg shadow-lg transition-shadow hover:shadow-xl"
         style={{ backgroundColor: displayColor }}
@@ -389,7 +387,7 @@ export function IdeaCard({
                     <TooltipContent side="bottom">Color</TooltipContent>
                   </Tooltip>
                   <PopoverContent
-                    className="w-auto p-2 z-[1001]"
+                    className="w-auto p-2 z-1001"
                     align="end"
                     sideOffset={5}
                     onMouseDown={(e) => e.stopPropagation()}
@@ -511,13 +509,13 @@ export function IdeaCard({
               value={card.content}
               onChange={handleContentChange}
               onBlur={handleContentBlur}
-              className={`resize-none bg-transparent border-none p-0 leading-relaxed ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-all duration-200 ${isExpanded ? "min-h-[120px] sm:min-h-[200px] max-h-[300px] sm:max-h-[400px]" : "min-h-[60px] sm:min-h-[80px] max-h-[120px] sm:max-h-[160px]"}`}
+              className={`resize-none bg-transparent border-none p-0 leading-relaxed ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-all duration-200 ${isExpanded ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100" : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"}`}
               placeholder="Type your idea..."
             />
           ) : (
             <div
               onClick={() => allowEdit && setIsEditing(true)}
-              className={`overflow-y-auto leading-relaxed ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} ${allowEdit ? "cursor-text" : "cursor-default"} transition-all duration-200 ${isExpanded ? "min-h-[120px] sm:min-h-[200px] max-h-[300px] sm:max-h-[400px]" : "min-h-[60px] sm:min-h-[80px] max-h-[120px] sm:max-h-[160px]"}`}
+              className={`overflow-y-auto leading-relaxed ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} ${allowEdit ? "cursor-text" : "cursor-default"} transition-all duration-200 ${isExpanded ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100" : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"}`}
             >
               {card.content ? (
                 <Markdown
@@ -641,7 +639,7 @@ export function IdeaCard({
               className="w-4 h-4 sm:w-5 sm:h-5"
             />
             <span
-              className={`text-[10px] sm:text-[11px] ${mutedTextClass} truncate max-w-[55px] sm:max-w-[80px] font-medium`}
+              className={`text-[10px] sm:text-[11px] ${mutedTextClass} truncate max-w-13.75 sm:max-w-20 font-medium`}
             >
               {creatorName}
             </span>

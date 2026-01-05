@@ -82,12 +82,8 @@
           "name": "cards_session_id_sessions_id_fk",
           "tableFrom": "cards",
           "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -95,12 +91,8 @@
           "name": "cards_created_by_id_users_id_fk",
           "tableFrom": "cards",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -148,12 +140,8 @@
           "name": "session_participants_user_id_users_id_fk",
           "tableFrom": "session_participants",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -161,12 +149,8 @@
           "name": "session_participants_session_id_sessions_id_fk",
           "tableFrom": "session_participants",
           "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -174,10 +158,7 @@
       "compositePrimaryKeys": {
         "session_participants_user_id_session_id_pk": {
           "name": "session_participants_user_id_session_id_pk",
-          "columns": [
-            "user_id",
-            "session_id"
-          ]
+          "columns": ["user_id", "session_id"]
         }
       },
       "uniqueConstraints": {},

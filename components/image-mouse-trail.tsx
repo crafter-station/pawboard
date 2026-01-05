@@ -1,7 +1,7 @@
 "use client";
 
-import { cn } from "@/lib/utils";
 import { createRef, ReactNode, useRef } from "react";
+import { cn } from "@/lib/utils";
 
 interface ImageMouseTrailProps {
   items: string[];

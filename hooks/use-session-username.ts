@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getOrCreateUser,
-  updateUsername as updateUsernameAction,
   joinSession,
+  updateUsername as updateUsernameAction,
 } from "@/app/actions";
 
 interface UseSessionUsernameProps {

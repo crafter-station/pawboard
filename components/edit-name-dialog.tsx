@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { Pencil } from "lucide-react";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +12,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const DEFAULT_MIN_LENGTH = 2;

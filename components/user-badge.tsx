@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import { Pencil } from "lucide-react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 interface UserBadgeProps {

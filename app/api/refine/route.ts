@@ -1,8 +1,8 @@
 import { createGroq } from "@ai-sdk/groq";
 import { generateText } from "ai";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cards, sessions } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import { canRefine } from "@/lib/permissions";
 
 const groq = createGroq({

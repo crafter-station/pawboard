@@ -1,9 +1,9 @@
-import { createClient } from "@/lib/supabase/client";
 import {
-  RealtimeChannel,
   REALTIME_SUBSCRIBE_STATES,
+  RealtimeChannel,
 } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 interface Point {
   x: number;

@@ -1,7 +1,8 @@
 "use client";
 
+import { Lock, Move, Settings, Trash, Trash2, Unlock } from "lucide-react";
 import { useState } from "react";
-import { Settings, Lock, Unlock, Trash2, Move, Trash } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,8 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import type { Session, MovePermission, DeletePermission } from "@/db/schema";
+import type { DeletePermission, MovePermission, Session } from "@/db/schema";
 
 interface SessionSettingsDialogProps {
   session: Session;

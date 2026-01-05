@@ -1,47 +1,41 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useTheme } from "next-themes";
-import { useRealtimeCards } from "@/hooks/use-realtime-cards";
-import { useFingerprint } from "@/hooks/use-fingerprint";
-import { useCatSound } from "@/hooks/use-cat-sound";
-import { useCanvasGestures } from "@/hooks/use-canvas-gestures";
-import { useSessionUsername } from "@/hooks/use-session-username";
-import { RealtimeCursors } from "@/components/realtime-cursors";
-import { IdeaCard } from "@/components/idea-card";
-import { UserBadge } from "@/components/user-badge";
-import { EditNameDialog } from "@/components/edit-name-dialog";
-import { AddCardButton } from "@/components/add-card-button";
-import { CommandMenu } from "@/components/command-menu";
-import { ParticipantsDialog } from "@/components/participants-dialog";
-import { generateCardId } from "@/lib/nanoid";
-import { getAvatarForUser } from "@/lib/utils";
 import {
-  createCard,
-  updateCard,
-  deleteCard,
-  voteCard as voteCardAction,
-  updateSessionName,
-  updateSessionSettings,
-  deleteSession,
-  joinSession,
-} from "@/app/actions";
-import type { Card, Session, SessionRole } from "@/db/schema";
-import type { SessionSettings } from "@/hooks/use-realtime-cards";
-import {
-  Share2,
-  Home,
-  Plus,
+  Check,
   Command,
   Copy,
-  Check,
-  Minus,
-  Maximize2,
-  Pencil,
-  Menu,
+  Home,
   Lock,
+  Maximize2,
+  Menu,
+  Minus,
+  Pencil,
+  Plus,
   Settings,
+  Share2,
 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createCard,
+  deleteCard,
+  deleteSession,
+  joinSession,
+  updateCard,
+  updateSessionName,
+  updateSessionSettings,
+  voteCard as voteCardAction,
+} from "@/app/actions";
+import { AddCardButton } from "@/components/add-card-button";
+import { CommandMenu } from "@/components/command-menu";
+import { EditNameDialog } from "@/components/edit-name-dialog";
+import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
+import { IdeaCard } from "@/components/idea-card";
+import { ParticipantsDialog } from "@/components/participants-dialog";
+import { RealtimeCursors } from "@/components/realtime-cursors";
+import { SessionSettingsDialog } from "@/components/session-settings-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -50,11 +44,17 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
-import { SessionSettingsDialog } from "@/components/session-settings-dialog";
+import { UserBadge } from "@/components/user-badge";
+import type { Card, Session, SessionRole } from "@/db/schema";
+import { useCanvasGestures } from "@/hooks/use-canvas-gestures";
+import { useCatSound } from "@/hooks/use-cat-sound";
+import { useFingerprint } from "@/hooks/use-fingerprint";
+import type { SessionSettings } from "@/hooks/use-realtime-cards";
+import { useRealtimeCards } from "@/hooks/use-realtime-cards";
+import { useSessionUsername } from "@/hooks/use-session-username";
+import { generateCardId } from "@/lib/nanoid";
 import { canAddCard } from "@/lib/permissions";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { getAvatarForUser } from "@/lib/utils";
 
 const LIGHT_COLORS = ["#D4B8F0", "#FFCAB0", "#C4EDBA", "#C5E8EC", "#F9E9A8"];
 
@@ -562,14 +562,14 @@ export function Board({
           <button
             type="button"
             onClick={() => setEditSessionNameOpen(true)}
-            className="group flex items-center gap-2 bg-card/80 backdrop-blur-sm px-3 sm:px-4 h-8 sm:h-9 rounded-lg border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer max-w-[120px] sm:max-w-xs"
+            className="group flex items-center gap-2 bg-card/80 backdrop-blur-sm px-3 sm:px-4 h-8 sm:h-9 rounded-lg border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer max-w-30 sm:max-w-xs"
             title="Click to rename board"
           >
             <span className="text-sm font-medium truncate">{session.name}</span>
             <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity shrink-0 hidden sm:block" />
           </button>
         ) : (
-          <div className="flex items-center gap-2 bg-card/80 backdrop-blur-sm px-3 sm:px-4 h-8 sm:h-9 rounded-lg border border-border shadow-xs max-w-[120px] sm:max-w-xs">
+          <div className="flex items-center gap-2 bg-card/80 backdrop-blur-sm px-3 sm:px-4 h-8 sm:h-9 rounded-lg border border-border shadow-xs max-w-30 sm:max-w-xs">
             <span className="text-sm font-medium truncate">{session.name}</span>
           </div>
         )}

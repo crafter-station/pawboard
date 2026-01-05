@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { motion } from "motion/react";
-import { useCatSound } from "@/hooks/use-cat-sound";
+import { useEffect, useState } from "react";
 import { GithubLogo } from "@/components/logos/github";
+import { useCatSound } from "@/hooks/use-cat-sound";
 
 export function GithubBadge() {
   const [githubStars, setGithubStars] = useState<number | null>(null);

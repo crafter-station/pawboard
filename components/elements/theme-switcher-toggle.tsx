@@ -1,14 +1,12 @@
 "use client";
 
-import type React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
-
 import { MoonIcon, SunIcon } from "lucide-react";
 import { useTheme } from "next-themes";
-
+import type React from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useCatSound } from "@/hooks/use-cat-sound";
 import { cn } from "@/lib/utils";
 import { useThemeStore } from "@/stores/theme-store";
-import { useCatSound } from "@/hooks/use-cat-sound";
 
 interface ThemeSwitcherToggleProps
   extends React.HTMLAttributes<HTMLDivElement> {

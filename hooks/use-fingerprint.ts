@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import FingerprintJS from "@fingerprintjs/fingerprintjs";
+import { useEffect, useState } from "react";
 
 const STORAGE_KEY = "pawboard_user_id";
 

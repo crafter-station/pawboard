@@ -1,26 +1,26 @@
 "use server";
 
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { sessions, cards, sessionParticipants, users } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
-import { generateUsername, generateSessionName } from "@/lib/names";
+import type {
+  Card,
+  DeletePermission,
+  MovePermission,
+  NewCard,
+  Session,
+  SessionRole,
+  User,
+} from "@/db/schema";
+import { cards, sessionParticipants, sessions, users } from "@/db/schema";
+import { generateSessionName, generateUsername } from "@/lib/names";
 import {
   canAddCard,
+  canChangeColor,
   canDeleteCard,
   canEditCard,
   canMoveCard,
   canVote,
-  canChangeColor,
 } from "@/lib/permissions";
-import type {
-  Card,
-  NewCard,
-  User,
-  Session,
-  SessionRole,
-  MovePermission,
-  DeletePermission,
-} from "@/db/schema";
 
 // Session Actions
 

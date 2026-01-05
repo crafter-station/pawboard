@@ -1,21 +1,21 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { ArrowRight } from "lucide-react";
 import Image from "next/image";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
-import { generateSessionId } from "@/lib/nanoid";
-import { CrafterStationLogo } from "@/components/logos/crafter-station";
-import { MoralejaDesignLogo } from "@/components/logos/moraleja-design";
-import { KeboLogo } from "@/components/logos/kebo";
-import { SupabaseLogo } from "@/components/logos/supabase";
 import { GithubBadge } from "@/components/github-badge";
 import { ImageMouseTrail } from "@/components/image-mouse-trail";
+import { CrafterStationLogo } from "@/components/logos/crafter-station";
+import { KeboLogo } from "@/components/logos/kebo";
+import { MoralejaDesignLogo } from "@/components/logos/moraleja-design";
+import { SupabaseLogo } from "@/components/logos/supabase";
 import { PawboardHero } from "@/components/pawboard-hero";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useCatSound } from "@/hooks/use-cat-sound";
-import { ArrowRight } from "lucide-react";
+import { generateSessionId } from "@/lib/nanoid";
 
 const cursorImages = [
   "/paw-cursor-black.png",

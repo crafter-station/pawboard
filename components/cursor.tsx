@@ -1,6 +1,6 @@
 import { motion } from "motion/react";
-import { cn } from "@/lib/utils";
 import Image from "next/image";
+import { cn } from "@/lib/utils";
 
 function getContrastColor(hexColor: string): string {
   const hex = hexColor.replace("#", "");

@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { db } from "./index";
 import {
-  sessions,
-  cards,
-  type NewSession,
-  type NewCard,
   type Card,
+  cards,
+  type NewCard,
+  type NewSession,
+  sessions,
 } from "./schema";
 
 export async function createSession(data: NewSession) {
