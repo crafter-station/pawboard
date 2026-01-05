@@ -18,8 +18,9 @@ bun start               # Start production server
 bun lint                # Run ESLint
 
 # Database
-bunx drizzle-kit push   # Push schema to database
-bunx drizzle-kit generate  # Generate migrations
+bun db:push             # Push schema to database
+bun db:generate         # Generate migrations
+bun db:migrate          # Apply migrations
 ```
 
 **Note:** No test framework is configured. When adding tests, use Vitest or Jest with React Testing Library.
