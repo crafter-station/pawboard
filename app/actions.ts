@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import type {
   Card,
@@ -593,5 +593,78 @@ export async function deleteCard(
   } catch (error) {
     console.error("Database error in deleteCard:", error);
     return { success: false, error: "Failed to delete card" };
+  }
+}
+
+export async function deleteEmptyCards(
+  sessionId: string,
+  userId: string,
+): Promise<{
+  deletedIds: string[];
+  deletedCount: number;
+  error: string | null;
+}> {
+  try {
+    // Check if user is session creator
+    const userRole = await getUserRoleInSession(userId, sessionId);
+    if (userRole !== "creator") {
+      return {
+        deletedIds: [],
+        deletedCount: 0,
+        error: "Only the session creator can clean up empty cards",
+      };
+    }
+
+    // Get session to verify it exists
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, sessionId),
+    });
+
+    if (!session) {
+      return {
+        deletedIds: [],
+        deletedCount: 0,
+        error: "Session not found",
+      };
+    }
+
+    // Find all empty cards (content is empty or whitespace only)
+    const allCards = await db.query.cards.findMany({
+      where: eq(cards.sessionId, sessionId),
+    });
+
+    // Filter for empty cards that the user has permission to delete
+    // Session creators (which we already verified) can always delete any card
+    const emptyCardsToDelete = allCards.filter(
+      (card: Card) =>
+        (!card.content || card.content.trim() === "") &&
+        canDeleteCard(session, card, userId, userRole),
+    );
+
+    const emptyCardIds = emptyCardsToDelete.map((card: Card) => card.id);
+
+    if (emptyCardIds.length === 0) {
+      return {
+        deletedIds: [],
+        deletedCount: 0,
+        error: null,
+      };
+    }
+
+    // Delete all empty cards
+    await db.delete(cards).where(inArray(cards.id, emptyCardIds));
+
+    return {
+      deletedIds: emptyCardIds,
+      deletedCount: emptyCardIds.length,
+      error: null,
+    };
+  } catch (error) {
+    console.error("Database error in deleteEmptyCards:", error);
+    return {
+      deletedIds: [],
+      deletedCount: 0,
+      error: "Failed to delete empty cards",
+    };
   }
 }
