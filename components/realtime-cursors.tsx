@@ -38,6 +38,7 @@ export const RealtimeCursors = ({
           color={cursors[id].color}
           cursorImage={cursors[id].cursorImage}
           name={cursors[id].user.name}
+          timestamp={cursors[id].timestamp}
         />
       ))}
     </div>
