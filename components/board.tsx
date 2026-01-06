@@ -949,14 +949,29 @@ export function Board({
         {/* Empty state - stays centered in viewport */}
         {cards.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center text-muted-foreground">
-              <p className="text-lg">No ideas yet</p>
-              <p className="text-sm mt-1">
-                Press{" "}
-                <kbd className="px-1.5 py-0.5 rounded bg-muted text-xs font-mono">
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto mb-4 opacity-20">
+                <img src="/cat-purple.svg" alt="" className="w-full h-full" />
+              </div>
+              <p className="text-lg text-muted-foreground mb-1">
+                Your board is empty
+              </p>
+              <p className="text-sm text-muted-foreground/70 mb-4">
+                Drop your first idea and watch it grow
+              </p>
+              <button
+                type="button"
+                onClick={handleAddCard}
+                className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Add first idea
+              </button>
+              <p className="text-xs text-muted-foreground/50 mt-3">
+                or press{" "}
+                <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
                   ⌘K
-                </kbd>{" "}
-                or click + to add one
+                </kbd>
               </p>
             </div>
           </div>
