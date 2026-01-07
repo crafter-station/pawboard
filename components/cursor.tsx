@@ -11,8 +11,6 @@ function getContrastColor(hexColor: string): string {
   return luminance > 0.6 ? "#1a1a1a" : "#ffffff";
 }
 
-const ACTIVE_THRESHOLD_MS = 3000;
-
 export const Cursor = ({
   className,
   x,
@@ -20,7 +18,6 @@ export const Cursor = ({
   color,
   cursorImage,
   name,
-  timestamp,
 }: {
   className?: string;
   x: number;
@@ -28,10 +25,8 @@ export const Cursor = ({
   color: string;
   cursorImage: string;
   name: string;
-  timestamp?: number;
 }) => {
   const textColor = getContrastColor(color);
-  const isActive = timestamp ? Date.now() - timestamp < ACTIVE_THRESHOLD_MS : false;
 
   return (
     <motion.div
@@ -45,38 +40,19 @@ export const Cursor = ({
         stiffness: 350,
       }}
     >
-      <div className="relative">
-        {isActive && (
-          <motion.div
-            className="absolute -inset-2 rounded-full"
-            style={{ backgroundColor: color }}
-            initial={{ opacity: 0.6, scale: 1 }}
-            animate={{ opacity: 0, scale: 1.5 }}
-            transition={{
-              duration: 1,
-              repeat: Number.POSITIVE_INFINITY,
-              ease: "easeOut",
-            }}
-          />
-        )}
-        <Image
-          src={cursorImage}
-          alt="cursor"
-          width={56}
-          height={56}
-          className="drop-shadow-md relative"
-        />
-      </div>
+      <Image
+        src={cursorImage}
+        alt="cursor"
+        width={56}
+        height={56}
+        className="drop-shadow-md"
+      />
 
       <div
-        className={cn(
-          "mt-1 px-2.5 py-1 rounded-full text-xs font-semibold text-center shadow-md border border-black/10 transition-all",
-          isActive && "ring-2 ring-offset-1"
-        )}
+        className="mt-1 px-2.5 py-1 rounded-full text-xs font-semibold text-center shadow-md border border-black/10"
         style={{
           backgroundColor: color,
           color: textColor,
-          ["--tw-ring-color" as string]: isActive ? color : undefined,
         }}
       >
         {name}

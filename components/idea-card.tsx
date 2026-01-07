@@ -60,19 +60,6 @@ const COLOR_MAP: Record<string, string> = {
   "#D4C468": "#F9E9A8",
 };
 
-const COLOR_TO_CAT: Record<string, string> = {
-  "#D4B8F0": "purple",
-  "#9B7BC7": "purple",
-  "#FFCAB0": "yellow",
-  "#E8936A": "yellow",
-  "#C4EDBA": "green",
-  "#7BC96A": "green",
-  "#C5E8EC": "blue",
-  "#7ABCC5": "blue",
-  "#F9E9A8": "yellow",
-  "#D4C468": "yellow",
-};
-
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
 
 interface Point {
@@ -186,7 +173,7 @@ export function IdeaCard({
   };
 
   const displayColor = getDisplayColor(card.color);
-  const catType = COLOR_TO_CAT[card.color] || "yellow";
+  const creatorAvatar = getAvatarForUser(card.createdById);
 
   const handleDragStart = (clientX: number, clientY: number) => {
     if (!allowMove) return;
@@ -389,10 +376,11 @@ export function IdeaCard({
         className="rounded-lg shadow-lg transition-shadow hover:shadow-xl relative overflow-hidden"
         style={{ backgroundColor: displayColor }}
       >
+        {/* Cat silhouette background based on card creator's avatar */}
         <div
           className="absolute bottom-1 right-1 w-16 h-16 sm:w-20 sm:h-20 opacity-[0.08] pointer-events-none"
           style={{
-            backgroundImage: `url(/cat-${catType}.svg)`,
+            backgroundImage: `url(${creatorAvatar})`,
             backgroundSize: "contain",
             backgroundRepeat: "no-repeat",
             backgroundPosition: "bottom right",

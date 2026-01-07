@@ -951,7 +951,11 @@ export function Board({
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 opacity-20">
-                <img src="/cat-purple.svg" alt="" className="w-full h-full" />
+                <img
+                  src={visitorId ? getAvatarForUser(visitorId) : "/cat-purple.svg"}
+                  alt=""
+                  className="w-full h-full"
+                />
               </div>
               <p className="text-lg text-muted-foreground mb-1">
                 Your board is empty
@@ -962,7 +966,8 @@ export function Board({
               <button
                 type="button"
                 onClick={handleAddCard}
-                className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+                disabled={isLocked}
+                className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
                 Add first idea
@@ -970,7 +975,7 @@ export function Board({
               <p className="text-xs text-muted-foreground/50 mt-3">
                 or press{" "}
                 <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
-                  ⌘K
+                  N
                 </kbd>
               </p>
             </div>
