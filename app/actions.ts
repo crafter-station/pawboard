@@ -19,6 +19,7 @@ import {
   canDeleteCard,
   canEditCard,
   canMoveCard,
+  canReact,
   canVote,
 } from "@/lib/permissions";
 
@@ -551,6 +552,74 @@ export async function voteCard(
   } catch (error) {
     console.error("Database error in voteCard:", error);
     return { card: null, action: "denied", error: "Failed to vote on card" };
+  }
+}
+
+export async function toggleReaction(
+  cardId: string,
+  emoji: string,
+  userId: string,
+): Promise<{
+  card: Card | null;
+  action: "added" | "removed" | "denied";
+  error: string | null;
+}> {
+  try {
+    const existing = await db.query.cards.findFirst({
+      where: eq(cards.id, cardId),
+    });
+
+    if (!existing) {
+      return { card: null, action: "denied", error: "Card not found" };
+    }
+
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, existing.sessionId),
+    });
+
+    if (!session) {
+      return { card: null, action: "denied", error: "Session not found" };
+    }
+
+    if (!canReact(session, existing, userId)) {
+      if (existing.createdById === userId) {
+        return { card: existing, action: "denied", error: null };
+      }
+      return {
+        card: existing,
+        action: "denied",
+        error: "Session is locked. Cannot react.",
+      };
+    }
+
+    const reactions = existing.reactions || {};
+    const emojiReactions = reactions[emoji] || [];
+    const hasReacted = emojiReactions.includes(userId);
+
+    let newEmojiReactions: string[];
+    if (hasReacted) {
+      newEmojiReactions = emojiReactions.filter((id) => id !== userId);
+    } else {
+      newEmojiReactions = [...emojiReactions, userId];
+    }
+
+    const newReactions = { ...reactions };
+    if (newEmojiReactions.length === 0) {
+      delete newReactions[emoji];
+    } else {
+      newReactions[emoji] = newEmojiReactions;
+    }
+
+    const [card] = await db
+      .update(cards)
+      .set({ reactions: newReactions, updatedAt: new Date() })
+      .where(eq(cards.id, cardId))
+      .returning();
+
+    return { card, action: hasReacted ? "removed" : "added", error: null };
+  } catch (error) {
+    console.error("Database error in toggleReaction:", error);
+    return { card: null, action: "denied", error: "Failed to toggle reaction" };
   }
 }
 

@@ -9,6 +9,7 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  Smile,
   Sparkles,
   Undo2,
   X,
@@ -36,6 +37,7 @@ import {
   canDeleteCard,
   canEditCard,
   canMoveCard,
+  canReact,
   canRefine,
   canVote,
 } from "@/lib/permissions";
@@ -58,6 +60,8 @@ const COLOR_MAP: Record<string, string> = {
   "#D4C468": "#F9E9A8",
 };
 
+const REACTION_EMOJIS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
+
 interface Point {
   x: number;
   y: number;
@@ -76,6 +80,7 @@ interface IdeaCardProps {
   onChangeColor: (id: string, color: string) => void;
   onDelete: (id: string) => void;
   onVote: (id: string) => void;
+  onReact: (id: string, emoji: string) => void;
   onPersistContent: (id: string, content: string) => void;
   onPersistMove: (id: string, x: number, y: number) => void;
   onPersistColor: (id: string, color: string) => void;
@@ -98,6 +103,7 @@ export function IdeaCard({
   onChangeColor,
   onDelete,
   onVote,
+  onReact,
   onPersistContent,
   onPersistMove,
   onPersistColor,
@@ -134,6 +140,7 @@ export function IdeaCard({
   const allowChangeColor = canChangeColor(session, card, visitorId);
   const allowRefine = canRefine(session, card, visitorId);
   const allowVote = canVote(session, card, visitorId);
+  const allowReact = canReact(session, card, visitorId);
 
   useEffect(() => {
     setMounted(true);
@@ -166,6 +173,7 @@ export function IdeaCard({
   };
 
   const displayColor = getDisplayColor(card.color);
+  const creatorAvatar = getAvatarForUser(card.createdById);
 
   const handleDragStart = (clientX: number, clientY: number) => {
     if (!allowMove) return;
@@ -270,6 +278,12 @@ export function IdeaCard({
     }
   };
 
+  const handleReact = (emoji: string) => {
+    if (allowReact) {
+      onReact(card.id, emoji);
+    }
+  };
+
   const handleRefine = async () => {
     if (!card.content.trim() || isRefining || !allowRefine) return;
 
@@ -322,12 +336,14 @@ export function IdeaCard({
     }
   };
 
-  const textColorClass = "text-stone-800";
-  const mutedTextClass = "text-stone-600";
-  const borderClass = "border-stone-900/10";
-  const iconClass = isDark ? "text-stone-300/70" : "text-stone-500";
-  const iconActiveClass = isDark ? "text-stone-100" : "text-stone-700";
-  const hoverBgClass = isDark ? "hover:bg-white/10" : "hover:bg-stone-900/8";
+  const isPurpleCard = card.color === "#D4B8F0" || card.color === "#9B7BC7";
+  const isPurpleDark = isPurpleCard && isDark;
+  const textColorClass = isPurpleDark ? "text-white" : "text-stone-800";
+  const mutedTextClass = isPurpleDark ? "text-white/70" : "text-stone-600";
+  const borderClass = isPurpleDark ? "border-white/20" : "border-stone-900/10";
+  const iconClass = isPurpleDark ? "text-white/80" : "text-stone-500";
+  const iconActiveClass = isPurpleDark ? "text-white" : "text-stone-700";
+  const hoverBgClass = isPurpleDark ? "hover:bg-white/15" : "hover:bg-stone-900/8";
   const actionsBgClass = isDark
     ? isMobile
       ? "bg-black/10"
@@ -357,14 +373,24 @@ export function IdeaCard({
       onTouchStart={handleTouchStart}
     >
       <div
-        className="rounded-lg shadow-lg transition-shadow hover:shadow-xl"
+        className="rounded-lg shadow-lg transition-shadow hover:shadow-xl relative overflow-hidden"
         style={{ backgroundColor: displayColor }}
       >
+        {/* Cat silhouette background based on card creator's avatar */}
+        <div
+          className="absolute bottom-1 right-1 w-16 h-16 sm:w-20 sm:h-20 opacity-[0.08] pointer-events-none"
+          style={{
+            backgroundImage: `url(${creatorAvatar})`,
+            backgroundSize: "contain",
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "bottom right",
+          }}
+        />
         <div
           className={`flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 border-b ${borderClass}`}
         >
           <GripVertical
-            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${isDark ? "opacity-50" : "opacity-40"}`}
+            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${isPurpleDark ? "opacity-70" : isDark ? "opacity-50" : "opacity-40"}`}
           />
           <TooltipProvider delayDuration={400}>
             <div
@@ -499,7 +525,8 @@ export function IdeaCard({
           </TooltipProvider>
         </div>
         <div
-          className="p-2.5 sm:p-3.5 relative"
+          className="p-2.5 sm:p-3.5 relative transition-all duration-200"
+          style={isEditing ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" } : undefined}
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
@@ -509,7 +536,7 @@ export function IdeaCard({
               value={card.content}
               onChange={handleContentChange}
               onBlur={handleContentBlur}
-              className={`resize-none bg-transparent border-none p-0 leading-relaxed ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-all duration-200 ${isExpanded ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100" : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"}`}
+              className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-all duration-200 w-full h-full ${isExpanded ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100" : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"}`}
               placeholder="Type your idea..."
             />
           ) : (
@@ -627,6 +654,38 @@ export function IdeaCard({
             </TooltipProvider>
           )}
         </div>
+        {Object.keys(card.reactions).length > 0 && (
+          <div
+            className={`flex flex-wrap gap-1 px-2.5 sm:px-3.5 py-1.5 border-t ${borderClass}`}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            {Object.entries(card.reactions).map(([emoji, userIds]) => {
+              const hasReacted = userIds.includes(visitorId);
+              return (
+                <motion.button
+                  key={emoji}
+                  type="button"
+                  onClick={() => handleReact(emoji)}
+                  disabled={!allowReact && !hasReacted}
+                  whileTap={{ scale: 0.9 }}
+                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] sm:text-[11px] transition-all ${
+                    hasReacted
+                      ? "bg-stone-900/15 cursor-pointer"
+                      : allowReact
+                        ? `${hoverBgClass} cursor-pointer`
+                        : "opacity-50 cursor-default"
+                  }`}
+                >
+                  <span>{emoji}</span>
+                  <span className={`font-medium ${mutedTextClass}`}>
+                    {userIds.length}
+                  </span>
+                </motion.button>
+              );
+            })}
+          </div>
+        )}
         <div
           className={`flex items-center justify-between px-2.5 sm:px-3.5 py-2 sm:py-2.5 border-t ${borderClass}`}
         >
@@ -650,6 +709,56 @@ export function IdeaCard({
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             >
+              {allowReact && (
+                <Popover>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PopoverTrigger asChild>
+                        <motion.button
+                          type="button"
+                          whileTap={{ scale: 0.9 }}
+                          whileHover={{ scale: 1.1 }}
+                          className={`p-0.5 sm:p-1 rounded-full ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"} ${hoverBgClass} transition-all cursor-pointer`}
+                        >
+                          <Smile
+                            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
+                          />
+                        </motion.button>
+                      </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">React</TooltipContent>
+                  </Tooltip>
+                  <PopoverContent
+                    className="w-auto p-1.5 z-1001"
+                    align="end"
+                    sideOffset={5}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex gap-1">
+                      {REACTION_EMOJIS.map((emoji) => {
+                        const hasReacted =
+                          card.reactions[emoji]?.includes(visitorId) || false;
+                        return (
+                          <motion.button
+                            key={emoji}
+                            type="button"
+                            onClick={() => handleReact(emoji)}
+                            whileTap={{ scale: 0.85 }}
+                            whileHover={{ scale: 1.15 }}
+                            className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md text-base sm:text-lg transition-all cursor-pointer ${
+                              hasReacted
+                                ? "bg-stone-900/15"
+                                : "hover:bg-stone-100 dark:hover:bg-stone-800"
+                            }`}
+                          >
+                            {emoji}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
               <span
                 className={`text-[10px] sm:text-[11px] font-semibold tabular-nums ${mutedTextClass}`}
               >
@@ -669,12 +778,12 @@ export function IdeaCard({
                       !allowVote
                         ? "opacity-30 cursor-not-allowed"
                         : hasVoted
-                          ? "bg-stone-900/15 text-stone-800"
+                          ? isPurpleDark ? "bg-white/20 text-white" : "bg-stone-900/15 text-stone-800"
                           : `${hoverBgClass} cursor-pointer`
                     }`}
                   >
                     <ChevronUp
-                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${hasVoted ? "text-stone-800" : iconClass}`}
+                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${hasVoted ? (isPurpleDark ? "text-white" : "text-stone-800") : iconClass}`}
                     />
                   </motion.button>
                 </TooltipTrigger>
