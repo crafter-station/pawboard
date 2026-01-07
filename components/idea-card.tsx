@@ -349,12 +349,14 @@ export function IdeaCard({
     }
   };
 
-  const textColorClass = "text-stone-800";
-  const mutedTextClass = "text-stone-600";
-  const borderClass = "border-stone-900/10";
-  const iconClass = isDark ? "text-stone-300/70" : "text-stone-500";
-  const iconActiveClass = isDark ? "text-stone-100" : "text-stone-700";
-  const hoverBgClass = isDark ? "hover:bg-white/10" : "hover:bg-stone-900/8";
+  const isPurpleCard = card.color === "#D4B8F0" || card.color === "#9B7BC7";
+  const isPurpleDark = isPurpleCard && isDark;
+  const textColorClass = isPurpleDark ? "text-white" : "text-stone-800";
+  const mutedTextClass = isPurpleDark ? "text-white/70" : "text-stone-600";
+  const borderClass = isPurpleDark ? "border-white/20" : "border-stone-900/10";
+  const iconClass = isPurpleDark ? "text-white/80" : "text-stone-500";
+  const iconActiveClass = isPurpleDark ? "text-white" : "text-stone-700";
+  const hoverBgClass = isPurpleDark ? "hover:bg-white/15" : "hover:bg-stone-900/8";
   const actionsBgClass = isDark
     ? isMobile
       ? "bg-black/10"
@@ -400,7 +402,7 @@ export function IdeaCard({
           className={`flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 border-b ${borderClass}`}
         >
           <GripVertical
-            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${isDark ? "opacity-50" : "opacity-40"}`}
+            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${isPurpleDark ? "opacity-70" : isDark ? "opacity-50" : "opacity-40"}`}
           />
           <TooltipProvider delayDuration={400}>
             <div
@@ -728,7 +730,7 @@ export function IdeaCard({
                           type="button"
                           whileTap={{ scale: 0.9 }}
                           whileHover={{ scale: 1.1 }}
-                          className={`p-0.5 sm:p-1 rounded-full ${hoverBgClass} transition-all cursor-pointer`}
+                          className={`p-0.5 sm:p-1 rounded-full ${isMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100"} ${hoverBgClass} transition-all cursor-pointer`}
                         >
                           <Smile
                             className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
@@ -788,12 +790,12 @@ export function IdeaCard({
                       !allowVote
                         ? "opacity-30 cursor-not-allowed"
                         : hasVoted
-                          ? "bg-stone-900/15 text-stone-800"
+                          ? isPurpleDark ? "bg-white/20 text-white" : "bg-stone-900/15 text-stone-800"
                           : `${hoverBgClass} cursor-pointer`
                     }`}
                   >
                     <ChevronUp
-                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${hasVoted ? "text-stone-800" : iconClass}`}
+                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${hasVoted ? (isPurpleDark ? "text-white" : "text-stone-800") : iconClass}`}
                     />
                   </motion.button>
                 </TooltipTrigger>
