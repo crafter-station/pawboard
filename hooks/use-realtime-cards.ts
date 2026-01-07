@@ -54,6 +54,7 @@ type CardEvent =
   | { type: "card:typing"; id: string; content: string }
   | { type: "card:color"; id: string; color: string }
   | { type: "card:vote"; id: string; votes: number; votedBy: string[] }
+  | { type: "card:react"; id: string; reactions: Record<string, string[]> }
   | { type: "cards:sync"; cards: Card[] }
   | { type: "user:join"; visitorId: string; username: string }
   | { type: "user:rename"; visitorId: string; newUsername: string }
@@ -206,6 +207,16 @@ export function useRealtimeCards(
     [broadcast],
   );
 
+  const reactCard = useCallback(
+    (id: string, reactions: Record<string, string[]>) => {
+      setCards((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, reactions } : c)),
+      );
+      broadcast({ type: "card:react", id, reactions });
+    },
+    [broadcast],
+  );
+
   // Broadcast name change to other participants (no local card update needed - cards reference users table)
   const broadcastNameChange = useCallback(
     (visitorId: string, newUsername: string) => {
@@ -302,6 +313,15 @@ export function useRealtimeCards(
                 ),
               );
               break;
+            case "card:react":
+              setCards((prev) =>
+                prev.map((c) =>
+                  c.id === payload.id
+                    ? { ...c, reactions: payload.reactions }
+                    : c,
+                ),
+              );
+              break;
             case "cards:sync":
               setCards((prev) => {
                 const newCards = payload.cards.filter(
@@ -377,6 +397,7 @@ export function useRealtimeCards(
     changeColor,
     removeCard,
     voteCard,
+    reactCard,
     broadcastNameChange,
     broadcastSessionRename,
     broadcastSessionSettings,

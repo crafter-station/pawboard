@@ -25,6 +25,7 @@ import {
   deleteEmptyCards,
   deleteSession,
   joinSession,
+  toggleReaction,
   updateCard,
   updateSessionName,
   updateSessionSettings,
@@ -198,6 +199,7 @@ export function Board({
     changeColor,
     removeCard,
     voteCard,
+    reactCard,
     broadcastNameChange,
     broadcastSessionRename,
     broadcastSessionSettings,
@@ -298,23 +300,30 @@ export function Board({
     const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
     const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
 
-    // Convert screen center to world coordinates
-    const screenCenter = {
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
-    };
-    const worldCenter = screenToWorld(screenCenter);
+    const isFirstCard = cards.length === 0;
 
-    // Random offset (+-100px) to avoid stacking
-    const offsetRange = 100;
-    const x =
-      worldCenter.x -
-      cardWidth / 2 +
-      (Math.random() * offsetRange * 2 - offsetRange);
-    const y =
-      worldCenter.y -
-      cardHeight / 2 +
-      (Math.random() * offsetRange * 2 - offsetRange);
+    let x: number;
+    let y: number;
+
+    if (isFirstCard) {
+      x = -cardWidth / 2;
+      y = -cardHeight / 2;
+    } else {
+      const screenCenter = {
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      };
+      const worldCenter = screenToWorld(screenCenter);
+      const offsetRange = 100;
+      x =
+        worldCenter.x -
+        cardWidth / 2 +
+        (Math.random() * offsetRange * 2 - offsetRange);
+      y =
+        worldCenter.y -
+        cardHeight / 2 +
+        (Math.random() * offsetRange * 2 - offsetRange);
+    }
 
     const cardId = generateCardId();
     const newCard: Card = {
@@ -326,9 +335,14 @@ export function Board({
       y,
       votes: 0,
       votedBy: [],
+      reactions: {},
       createdById: visitorId,
       updatedAt: new Date(),
     };
+
+    if (isFirstCard) {
+      centerOn({ x: 0, y: 0 }, 1);
+    }
 
     setNewCardId(cardId);
     addCard(newCard);
@@ -342,6 +356,8 @@ export function Board({
     sessionId,
     getRandomColor,
     addCard,
+    cards.length,
+    centerOn,
   ]);
 
   const handlePersistContent = async (id: string, content: string) => {
@@ -380,6 +396,33 @@ export function Board({
 
     voteCard(id, newVotes, newVotedBy);
     await voteCardAction(id, visitorId);
+  };
+
+  const handleReact = async (id: string, emoji: string) => {
+    if (!visitorId) return;
+
+    const card = cards.find((c) => c.id === id);
+    if (!card) return;
+
+    if (card.createdById === visitorId) return;
+
+    const currentReactions = card.reactions || {};
+    const usersForEmoji = currentReactions[emoji] || [];
+    const hasReacted = usersForEmoji.includes(visitorId);
+
+    const newUsersForEmoji = hasReacted
+      ? usersForEmoji.filter((u) => u !== visitorId)
+      : [...usersForEmoji, visitorId];
+
+    const newReactions = { ...currentReactions };
+    if (newUsersForEmoji.length === 0) {
+      delete newReactions[emoji];
+    } else {
+      newReactions[emoji] = newUsersForEmoji;
+    }
+
+    reactCard(id, newReactions);
+    await toggleReaction(id, emoji, visitorId);
   };
 
   const handleShare = async () => {
@@ -884,6 +927,7 @@ export function Board({
               onChangeColor={changeColor}
               onDelete={removeCard}
               onVote={handleVote}
+              onReact={handleReact}
               onPersistContent={handlePersistContent}
               onPersistMove={handlePersistMove}
               onPersistColor={handlePersistColor}
@@ -905,14 +949,34 @@ export function Board({
         {/* Empty state - stays centered in viewport */}
         {cards.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center text-muted-foreground">
-              <p className="text-lg">No ideas yet</p>
-              <p className="text-sm mt-1">
-                Press{" "}
-                <kbd className="px-1.5 py-0.5 rounded bg-muted text-xs font-mono">
-                  ⌘K
-                </kbd>{" "}
-                or click + to add one
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto mb-4 opacity-20">
+                <img
+                  src={visitorId ? getAvatarForUser(visitorId) : "/cat-purple.svg"}
+                  alt=""
+                  className="w-full h-full"
+                />
+              </div>
+              <p className="text-lg text-muted-foreground mb-1">
+                Your board is empty
+              </p>
+              <p className="text-sm text-muted-foreground/70 mb-4">
+                Drop your first idea and watch it grow
+              </p>
+              <button
+                type="button"
+                onClick={handleAddCard}
+                disabled={isLocked}
+                className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-4 h-4" />
+                Add first idea
+              </button>
+              <p className="text-xs text-muted-foreground/50 mt-3">
+                or press{" "}
+                <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
+                  N
+                </kbd>
               </p>
             </div>
           </div>

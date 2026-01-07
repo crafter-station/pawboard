@@ -99,6 +99,18 @@ export function canVote(session: Session, card: Card, userId: string): boolean {
 }
 
 /**
+ * Check if user can react to a card with emojis
+ * - Allowed when session is not locked AND user is NOT the card creator
+ */
+export function canReact(
+  session: Session,
+  card: Card,
+  userId: string,
+): boolean {
+  return !session.isLocked && card.createdById !== userId;
+}
+
+/**
  * Check if user can configure session settings
  * - Only session creator can configure settings
  */

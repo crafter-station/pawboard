@@ -63,6 +63,10 @@ export const cards = pgTable("cards", {
   y: real("y").notNull().default(100),
   votes: integer("votes").notNull().default(0),
   votedBy: jsonb("voted_by").$type<string[]>().notNull().default([]),
+  reactions: jsonb("reactions")
+    .$type<Record<string, string[]>>()
+    .notNull()
+    .default({}),
   createdById: text("created_by_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
