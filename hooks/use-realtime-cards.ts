@@ -50,6 +50,7 @@ type CardEvent =
   | { type: "card:add"; card: Card }
   | { type: "card:update"; card: Card }
   | { type: "card:move"; id: string; x: number; y: number }
+  | { type: "cards:batch-move"; moves: Array<{ id: string; x: number; y: number }> }
   | { type: "card:delete"; id: string }
   | { type: "card:typing"; id: string; content: string }
   | { type: "card:color"; id: string; color: string }
@@ -171,6 +172,31 @@ export function useRealtimeCards(
     [throttledBroadcastMove],
   );
 
+  const broadcastBatchMove = useCallback(
+    (moves: Array<{ id: string; x: number; y: number }>) => {
+      broadcast({ type: "cards:batch-move", moves });
+    },
+    [broadcast],
+  );
+
+  const throttledBroadcastBatchMove = useThrottleCallback(
+    broadcastBatchMove,
+    THROTTLE_MS,
+  );
+
+  const moveCards = useCallback(
+    (moves: Array<{ id: string; x: number; y: number }>) => {
+      setCards((prev) =>
+        prev.map((c) => {
+          const move = moves.find((m) => m.id === c.id);
+          return move ? { ...c, x: move.x, y: move.y } : c;
+        }),
+      );
+      throttledBroadcastBatchMove(moves);
+    },
+    [throttledBroadcastBatchMove],
+  );
+
   const typeCard = useCallback(
     (id: string, content: string) => {
       setCards((prev) =>
@@ -287,6 +313,14 @@ export function useRealtimeCards(
                 ),
               );
               break;
+            case "cards:batch-move":
+              setCards((prev) =>
+                prev.map((c) => {
+                  const move = payload.moves.find((m) => m.id === c.id);
+                  return move ? { ...c, x: move.x, y: move.y } : c;
+                }),
+              );
+              break;
             case "card:typing":
               setCards((prev) =>
                 prev.map((c) =>
@@ -393,6 +427,7 @@ export function useRealtimeCards(
     addCard,
     updateCard,
     moveCard,
+    moveCards,
     typeCard,
     changeColor,
     removeCard,

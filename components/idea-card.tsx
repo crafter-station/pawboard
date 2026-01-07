@@ -88,6 +88,11 @@ interface IdeaCardProps {
   screenToWorld: (screen: Point) => Point;
   zoom: number;
   isSpacePressed?: boolean;
+  isSelected?: boolean;
+  selectedCardIds?: Set<string>;
+  onToggleSelection?: (cardId: string, isShiftClick: boolean) => void;
+  onBatchMove?: (deltaX: number, deltaY: number, excludeCardId?: string) => void;
+  onBatchPersistMove?: () => Promise<void>;
 }
 
 export function IdeaCard({
@@ -111,6 +116,11 @@ export function IdeaCard({
   screenToWorld,
   zoom: _zoom,
   isSpacePressed = false,
+  isSelected = false,
+  selectedCardIds,
+  onToggleSelection,
+  onBatchMove,
+  onBatchPersistMove,
 }: IdeaCardProps) {
   void _zoom; // Reserved for future use (cursor scaling, etc.)
   const [isDragging, setIsDragging] = useState(false);
@@ -125,6 +135,7 @@ export function IdeaCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const startPos = useRef({ x: 0, y: 0 });
+  const lastDragPos = useRef({ x: 0, y: 0 });
 
   // Permission checks
   const isOwnCard = card.createdById === visitorId;
@@ -179,6 +190,7 @@ export function IdeaCard({
     if (!allowMove) return;
     setIsDragging(true);
     startPos.current = { x: card.x, y: card.y };
+    lastDragPos.current = { x: card.x, y: card.y };
     // Calculate the offset in world coordinates
     // The click position in world space minus the card's world position
     const clickWorld = screenToWorld({ x: clientX, y: clientY });
@@ -192,6 +204,19 @@ export function IdeaCard({
     // Don't start drag on middle mouse button (used for panning)
     // or when space is pressed (space+click is for canvas panning)
     if (e.button === 1 || isSpacePressed) return;
+
+    // Handle Shift+click for multi-selection
+    if (e.shiftKey && onToggleSelection) {
+      e.stopPropagation();
+      onToggleSelection(card.id, true);
+      return;
+    }
+
+    // If clicking on an unselected card without shift, select only this card
+    if (!isSelected && onToggleSelection) {
+      onToggleSelection(card.id, false);
+    }
+
     handleDragStart(e.clientX, e.clientY);
   };
 
@@ -203,6 +228,9 @@ export function IdeaCard({
     }
   };
 
+  // Check if we should do batch move (this card is selected and there are other selected cards)
+  const shouldBatchMove = isSelected && selectedCardIds && selectedCardIds.size > 1;
+
   useEffect(() => {
     if (!isDragging) return;
 
@@ -211,7 +239,21 @@ export function IdeaCard({
       const worldPos = screenToWorld({ x: e.clientX, y: e.clientY });
       const x = worldPos.x - dragOffset.current.x;
       const y = worldPos.y - dragOffset.current.y;
+
+      // Calculate delta from last position for batch move
+      const deltaX = x - lastDragPos.current.x;
+      const deltaY = y - lastDragPos.current.y;
+
+      // Move this card
       onMove(card.id, x, y);
+
+      // Move other selected cards if batch move
+      if (shouldBatchMove && onBatchMove && (deltaX !== 0 || deltaY !== 0)) {
+        onBatchMove(deltaX, deltaY, card.id);
+      }
+
+      // Update last position
+      lastDragPos.current = { x, y };
     };
 
     const handleTouchMove = (e: TouchEvent) => {
@@ -221,7 +263,21 @@ export function IdeaCard({
         const worldPos = screenToWorld({ x: touch.clientX, y: touch.clientY });
         const x = worldPos.x - dragOffset.current.x;
         const y = worldPos.y - dragOffset.current.y;
+
+        // Calculate delta from last position for batch move
+        const deltaX = x - lastDragPos.current.x;
+        const deltaY = y - lastDragPos.current.y;
+
+        // Move this card
         onMove(card.id, x, y);
+
+        // Move other selected cards if batch move
+        if (shouldBatchMove && onBatchMove && (deltaX !== 0 || deltaY !== 0)) {
+          onBatchMove(deltaX, deltaY, card.id);
+        }
+
+        // Update last position
+        lastDragPos.current = { x, y };
       }
     };
 
@@ -229,6 +285,10 @@ export function IdeaCard({
       setIsDragging(false);
       if (card.x !== startPos.current.x || card.y !== startPos.current.y) {
         onPersistMove(card.id, card.x, card.y);
+        // Also persist other selected cards if batch move
+        if (shouldBatchMove && onBatchPersistMove) {
+          onBatchPersistMove();
+        }
       }
     };
 
@@ -251,6 +311,9 @@ export function IdeaCard({
     onMove,
     onPersistMove,
     screenToWorld,
+    shouldBatchMove,
+    onBatchMove,
+    onBatchPersistMove,
   ]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -373,7 +436,9 @@ export function IdeaCard({
       onTouchStart={handleTouchStart}
     >
       <div
-        className="rounded-lg shadow-lg transition-shadow hover:shadow-xl relative overflow-hidden"
+        className={`rounded-lg shadow-lg transition-shadow hover:shadow-xl relative overflow-hidden ${
+          isSelected ? "ring-2 ring-primary ring-offset-2" : ""
+        }`}
         style={{ backgroundColor: displayColor }}
       >
         {/* Cat silhouette background based on card creator's avatar */}

@@ -102,6 +102,13 @@ export function Board({
   const [participants, setParticipants] = useState<Map<string, string>>(
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
+  const [selectionBox, setSelectionBox] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
   const hasInitializedViewRef = useRef(false);
   const { resolvedTheme } = useTheme();
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
@@ -202,6 +209,7 @@ export function Board({
     cards,
     addCard,
     moveCard,
+    moveCards,
     typeCard,
     changeColor,
     removeCard,
@@ -531,7 +539,89 @@ export function Board({
     return { success: true, deletedCount };
   };
 
-  // Keyboard shortcut for new card (key "N")
+  // Selection handlers
+  const clearSelection = useCallback(() => {
+    setSelectedCardIds(new Set());
+  }, []);
+
+  const toggleCardSelection = useCallback((cardId: string, isShiftClick: boolean) => {
+    setSelectedCardIds((prev) => {
+      const next = new Set(prev);
+      if (isShiftClick) {
+        if (next.has(cardId)) {
+          next.delete(cardId);
+        } else {
+          next.add(cardId);
+        }
+      } else {
+        // Regular click - select only this card
+        next.clear();
+        next.add(cardId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Get the current positions of selected cards for batch movement
+  const getSelectedCardsPositions = useCallback(() => {
+    return cards
+      .filter((c) => selectedCardIds.has(c.id))
+      .map((c) => ({ id: c.id, x: c.x, y: c.y }));
+  }, [cards, selectedCardIds]);
+
+  // Handle batch move - moves all selected cards by the same delta
+  const handleBatchMove = useCallback(
+    (deltaX: number, deltaY: number, excludeCardId?: string) => {
+      const moves = cards
+        .filter((c) => selectedCardIds.has(c.id) && c.id !== excludeCardId)
+        .map((c) => ({ id: c.id, x: c.x + deltaX, y: c.y + deltaY }));
+      if (moves.length > 0) {
+        moveCards(moves);
+      }
+    },
+    [cards, selectedCardIds, moveCards],
+  );
+
+  // Handle batch persist move - persists all selected cards positions to DB
+  const handleBatchPersistMove = useCallback(async () => {
+    if (!visitorId) return;
+    const selectedCards = cards.filter((c) => selectedCardIds.has(c.id));
+    await Promise.all(
+      selectedCards.map((c) => updateCard(c.id, { x: c.x, y: c.y }, visitorId)),
+    );
+  }, [cards, selectedCardIds, visitorId]);
+
+  // Selection box logic
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+  const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
+  const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
+
+  const handleSelectionBoxEnd = useCallback(() => {
+    if (!selectionBox) return;
+
+    // Calculate selection box bounds in world coordinates
+    const minX = Math.min(selectionBox.startX, selectionBox.currentX);
+    const maxX = Math.max(selectionBox.startX, selectionBox.currentX);
+    const minY = Math.min(selectionBox.startY, selectionBox.currentY);
+    const maxY = Math.max(selectionBox.startY, selectionBox.currentY);
+
+    // Find cards that intersect with the selection box
+    const intersectingCards = cards.filter((card) => {
+      const cardRight = card.x + cardWidth;
+      const cardBottom = card.y + cardHeight;
+
+      // Check if card intersects with selection box
+      return !(card.x > maxX || cardRight < minX || card.y > maxY || cardBottom < minY);
+    });
+
+    if (intersectingCards.length > 0) {
+      setSelectedCardIds(new Set(intersectingCards.map((c) => c.id)));
+    }
+
+    setSelectionBox(null);
+  }, [selectionBox, cards, cardWidth, cardHeight]);
+
+  // Keyboard shortcut for new card (key "N") and Escape to clear selection
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip if user is typing in an input or textarea
@@ -539,6 +629,12 @@ export function Board({
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
       ) {
+        return;
+      }
+
+      // Escape to clear selection
+      if (e.key === "Escape") {
+        clearSelection();
         return;
       }
 
@@ -555,7 +651,63 @@ export function Board({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commandOpen, handleAddCard]);
+  }, [commandOpen, handleAddCard, clearSelection]);
+
+  // Selection box effect - track mouse movements when selection box is active
+  useEffect(() => {
+    if (!selectionBox) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const worldPos = screenToWorld({ x: e.clientX, y: e.clientY });
+      setSelectionBox((prev) =>
+        prev ? { ...prev, currentX: worldPos.x, currentY: worldPos.y } : null,
+      );
+    };
+
+    const handleMouseUp = () => {
+      handleSelectionBoxEnd();
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [selectionBox, screenToWorld, handleSelectionBoxEnd]);
+
+  // Handle canvas click for selection box and click-to-deselect
+  const handleCanvasMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      // Let the canvas gesture handler process panning etc.
+      canvasHandlers.onMouseDown(e);
+
+      // Only start selection box on left click when not panning
+      if (e.button !== 0 || isSpacePressed || isPanning) return;
+
+      // Check if clicking directly on the canvas (not on a card)
+      const target = e.target as HTMLElement;
+      const isCanvasClick = target.hasAttribute("data-canvas-bg") || target.closest("[data-canvas-bg]");
+
+      if (isCanvasClick) {
+        const worldPos = screenToWorld({ x: e.clientX, y: e.clientY });
+
+        // If no shift key, clear existing selection when starting new marquee
+        if (!e.shiftKey) {
+          clearSelection();
+        }
+
+        setSelectionBox({
+          startX: worldPos.x,
+          startY: worldPos.y,
+          currentX: worldPos.x,
+          currentY: worldPos.y,
+        });
+      }
+    },
+    [canvasHandlers, isSpacePressed, isPanning, screenToWorld, clearSelection],
+  );
 
   if (!username || isFingerprintLoading || isUsernameLoading || !visitorId) {
     return (
@@ -904,10 +1056,17 @@ export function Board({
         role="application"
         aria-label="Idea board canvas - use mouse wheel to pan, Shift+scroll to pan horizontally, Ctrl+scroll to zoom, hold Space+drag to pan"
         className="relative w-full h-screen overflow-hidden"
+        data-canvas-bg
         style={{
-          cursor: isPanning ? "grabbing" : isSpacePressed ? "grab" : "default",
+          cursor: selectionBox
+            ? "crosshair"
+            : isPanning
+              ? "grabbing"
+              : isSpacePressed
+                ? "grab"
+                : "default",
         }}
-        onMouseDown={canvasHandlers.onMouseDown}
+        onMouseDown={handleCanvasMouseDown}
         onTouchStart={canvasHandlers.onTouchStart}
         onTouchMove={canvasHandlers.onTouchMove}
         onTouchEnd={canvasHandlers.onTouchEnd}
@@ -915,6 +1074,7 @@ export function Board({
         {/* Transformable canvas */}
         <div
           className="absolute origin-top-left"
+          data-canvas-bg
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           }}
@@ -943,8 +1103,26 @@ export function Board({
               screenToWorld={screenToWorld}
               zoom={zoom}
               isSpacePressed={isSpacePressed}
+              isSelected={selectedCardIds.has(card.id)}
+              selectedCardIds={selectedCardIds}
+              onToggleSelection={toggleCardSelection}
+              onBatchMove={handleBatchMove}
+              onBatchPersistMove={handleBatchPersistMove}
             />
           ))}
+
+          {/* Selection box */}
+          {selectionBox && (
+            <div
+              className="absolute border-2 border-primary bg-primary/10 pointer-events-none"
+              style={{
+                left: Math.min(selectionBox.startX, selectionBox.currentX),
+                top: Math.min(selectionBox.startY, selectionBox.currentY),
+                width: Math.abs(selectionBox.currentX - selectionBox.startX),
+                height: Math.abs(selectionBox.currentY - selectionBox.startY),
+              }}
+            />
+          )}
 
           {/* Cursors - rendered in world space */}
           <RealtimeCursors
