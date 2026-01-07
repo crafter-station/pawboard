@@ -9,6 +9,7 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  Plus,
   Smile,
   Sparkles,
   Undo2,
@@ -60,6 +61,8 @@ const COLOR_MAP: Record<string, string> = {
   "#7ABCC5": "#C5E8EC",
   "#D4C468": "#F9E9A8",
 };
+
+const QUICK_REACTIONS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
 
 interface Point {
   x: number;
@@ -739,12 +742,60 @@ export function IdeaCard({
                     <TooltipContent side="top">React</TooltipContent>
                   </Tooltip>
                   <PopoverContent
-                    className="w-auto p-0 z-1001 border-0 shadow-xl"
+                    className="w-auto p-1.5 z-1001"
                     align="end"
                     sideOffset={5}
                     onMouseDown={(e) => e.stopPropagation()}
                   >
-                    <EmojiPicker onEmojiSelect={handleReact} />
+                    <div className="flex gap-1">
+                      {QUICK_REACTIONS.map((emoji) => {
+                        const hasReacted =
+                          card.reactions[emoji]?.includes(visitorId) || false;
+                        return (
+                          <motion.button
+                            key={emoji}
+                            type="button"
+                            onClick={() => handleReact(emoji)}
+                            whileTap={{ scale: 0.85 }}
+                            whileHover={{ scale: 1.15 }}
+                            className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md text-base sm:text-lg transition-all cursor-pointer ${
+                              hasReacted
+                                ? "bg-stone-900/15 dark:bg-white/15"
+                                : "hover:bg-stone-100 dark:hover:bg-stone-800"
+                            }`}
+                          >
+                            {emoji}
+                          </motion.button>
+                        );
+                      })}
+                      <Popover>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <PopoverTrigger asChild>
+                              <motion.button
+                                type="button"
+                                whileTap={{ scale: 0.85 }}
+                                whileHover={{ scale: 1.15 }}
+                                className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md text-base sm:text-lg transition-all cursor-pointer hover:bg-stone-100 dark:hover:bg-stone-800"
+                              >
+                                <Plus className="w-4 h-4 text-stone-500 dark:text-stone-400" />
+                              </motion.button>
+                            </PopoverTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            More emojis
+                          </TooltipContent>
+                        </Tooltip>
+                        <PopoverContent
+                          className="w-auto p-0 z-1002 border-0 shadow-xl"
+                          align="end"
+                          sideOffset={5}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <EmojiPicker onEmojiSelect={handleReact} />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                   </PopoverContent>
                 </Popover>
               )}
