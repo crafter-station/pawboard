@@ -31,6 +31,7 @@ export const Cursor = ({
   return (
     <motion.div
       className={cn("pointer-events-none absolute", className)}
+      style={{ zIndex: 2000 }}
       initial={{ x, y }}
       animate={{ x, y }}
       transition={{
