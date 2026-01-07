@@ -19,6 +19,7 @@ import Image from "next/image";
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
 import {
   Popover,
   PopoverContent,
@@ -59,8 +60,6 @@ const COLOR_MAP: Record<string, string> = {
   "#7ABCC5": "#C5E8EC",
   "#D4C468": "#F9E9A8",
 };
-
-const REACTION_EMOJIS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
 
 interface Point {
   x: number;
@@ -121,6 +120,7 @@ export function IdeaCard({
   const [previousContent, setPreviousContent] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const { resolvedTheme } = useTheme();
   const cardRef = useRef<HTMLDivElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -281,6 +281,7 @@ export function IdeaCard({
   const handleReact = (emoji: string) => {
     if (allowReact) {
       onReact(card.id, emoji);
+      setIsEmojiPickerOpen(false);
     }
   };
 
@@ -343,7 +344,9 @@ export function IdeaCard({
   const borderClass = isPurpleDark ? "border-white/20" : "border-stone-900/10";
   const iconClass = isPurpleDark ? "text-white/80" : "text-stone-500";
   const iconActiveClass = isPurpleDark ? "text-white" : "text-stone-700";
-  const hoverBgClass = isPurpleDark ? "hover:bg-white/15" : "hover:bg-stone-900/8";
+  const hoverBgClass = isPurpleDark
+    ? "hover:bg-white/15"
+    : "hover:bg-stone-900/8";
   const actionsBgClass = isDark
     ? isMobile
       ? "bg-black/10"
@@ -526,7 +529,11 @@ export function IdeaCard({
         </div>
         <div
           className="p-2.5 sm:p-3.5 relative transition-all duration-200"
-          style={isEditing ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" } : undefined}
+          style={
+            isEditing
+              ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" }
+              : undefined
+          }
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
@@ -710,7 +717,10 @@ export function IdeaCard({
               onTouchStart={(e) => e.stopPropagation()}
             >
               {allowReact && (
-                <Popover>
+                <Popover
+                  open={isEmojiPickerOpen}
+                  onOpenChange={setIsEmojiPickerOpen}
+                >
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <PopoverTrigger asChild>
@@ -729,33 +739,12 @@ export function IdeaCard({
                     <TooltipContent side="top">React</TooltipContent>
                   </Tooltip>
                   <PopoverContent
-                    className="w-auto p-1.5 z-1001"
+                    className="w-auto p-0 z-1001 border-0 shadow-xl"
                     align="end"
                     sideOffset={5}
                     onMouseDown={(e) => e.stopPropagation()}
                   >
-                    <div className="flex gap-1">
-                      {REACTION_EMOJIS.map((emoji) => {
-                        const hasReacted =
-                          card.reactions[emoji]?.includes(visitorId) || false;
-                        return (
-                          <motion.button
-                            key={emoji}
-                            type="button"
-                            onClick={() => handleReact(emoji)}
-                            whileTap={{ scale: 0.85 }}
-                            whileHover={{ scale: 1.15 }}
-                            className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md text-base sm:text-lg transition-all cursor-pointer ${
-                              hasReacted
-                                ? "bg-stone-900/15"
-                                : "hover:bg-stone-100 dark:hover:bg-stone-800"
-                            }`}
-                          >
-                            {emoji}
-                          </motion.button>
-                        );
-                      })}
-                    </div>
+                    <EmojiPicker onEmojiSelect={handleReact} />
                   </PopoverContent>
                 </Popover>
               )}
@@ -778,7 +767,9 @@ export function IdeaCard({
                       !allowVote
                         ? "opacity-30 cursor-not-allowed"
                         : hasVoted
-                          ? isPurpleDark ? "bg-white/20 text-white" : "bg-stone-900/15 text-stone-800"
+                          ? isPurpleDark
+                            ? "bg-white/20 text-white"
+                            : "bg-stone-900/15 text-stone-800"
                           : `${hoverBgClass} cursor-pointer`
                     }`}
                   >

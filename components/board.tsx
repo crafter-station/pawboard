@@ -960,7 +960,9 @@ export function Board({
             <div className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 opacity-20">
                 <img
-                  src={visitorId ? getAvatarForUser(visitorId) : "/cat-purple.svg"}
+                  src={
+                    visitorId ? getAvatarForUser(visitorId) : "/cat-purple.svg"
+                  }
                   alt=""
                   className="w-full h-full"
                 />

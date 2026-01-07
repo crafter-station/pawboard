@@ -219,3 +219,15 @@
     animation: none !important;
   }
 }
+
+/* Emoji Picker (emoji-mart) customization */
+em-emoji-picker {
+  --em-rgb-background: var(--popover);
+  --em-rgb-color: var(--popover-foreground);
+  --em-rgb-accent: var(--primary);
+  --border-radius: var(--radius);
+  --font-family: var(--font-sans);
+  font-family: var(--font-sans);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
