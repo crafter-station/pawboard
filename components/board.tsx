@@ -55,6 +55,7 @@ import { useCatSound } from "@/hooks/use-cat-sound";
 import { useFingerprint } from "@/hooks/use-fingerprint";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
 import { useRealtimeCards } from "@/hooks/use-realtime-cards";
+import { useRealtimePresence } from "@/hooks/use-realtime-presence";
 import { useSessionUsername } from "@/hooks/use-session-username";
 import { generateCardId } from "@/lib/nanoid";
 import { canAddCard } from "@/lib/permissions";
@@ -117,6 +118,12 @@ export function Board({
   } = useSessionUsername({
     sessionId,
     visitorId,
+  });
+
+  // Track online presence for participants
+  const { onlineUsers } = useRealtimePresence({
+    roomName: sessionId,
+    userId: visitorId || "",
   });
 
   // Join session and get user role
@@ -851,6 +858,7 @@ export function Board({
         <ParticipantsDialog
           participants={participants}
           currentUserId={visitorId}
+          onlineUsers={onlineUsers}
         />
         <AddCardButton onClick={handleAddCard} disabled={isLocked} />
       </div>

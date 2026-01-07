@@ -15,11 +15,13 @@ import { getAvatarForUser } from "@/lib/utils";
 interface ParticipantsDialogProps {
   participants: Map<string, string>;
   currentUserId: string;
+  onlineUsers?: Set<string>;
 }
 
 export function ParticipantsDialog({
   participants,
   currentUserId,
+  onlineUsers = new Set(),
 }: ParticipantsDialogProps) {
   const [open, setOpen] = useState(false);
 
@@ -28,15 +30,19 @@ export function ParticipantsDialog({
       visitorId,
       username,
       isCurrentUser: visitorId === currentUserId,
+      isOnline: onlineUsers.has(visitorId),
     }),
   );
 
-  // Sort: current user first, then alphabetically
+  // Sort: current user first, then online users, then alphabetically
   participantsList.sort((a, b) => {
     if (a.isCurrentUser) return -1;
     if (b.isCurrentUser) return 1;
+    if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
     return a.username.localeCompare(b.username);
   });
+
+  const onlineCount = participantsList.filter((p) => p.isOnline).length;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -52,7 +58,15 @@ export function ParticipantsDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Participants ({participantsList.length})</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            Participants ({participantsList.length})
+            {onlineCount > 0 && (
+              <span className="text-xs font-normal text-muted-foreground flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-500" />
+                {onlineCount} online
+              </span>
+            )}
+          </DialogTitle>
         </DialogHeader>
         <div className="max-h-[300px] overflow-y-auto">
           {participantsList.length === 0 ? (
@@ -62,19 +76,29 @@ export function ParticipantsDialog({
           ) : (
             <ul className="space-y-2">
               {participantsList.map(
-                ({ visitorId, username, isCurrentUser }) => {
+                ({ visitorId, username, isCurrentUser, isOnline }) => {
                   const avatar = getAvatarForUser(visitorId);
                   return (
                     <li
                       key={visitorId}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 transition-colors"
+                      className={`flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 transition-colors ${
+                        !isOnline ? "opacity-60" : ""
+                      }`}
                     >
-                      <img
-                        src={avatar}
-                        alt=""
-                        className="w-8 h-8"
-                        draggable={false}
-                      />
+                      <div className="relative">
+                        <img
+                          src={avatar}
+                          alt=""
+                          className="w-8 h-8"
+                          draggable={false}
+                        />
+                        {isOnline && (
+                          <span
+                            className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-background"
+                            title="Online"
+                          />
+                        )}
+                      </div>
                       <span className="text-sm font-medium flex-1 truncate">
                         {username}
                       </span>
