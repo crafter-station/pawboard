@@ -18,13 +18,12 @@ import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState } from "react";
-import Markdown from "react-markdown";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor, RichTextContent } from "@/components/rich-text-editor";
 import {
   Tooltip,
   TooltipContent,
@@ -253,8 +252,8 @@ export function IdeaCard({
     screenToWorld,
   ]);
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onType(card.id, e.target.value);
+  const handleContentChange = (content: string) => {
+    onType(card.id, content);
   };
 
   const handleContentBlur = () => {
@@ -322,13 +321,22 @@ export function IdeaCard({
     }
   };
 
-  const showRefineButton = allowRefine && card.content.trim().length > 10;
+  // Helper to get plain text from HTML content
+  const getPlainText = (html: string) => {
+    if (typeof window === "undefined") return html;
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return doc.body.textContent || "";
+  };
+
+  const plainTextContent = getPlainText(card.content);
+  const showRefineButton = allowRefine && plainTextContent.trim().length > 10;
   const showUndoButton = allowEdit && previousContent !== null;
 
   const handleCopy = async () => {
-    if (!card.content.trim()) return;
+    const textToCopy = getPlainText(card.content);
+    if (!textToCopy.trim()) return;
     try {
-      await navigator.clipboard.writeText(card.content);
+      await navigator.clipboard.writeText(textToCopy);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch {
@@ -343,7 +351,9 @@ export function IdeaCard({
   const borderClass = isPurpleDark ? "border-white/20" : "border-stone-900/10";
   const iconClass = isPurpleDark ? "text-white/80" : "text-stone-500";
   const iconActiveClass = isPurpleDark ? "text-white" : "text-stone-700";
-  const hoverBgClass = isPurpleDark ? "hover:bg-white/15" : "hover:bg-stone-900/8";
+  const hoverBgClass = isPurpleDark
+    ? "hover:bg-white/15"
+    : "hover:bg-stone-900/8";
   const actionsBgClass = isDark
     ? isMobile
       ? "bg-black/10"
@@ -526,77 +536,39 @@ export function IdeaCard({
         </div>
         <div
           className="p-2.5 sm:p-3.5 relative transition-all duration-200"
-          style={isEditing ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" } : undefined}
+          style={
+            isEditing
+              ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" }
+              : undefined
+          }
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
           {isEditing ? (
-            <Textarea
-              autoFocus
-              value={card.content}
+            <RichTextEditor
+              content={card.content}
               onChange={handleContentChange}
               onBlur={handleContentBlur}
-              className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-all duration-200 w-full h-full ${isExpanded ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100" : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"}`}
+              autoFocus
               placeholder="Type your idea..."
+              isPurpleDark={isPurpleDark}
+              className={
+                isExpanded
+                  ? "text-[13px] sm:text-[15px]"
+                  : "text-[11px] sm:text-[13px]"
+              }
+              editorClassName={`transition-all duration-200 ${isExpanded ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100" : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"}`}
             />
           ) : (
             <div
               onClick={() => allowEdit && setIsEditing(true)}
               className={`overflow-y-auto leading-relaxed ${isExpanded ? "text-[13px] sm:text-[15px]" : "text-[11px] sm:text-[13px]"} ${textColorClass} ${allowEdit ? "cursor-text" : "cursor-default"} transition-all duration-200 ${isExpanded ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100" : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"}`}
             >
-              {card.content ? (
-                <Markdown
-                  components={{
-                    p: ({ children }) => (
-                      <p className="mb-2 last:mb-0 leading-relaxed">
-                        {children}
-                      </p>
-                    ),
-                    ul: ({ children }) => (
-                      <ul className="list-disc list-inside mb-2 last:mb-0 space-y-1">
-                        {children}
-                      </ul>
-                    ),
-                    ol: ({ children }) => (
-                      <ol className="list-decimal list-inside mb-2 last:mb-0 space-y-1">
-                        {children}
-                      </ol>
-                    ),
-                    li: ({ children }) => (
-                      <li className="leading-relaxed">{children}</li>
-                    ),
-                    strong: ({ children }) => (
-                      <strong className="font-semibold text-stone-900">
-                        {children}
-                      </strong>
-                    ),
-                    em: ({ children }) => (
-                      <em className="italic text-stone-700">{children}</em>
-                    ),
-                    code: ({ children }) => (
-                      <code className="px-1.5 py-0.5 rounded text-[10px] sm:text-xs bg-stone-900/8 text-stone-700 font-mono">
-                        {children}
-                      </code>
-                    ),
-                    h1: ({ children }) => (
-                      <h1 className="font-bold text-sm sm:text-base mb-1.5 text-stone-900">
-                        {children}
-                      </h1>
-                    ),
-                    h2: ({ children }) => (
-                      <h2 className="font-bold text-[13px] sm:text-sm mb-1.5 text-stone-900">
-                        {children}
-                      </h2>
-                    ),
-                    h3: ({ children }) => (
-                      <h3 className="font-semibold text-xs sm:text-[13px] mb-1 text-stone-800">
-                        {children}
-                      </h3>
-                    ),
-                  }}
-                >
-                  {card.content}
-                </Markdown>
+              {card.content && card.content !== "<p></p>" ? (
+                <RichTextContent
+                  content={card.content}
+                  isPurpleDark={isPurpleDark}
+                />
               ) : (
                 <span className={mutedTextClass}>
                   {allowEdit
@@ -608,7 +580,7 @@ export function IdeaCard({
               )}
             </div>
           )}
-          {card.content && !isEditing && (
+          {plainTextContent.trim() && !isEditing && (
             <TooltipProvider delayDuration={400}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -778,7 +750,9 @@ export function IdeaCard({
                       !allowVote
                         ? "opacity-30 cursor-not-allowed"
                         : hasVoted
-                          ? isPurpleDark ? "bg-white/20 text-white" : "bg-stone-900/15 text-stone-800"
+                          ? isPurpleDark
+                            ? "bg-white/20 text-white"
+                            : "bg-stone-900/15 text-stone-800"
                           : `${hoverBgClass} cursor-pointer`
                     }`}
                   >

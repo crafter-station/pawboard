@@ -43,18 +43,22 @@ export async function POST(req: Request) {
       }
     }
 
+    // Strip HTML tags from input if present
+    const plainText = text.replace(/<[^>]*>/g, "").trim();
+
     const prompt = [
       "Detect the language of the input text. Respond ONLY in that same language.",
       "Restructure and clarify the idea without changing its original meaning.",
       "Make it clearer and easier to read. You can use:",
-      "- Short paragraphs",
-      "- Bullet points (use • character)",
-      "- Key phrases highlighted",
-      "Choose the best format for the content. Be concise. Output only the refined text. The final output should be to the point and concise. response in markdown format.",
+      "- Short paragraphs (wrap in <p> tags)",
+      "- Bullet points (use <ul><li> tags)",
+      "- Bold text for key phrases (use <strong> tags)",
+      "Choose the best format for the content. Be concise. Output only the refined text as valid HTML.",
+      "Use ONLY these tags: <p>, <ul>, <ol>, <li>, <strong>, <em>. Do NOT use markdown.",
       "",
-      `Input: "${text}"`,
+      `Input: "${plainText}"`,
       "",
-      "Refined:",
+      "Refined HTML:",
     ].join("\n");
 
     const { text: refined } = await generateText({
