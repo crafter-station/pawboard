@@ -37,6 +37,7 @@ import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
 import { IdeaCard } from "@/components/idea-card";
+import { Minimap } from "@/components/minimap";
 import { ParticipantsDialog } from "@/components/participants-dialog";
 import { RealtimeCursors } from "@/components/realtime-cursors";
 import { SessionSettingsDialog } from "@/components/session-settings-dialog";
@@ -57,13 +58,10 @@ import type { SessionSettings } from "@/hooks/use-realtime-cards";
 import { useRealtimeCards } from "@/hooks/use-realtime-cards";
 import { useRealtimePresence } from "@/hooks/use-realtime-presence";
 import { useSessionUsername } from "@/hooks/use-session-username";
+import { DARK_COLORS, LIGHT_COLORS } from "@/lib/colors";
 import { generateCardId } from "@/lib/nanoid";
 import { canAddCard } from "@/lib/permissions";
 import { getAvatarForUser } from "@/lib/utils";
-
-const LIGHT_COLORS = ["#D4B8F0", "#FFCAB0", "#C4EDBA", "#C5E8EC", "#F9E9A8"];
-
-const DARK_COLORS = ["#9B7BC7", "#E8936A", "#7BC96A", "#7ABCC5", "#D4C468"];
 
 export interface Participant {
   visitorId: string;
@@ -105,6 +103,7 @@ export function Board({
   const hasInitializedViewRef = useRef(false);
   const { resolvedTheme } = useTheme();
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const playSound = useCatSound();
 
   // Derived state
@@ -151,6 +150,17 @@ export function Board({
     }
   }, [visitorId, username]);
 
+  // Update viewport size
+  useEffect(() => {
+    const updateViewportSize = () => {
+      setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    updateViewportSize();
+    window.addEventListener("resize", updateViewportSize);
+    return () => window.removeEventListener("resize", updateViewportSize);
+  }, []);
+
   // Helper to get username for a user ID
   const getUsernameForId = useCallback(
     (userId: string): string => {
@@ -166,12 +176,34 @@ export function Board({
     isSpacePressed,
     canvasRef,
     screenToWorld,
+    worldToScreen,
     zoomTo,
     resetView,
     fitToBounds,
     centerOn,
     handlers: canvasHandlers,
   } = useCanvasGestures();
+
+  // Handle minimap navigation
+  const handleMinimapNavigate = useCallback(
+    (worldPoint: { x: number; y: number }) => {
+      centerOn(worldPoint, zoom); // Keep current zoom level
+    },
+    [centerOn, zoom],
+  );
+
+  // Handle minimap zoom
+  const handleMinimapZoom = useCallback(
+    (worldPoint: { x: number; y: number }, deltaY: number) => {
+      // deltaY > 0 = zoom out, deltaY < 0 = zoom in
+      const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.max(0.25, Math.min(2, zoom * zoomFactor));
+      // Convert world point to screen coordinates for zoom center
+      const screenPoint = worldToScreen(worldPoint);
+      zoomTo(newZoom, screenPoint);
+    },
+    [zoom, zoomTo, worldToScreen],
+  );
 
   // Handle incoming name change events from realtime
   const handleRemoteNameChange = useCallback(
@@ -863,39 +895,56 @@ export function Board({
         <AddCardButton onClick={handleAddCard} disabled={isLocked} />
       </div>
 
+      {/* Minimap (Desktop Only) */}
+      {viewportSize.width >= 640 && (
+        <div className="fixed top-20 right-4 z-50">
+          <Minimap
+            cards={cards}
+            pan={pan}
+            zoom={zoom}
+            viewportWidth={viewportSize.width}
+            viewportHeight={viewportSize.height}
+            onNavigate={handleMinimapNavigate}
+            onZoom={handleMinimapZoom}
+          />
+        </div>
+      )}
+
       {/* Fixed UI - Bottom Left: Zoom Controls */}
-      <div className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-50 flex items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border px-1 py-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => zoomTo(zoom / 1.2)}
-          className="h-7 w-7 sm:h-8 sm:w-8"
-          title="Zoom out (⌘-)"
-        >
-          <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        </Button>
-        <span className="text-xs sm:text-sm font-mono w-10 sm:w-12 text-center text-muted-foreground">
-          {Math.round(zoom * 100)}%
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => zoomTo(zoom * 1.2)}
-          className="h-7 w-7 sm:h-8 sm:w-8"
-          title="Zoom in (⌘+)"
-        >
-          <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        </Button>
-        <div className="w-px h-5 bg-border mx-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={fitAllCards}
-          className="h-7 w-7 sm:h-8 sm:w-8"
-          title="Fit all cards (1)"
-        >
-          <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        </Button>
+      <div className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-50">
+        <div className="flex items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border px-1 py-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => zoomTo(zoom / 1.2)}
+            className="h-7 w-7 sm:h-8 sm:w-8"
+            title="Zoom out (⌘-)"
+          >
+            <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </Button>
+          <span className="text-xs sm:text-sm font-mono w-10 sm:w-12 text-center text-muted-foreground">
+            {Math.round(zoom * 100)}%
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => zoomTo(zoom * 1.2)}
+            className="h-7 w-7 sm:h-8 sm:w-8"
+            title="Zoom in (⌘+)"
+          >
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </Button>
+          <div className="w-px h-5 bg-border mx-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={fitAllCards}
+            className="h-7 w-7 sm:h-8 sm:w-8"
+            title="Fit all cards (1)"
+          >
+            <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Viewport with gesture handlers */}
@@ -914,7 +963,7 @@ export function Board({
       >
         {/* Transformable canvas */}
         <div
-          className="absolute origin-top-left"
+          className="absolute origin-top-left transition-transform duration-300 ease-out"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           }}
@@ -960,7 +1009,9 @@ export function Board({
             <div className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 opacity-20">
                 <img
-                  src={visitorId ? getAvatarForUser(visitorId) : "/cat-purple.svg"}
+                  src={
+                    visitorId ? getAvatarForUser(visitorId) : "/cat-purple.svg"
+                  }
                   alt=""
                   className="w-full h-full"
                 />
