@@ -1,5 +1,5 @@
-import { Card } from "@/db/schema";
 import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { Card } from "@/db/schema";
 
 // Card dimensions
 const CARD_SIZE = {
@@ -86,7 +86,7 @@ export function useMinimap({
       x: PADDING + (x - worldBounds.minX) * scale,
       y: PADDING + (y - worldBounds.minY) * scale,
     }),
-    [worldBounds, scale]
+    [worldBounds, scale],
   );
 
   const minimapToWorld = useCallback(
@@ -94,7 +94,7 @@ export function useMinimap({
       x: worldBounds.minX + (x - PADDING) / scale,
       y: worldBounds.minY + (y - PADDING) / scale,
     }),
-    [worldBounds, scale]
+    [worldBounds, scale],
   );
 
   const viewportWorld = useMemo(() => {
@@ -113,7 +113,7 @@ export function useMinimap({
     const tl = worldToMinimap(viewportWorld.x, viewportWorld.y);
     const br = worldToMinimap(
       viewportWorld.x + viewportWorld.w,
-      viewportWorld.y + viewportWorld.h
+      viewportWorld.y + viewportWorld.h,
     );
 
     return {
@@ -131,7 +131,7 @@ export function useMinimap({
 
       return minimapToWorld(x, y);
     },
-    [minimapSize, minimapToWorld]
+    [minimapSize, minimapToWorld],
   );
 
   return {

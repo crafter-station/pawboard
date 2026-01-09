@@ -1,6 +1,25 @@
 "use client";
 
 import {
+  Check,
+  Command,
+  Copy,
+  Home,
+  Lock,
+  Maximize2,
+  Menu,
+  Minus,
+  Pencil,
+  Plus,
+  Settings,
+  Share2,
+  Trash,
+} from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
   createCard,
   deleteCard,
   deleteEmptyCards,
@@ -43,25 +62,6 @@ import { DARK_COLORS, LIGHT_COLORS } from "@/lib/colors";
 import { generateCardId } from "@/lib/nanoid";
 import { canAddCard } from "@/lib/permissions";
 import { getAvatarForUser } from "@/lib/utils";
-import {
-  Check,
-  Command,
-  Copy,
-  Home,
-  Lock,
-  Maximize2,
-  Menu,
-  Minus,
-  Pencil,
-  Plus,
-  Settings,
-  Share2,
-  Trash,
-} from "lucide-react";
-import { useTheme } from "next-themes";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface Participant {
   visitorId: string;
@@ -98,7 +98,7 @@ export function Board({
   const [session, setSession] = useState<Session>(initialSession);
   const [userRole, setUserRole] = useState<SessionRole | null>(null);
   const [participants, setParticipants] = useState<Map<string, string>>(
-    () => new Map(initialParticipants.map((p) => [p.visitorId, p.username]))
+    () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
   const hasInitializedViewRef = useRef(false);
   const { resolvedTheme } = useTheme();
@@ -166,7 +166,7 @@ export function Board({
     (userId: string): string => {
       return participants.get(userId) ?? "Unknown";
     },
-    [participants]
+    [participants],
   );
 
   const {
@@ -189,7 +189,7 @@ export function Board({
     (worldPoint: { x: number; y: number }) => {
       centerOn(worldPoint, zoom); // Keep current zoom level
     },
-    [centerOn, zoom]
+    [centerOn, zoom],
   );
 
   // Handle minimap zoom
@@ -202,7 +202,7 @@ export function Board({
       const screenPoint = worldToScreen(worldPoint);
       zoomTo(newZoom, screenPoint);
     },
-    [zoom, zoomTo, worldToScreen]
+    [zoom, zoomTo, worldToScreen],
   );
 
   // Handle incoming name change events from realtime
@@ -214,7 +214,7 @@ export function Board({
         return next;
       });
     },
-    []
+    [],
   );
 
   // Handle incoming session rename events from realtime
@@ -227,7 +227,7 @@ export function Board({
     (settings: SessionSettings) => {
       setSession((prev) => ({ ...prev, ...settings }));
     },
-    []
+    [],
   );
 
   const {
@@ -249,7 +249,7 @@ export function Board({
     username,
     handleRemoteNameChange,
     handleRemoteSessionRename,
-    handleRemoteSessionSettingsChange
+    handleRemoteSessionSettingsChange,
   );
 
   // Fit all cards in view
@@ -270,7 +270,7 @@ export function Board({
         maxX: Math.max(acc.maxX, card.x + cardWidth),
         maxY: Math.max(acc.maxY, card.y + cardHeight),
       }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
     );
 
     fitToBounds(bounds);
@@ -296,7 +296,7 @@ export function Board({
         maxX: Math.max(acc.maxX, card.x + cardWidth),
         maxY: Math.max(acc.maxY, card.y + cardHeight),
       }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
     );
 
     // Center on cards at 100% zoom
@@ -493,7 +493,7 @@ export function Board({
     const { session: updatedSession, error } = await updateSessionName(
       sessionId,
       newName,
-      visitorId
+      visitorId,
     );
     if (updatedSession && !error) {
       // Update local state
@@ -515,7 +515,7 @@ export function Board({
     const { session: updatedSession, error } = await updateSessionSettings(
       sessionId,
       settings,
-      visitorId
+      visitorId,
     );
     if (updatedSession && !error) {
       // Update local state
@@ -548,7 +548,7 @@ export function Board({
 
     const { deletedIds, deletedCount, error } = await deleteEmptyCards(
       sessionId,
-      visitorId
+      visitorId,
     );
 
     if (error) {
@@ -896,7 +896,7 @@ export function Board({
       </div>
 
       {/* Minimap (Desktop Only) */}
-      {window.innerWidth >= 640 && (
+      {viewportSize.width >= 640 && (
         <div className="fixed top-20 right-4 z-50">
           <Minimap
             cards={cards}

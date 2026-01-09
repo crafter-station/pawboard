@@ -1,11 +1,11 @@
 "use client";
 
+import { useTheme } from "next-themes";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/db/schema";
 import { useMinimap } from "@/hooks/use-minimap";
 import { getDisplayColor } from "@/lib/colors";
 import { cn } from "@/lib/utils";
-import { useTheme } from "next-themes";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface MinimapProps {
   cards: Card[];
@@ -56,14 +56,14 @@ export function Minimap({
 
   const colors = useMemo(
     () => ({
-      background: isDark ? "hsl(224, 71%, 4%)" : "hsl(0, 0%, 98%)",
-      pattern: isDark ? "hsl(215, 25%, 27%)" : "hsl(0, 0%, 50%)",
-      patternOpacity: isDark ? 0.25 : 0.08,
-      viewportFill: isDark ? "hsl(210, 40%, 25%)" : "hsl(var(--primary))",
-      viewportFillOpacity: isDark ? 0.5 : 0.3,
-      viewportStroke: isDark ? "hsl(210, 60%, 55%)" : "hsl(var(--foreground))",
+      background: isDark ? "hsl(222, 47%, 11%)" : "hsl(0, 0%, 98%)",
+      pattern: isDark ? "hsl(215, 28%, 17%)" : "hsl(0, 0%, 50%)",
+      patternOpacity: isDark ? 0.35 : 0.08,
+      viewportFill: isDark ? "hsl(210, 100%, 60%)" : "hsl(var(--primary))",
+      viewportFillOpacity: isDark ? 0.18 : 0.3,
+      viewportStroke: isDark ? "hsl(0, 0%, 98%)" : "hsl(var(--foreground))",
     }),
-    [isDark]
+    [isDark],
   );
 
   const handlePointerDown = useCallback(
@@ -74,7 +74,7 @@ export function Minimap({
       const worldPoint = getWorldFromPointerEvent(e, rect);
       onNavigate(worldPoint);
     },
-    [getWorldFromPointerEvent, onNavigate]
+    [getWorldFromPointerEvent, onNavigate],
   );
 
   const handlePointerMove = useCallback(
@@ -84,7 +84,7 @@ export function Minimap({
       const worldPoint = getWorldFromPointerEvent(e, rect);
       onNavigate(worldPoint);
     },
-    [dragging, getWorldFromPointerEvent, onNavigate]
+    [dragging, getWorldFromPointerEvent, onNavigate],
   );
 
   const handlePointerUp = useCallback(() => setDragging(false), []);
