@@ -22,12 +22,32 @@
   <a href="https://crafters.chat">Community</a>
 </p>
 
-## Setup
+## Documentation
+
+- [Local Development Guide](./docs/LOCAL_DEVELOPMENT.md) - Set up your local environment
+- [Contributing Guide](./docs/CONTRIBUTING.md) - How to contribute and PR workflow
+- [Coding Guidelines](./AGENTS.md) - Code conventions and patterns
+
+## Quick Start
+
+For detailed setup instructions, see the [Local Development Guide](./docs/LOCAL_DEVELOPMENT.md).
 
 ```bash
+# Install dependencies
 bun install
-cp env.example .env
-bun run db:push
+
+# Start local Supabase
+bun supabase:start
+
+# Set up environment (copy .env.local.example to .env.local and add keys)
+# Get ANON_KEY with: bunx supabase status --output json | grep ANON_KEY
+
+# Apply migrations and seed database
+bun db:migrate:local
+bun db:seed:local
+
+# Start dev server
+bun dev
 ```
 
 ## Commands
@@ -35,43 +55,29 @@ bun run db:push
 ### Development
 
 ```bash
-bun run dev          # Start dev server
-bun run build        # Production build
-bun run start        # Start production server
-bun run check        # Run linter
+bun dev              # Start dev server
+bun build            # Production build
+bun start            # Start production server
+bun check            # Run linter
 ```
 
 ### Database
 
 ```bash
-bun run db:generate  # Generate migrations from schema changes
-bun run db:migrate   # Apply pending migrations to database
-bun run db:push      # Sync schema directly to database (dev only)
+bun db:generate       # Generate migrations from schema changes
+bun db:generate:local # Generate migrations (using local env)
+bun db:migrate        # Apply migrations to database
+bun db:migrate:local  # Apply migrations to local Supabase
+bun db:seed:local     # Seed local database with test data
 ```
 
-### Supabase
+### Local Supabase
 
 ```bash
-bunx supabase init
-bunx supabase start
-```
-
-Create a `.env.local` file with the following variables:
-
-```
-DATABASE_URL=postgresql://...
-NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY=eyJ...
-GROQ_API_KEY=gsk_...
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
-```
-
-Replace the SUPABASE variables with the values generated with `supabase start`.
-
-Create tables and apply migrations:
-
-```bash
-bun db:push
+bun supabase:start   # Start local Supabase stack
+bun supabase:stop    # Stop local Supabase
+bun supabase:status  # Check status
+bun supabase:reset   # Reset database
 ```
 
 
