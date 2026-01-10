@@ -160,6 +160,55 @@ Drizzle Kit generates safe migrations by default for most operations. However, a
 
 If a generated migration is missing these patterns, manually edit the SQL file before committing.
 
+### Rolling Back Migrations
+
+Drizzle Kit does **not** have built-in rollback functionality. The `drizzle-kit drop` command only removes migration files locally - it does not undo changes in the database.
+
+To fully rollback a migration, you must manually:
+
+#### Step 1: Undo the Schema Changes in the Database
+
+Run SQL to reverse the migration. For example, if you added a column:
+
+```sql
+ALTER TABLE "cards" DROP COLUMN IF EXISTS "hidden";
+```
+
+#### Step 2: Remove the Migration Record
+
+Drizzle tracks applied migrations in `drizzle.__drizzle_migrations`. You must delete the record:
+
+```sql
+-- First, find the migration hash
+SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC;
+
+-- Then delete the record (replace with actual hash)
+DELETE FROM drizzle.__drizzle_migrations WHERE hash = 'your_migration_hash_here';
+```
+
+#### Step 3: Remove the Migration File
+
+Delete the migration file from `drizzle/` folder, or run:
+
+```bash
+bunx drizzle-kit drop
+```
+
+#### Step 4: Revert schema.ts
+
+Remove or undo the changes in `db/schema.ts` to match the database state.
+
+#### Rollback Checklist
+
+| Step | Action |
+|------|--------|
+| 1 | Run SQL to undo schema changes (DROP COLUMN, DROP TABLE, etc.) |
+| 2 | Delete record from `drizzle.__drizzle_migrations` |
+| 3 | Delete migration file from `drizzle/` |
+| 4 | Revert changes in `db/schema.ts` |
+
+> **Tip:** When creating migrations, document the rollback SQL in your PR description for easy reference later.
+
 ## Pull Request Process
 
 ### For Team Members
