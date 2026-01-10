@@ -1,3 +1,5 @@
+import { ClerkProvider } from "@clerk/nextjs";
+import { shadcn } from "@clerk/themes";
 import { Analytics } from "@vercel/analytics/react";
 import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
@@ -50,20 +52,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans antialiased`}
-      >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange
+    <ClerkProvider appearance={{ baseTheme: shadcn }}>
+      <html lang="en" suppressHydrationWarning>
+        <body
+          className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans antialiased`}
         >
-          {children}
-        </ThemeProvider>
-        <Analytics />
-      </body>
-    </html>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="dark"
+            enableSystem
+            disableTransitionOnChange
+          >
+            {children}
+          </ThemeProvider>
+          <Analytics />
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

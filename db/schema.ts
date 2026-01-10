@@ -13,8 +13,30 @@ import {
 // Permission types
 export type MovePermission = "creator" | "everyone";
 export type DeletePermission = "creator" | "everyone";
+export type WorkspaceTier = "free" | "pro";
 
 // Tables
+
+export const workspaces = pgTable("workspaces", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  ownerId: text("owner_id").notNull(), // Clerk userId (set on upgrade)
+  tier: text("tier").$type<WorkspaceTier>().notNull().default("free"),
+  polarCustomerId: text("polar_customer_id"),
+  polarSubscriptionId: text("polar_subscription_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const usageMetrics = pgTable("usage_metrics", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  aiInsightsUsed: integer("ai_insights_used").notNull().default(0),
+  boardsCreated: integer("boards_created").notNull().default(0),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+});
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // visitorId from fingerprint
@@ -34,6 +56,10 @@ export const sessions = pgTable("sessions", {
     .$type<DeletePermission>()
     .notNull()
     .default("creator"),
+  workspaceId: text("workspace_id").references(() => workspaces.id, {
+    onDelete: "set null",
+  }),
+  isPro: boolean("is_pro").notNull().default(false), // For single board pro purchases
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -75,12 +101,28 @@ export const cards = pgTable("cards", {
 
 // Relations
 
+export const workspacesRelations = relations(workspaces, ({ many }) => ({
+  sessions: many(sessions),
+  usageMetrics: many(usageMetrics),
+}));
+
+export const usageMetricsRelations = relations(usageMetrics, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [usageMetrics.workspaceId],
+    references: [workspaces.id],
+  }),
+}));
+
 export const usersRelations = relations(users, ({ many }) => ({
   participations: many(sessionParticipants),
   cards: many(cards),
 }));
 
-export const sessionsRelations = relations(sessions, ({ many }) => ({
+export const sessionsRelations = relations(sessions, ({ one, many }) => ({
+  workspace: one(workspaces, {
+    fields: [sessions.workspaceId],
+    references: [workspaces.id],
+  }),
   participants: many(sessionParticipants),
   cards: many(cards),
 }));
@@ -112,6 +154,10 @@ export const cardsRelations = relations(cards, ({ one }) => ({
 
 // Types
 
+export type Workspace = typeof workspaces.$inferSelect;
+export type NewWorkspace = typeof workspaces.$inferInsert;
+export type UsageMetric = typeof usageMetrics.$inferSelect;
+export type NewUsageMetric = typeof usageMetrics.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Session = typeof sessions.$inferSelect;

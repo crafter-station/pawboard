@@ -2,6 +2,7 @@
 
 import { ArrowRight } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
@@ -448,6 +449,12 @@ export default function Home() {
       <div className="w-full max-w-md space-y-8 relative z-50 px-6">
         <div className="flex items-center justify-center gap-3">
           <GithubBadge />
+          <Link
+            href="/pricing"
+            className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-amber-500/30 text-xs font-medium text-amber-700 hover:text-amber-600 dark:text-amber-200 dark:hover:text-amber-100 hover:border-amber-500/50 transition-colors"
+          >
+            Upgrade
+          </Link>
           <div className="bg-card/60 backdrop-blur-sm px-2 py-1 rounded-lg border border-border/50">
             <ThemeSwitcherToggle />
           </div>
