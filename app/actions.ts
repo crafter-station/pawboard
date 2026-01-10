@@ -1,6 +1,8 @@
 "use server";
 
 import { and, eq, inArray } from "drizzle-orm";
+import { headers } from "next/headers";
+import { after } from "next/server";
 import { db } from "@/db";
 import type {
   Card,
@@ -484,6 +486,51 @@ export async function updateCard(
       .where(eq(cards.id, id))
       .returning();
 
+    // If content was updated AND actually changed, generate embedding in background
+    const contentChanged =
+      data.content !== undefined && data.content !== existingCard.content;
+
+    if (contentChanged) {
+      const cardId = id;
+      const content = data.content;
+
+      // Get the host from request headers BEFORE the after() callback
+      // This is needed because env vars may not be available in after() context on Vercel
+      const headersList = await headers();
+      const host = headersList.get("host");
+      const protocol = headersList.get("x-forwarded-proto") || "https";
+      const baseUrl = host
+        ? `${protocol}://${host}`
+        : process.env.NEXT_PUBLIC_SITE_URL ||
+          (process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : null) ||
+          "http://localhost:3000";
+      const secret = process.env.INTERNAL_API_SECRET;
+
+      after(async () => {
+        try {
+          if (!secret) {
+            console.error(
+              "INTERNAL_API_SECRET not configured for embedding generation",
+            );
+            return;
+          }
+
+          await fetch(`${baseUrl}/api/embeddings`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${secret}`,
+            },
+            body: JSON.stringify({ cardId, content }),
+          });
+        } catch (error) {
+          console.error("Failed to trigger embedding generation:", error);
+        }
+      });
+    }
+
     return { card, error: null };
   } catch (error) {
     console.error("Database error in updateCard:", error);
@@ -734,6 +781,127 @@ export async function deleteEmptyCards(
       deletedIds: [],
       deletedCount: 0,
       error: "Failed to delete empty cards",
+    };
+  }
+}
+
+// Clustering Actions
+
+import { isNotNull } from "drizzle-orm";
+import { type CardPosition, clusterAndPosition } from "@/lib/clustering";
+
+export async function clusterCards(
+  sessionId: string,
+  userId: string,
+): Promise<{
+  positions: CardPosition[];
+  clusterCount: number;
+  cardsProcessed: number;
+  error: string | null;
+}> {
+  try {
+    // Check if user is session creator
+    const userRole = await getUserRoleInSession(userId, sessionId);
+    if (userRole !== "creator") {
+      return {
+        positions: [],
+        clusterCount: 0,
+        cardsProcessed: 0,
+        error: "Only the session creator can cluster cards",
+      };
+    }
+
+    // Check if session exists and is not locked
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, sessionId),
+    });
+
+    if (!session) {
+      return {
+        positions: [],
+        clusterCount: 0,
+        cardsProcessed: 0,
+        error: "Session not found",
+      };
+    }
+
+    if (session.isLocked) {
+      return {
+        positions: [],
+        clusterCount: 0,
+        cardsProcessed: 0,
+        error: "Cannot cluster cards in a locked session",
+      };
+    }
+
+    // Get all cards with embeddings
+    const allCards = await db.query.cards.findMany({
+      where: eq(cards.sessionId, sessionId),
+    });
+
+    // Filter to cards with content and embeddings
+    const cardsWithEmbeddings = allCards.filter(
+      (card) =>
+        card.content &&
+        card.content.trim().length > 0 &&
+        card.embedding &&
+        Array.isArray(card.embedding) &&
+        card.embedding.length > 0,
+    );
+
+    if (cardsWithEmbeddings.length === 0) {
+      return {
+        positions: [],
+        clusterCount: 0,
+        cardsProcessed: 0,
+        error:
+          "No cards with content and embeddings to cluster. Try editing some cards first.",
+      };
+    }
+
+    if (cardsWithEmbeddings.length === 1) {
+      // Single card - just return its current position
+      const card = cardsWithEmbeddings[0];
+      return {
+        positions: [{ id: card.id, x: card.x, y: card.y }],
+        clusterCount: 1,
+        cardsProcessed: 1,
+        error: null,
+      };
+    }
+
+    // Build embeddings map for clustering
+    const cardEmbeddings = new Map<string, number[]>();
+    for (const card of cardsWithEmbeddings) {
+      if (card.embedding) {
+        cardEmbeddings.set(card.id, card.embedding as number[]);
+      }
+    }
+
+    // Run clustering algorithm
+    const { positions, clusterCount } = clusterAndPosition(cardEmbeddings);
+
+    // Batch update card positions in database
+    for (const position of positions) {
+      await db
+        .update(cards)
+        .set({ x: position.x, y: position.y, updatedAt: new Date() })
+        .where(eq(cards.id, position.id));
+    }
+
+    return {
+      positions,
+      clusterCount,
+      cardsProcessed: cardsWithEmbeddings.length,
+      error: null,
+    };
+  } catch (error) {
+    console.error("Database error in clusterCards:", error);
+    return {
+      positions: [],
+      clusterCount: 0,
+      cardsProcessed: 0,
+      error: "Failed to cluster cards",
     };
   }
 }

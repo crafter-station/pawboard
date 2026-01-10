@@ -56,6 +56,10 @@ type CardEvent =
   | { type: "card:vote"; id: string; votes: number; votedBy: string[] }
   | { type: "card:react"; id: string; reactions: Record<string, string[]> }
   | { type: "cards:sync"; cards: Card[] }
+  | {
+      type: "cards:cluster";
+      positions: Array<{ id: string; x: number; y: number }>;
+    }
   | { type: "user:join"; visitorId: string; username: string }
   | { type: "user:rename"; visitorId: string; newUsername: string }
   | { type: "session:rename"; newName: string }
@@ -241,6 +245,30 @@ export function useRealtimeCards(
     [broadcast],
   );
 
+  // Apply cluster positions to cards (updates local state)
+  const applyClusterPositions = useCallback(
+    (positions: Array<{ id: string; x: number; y: number }>) => {
+      setCards((prev) =>
+        prev.map((card) => {
+          const newPos = positions.find((p) => p.id === card.id);
+          if (newPos) {
+            return { ...card, x: newPos.x, y: newPos.y };
+          }
+          return card;
+        }),
+      );
+    },
+    [],
+  );
+
+  // Broadcast cluster positions to other participants
+  const broadcastClusterPositions = useCallback(
+    (positions: Array<{ id: string; x: number; y: number }>) => {
+      broadcast({ type: "cards:cluster", positions });
+    },
+    [broadcast],
+  );
+
   useEffect(() => {
     if (!userId) return;
 
@@ -331,6 +359,20 @@ export function useRealtimeCards(
                 return [...prev, ...newCards];
               });
               break;
+            case "cards:cluster":
+              // Apply cluster positions from another user
+              setCards((prev) =>
+                prev.map((card) => {
+                  const newPos = payload.positions.find(
+                    (p) => p.id === card.id,
+                  );
+                  if (newPos) {
+                    return { ...card, x: newPos.x, y: newPos.y };
+                  }
+                  return card;
+                }),
+              );
+              break;
             case "user:join":
               // New user joined - add them to participants map
               onUserJoinOrRenameRef.current?.(
@@ -401,5 +443,7 @@ export function useRealtimeCards(
     broadcastNameChange,
     broadcastSessionRename,
     broadcastSessionSettings,
+    applyClusterPositions,
+    broadcastClusterPositions,
   };
 }
