@@ -100,6 +100,15 @@ export function Board({
   const [participants, setParticipants] = useState<Map<string, string>>(
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [copiedCard, setCopiedCard] = useState<{
+    content: string;
+    color: string;
+  } | null>(null);
+  const [mousePosition, setMousePosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const hasInitializedViewRef = useRef(false);
   const { resolvedTheme } = useTheme();
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
@@ -159,6 +168,35 @@ export function Board({
     updateViewportSize();
     window.addEventListener("resize", updateViewportSize);
     return () => window.removeEventListener("resize", updateViewportSize);
+  }, []);
+
+  // Track mouse position for intelligent paste (throttled to 50ms)
+  useEffect(() => {
+    let lastUpdate = 0;
+    const THROTTLE_MS = 50;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const now = Date.now();
+      if (now - lastUpdate >= THROTTLE_MS) {
+        lastUpdate = now;
+        setMousePosition({ x: e.clientX, y: e.clientY });
+      }
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
+
+  // Restore clipboard from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("pawboard_clipboard");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setCopiedCard(parsed);
+      }
+    } catch (error) {
+      console.warn("Failed to restore clipboard from sessionStorage:", error);
+    }
   }, []);
 
   // Helper to get username for a user ID
@@ -563,7 +601,208 @@ export function Board({
     return { success: true, deletedCount };
   };
 
-  // Keyboard shortcut for new card (key "N")
+  const handleCopyCard = useCallback(async (card: Card) => {
+    const cardData = {
+      type: "pawboard-card",
+      content: card.content,
+      color: card.color,
+    };
+
+    try {
+      // Save to system clipboard as JSON
+      await navigator.clipboard.writeText(JSON.stringify(cardData));
+    } catch (error) {
+      // Clipboard API may not be available or blocked
+      console.warn("Failed to write to clipboard:", error);
+    }
+
+    // Always save to memory as fallback
+    const clipboardData = { content: card.content, color: card.color };
+    setCopiedCard(clipboardData);
+
+    // Persist to sessionStorage
+    try {
+      sessionStorage.setItem(
+        "pawboard_clipboard",
+        JSON.stringify(clipboardData),
+      );
+    } catch (error) {
+      // sessionStorage may be full or blocked
+      console.warn("Failed to save to sessionStorage:", error);
+    }
+
+    setSelectedCardId(card.id);
+  }, []);
+
+  const handlePasteCard = useCallback(async () => {
+    if (!username || !visitorId) return;
+    if (!canAddCard(session)) return;
+
+    let cardData = copiedCard;
+
+    // Try to read from system clipboard first
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      const parsed = JSON.parse(clipboardText);
+      if (parsed.type === "pawboard-card") {
+        cardData = { content: parsed.content, color: parsed.color };
+      }
+    } catch (error) {
+      // Use memory fallback if clipboard read fails
+      console.warn("Failed to read from clipboard, using fallback:", error);
+    }
+
+    if (!cardData) return;
+
+    playSound();
+
+    const isMobile = window.innerWidth < 640;
+    const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
+    const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
+
+    // Position at mouse cursor if available, otherwise at screen center
+    const pastePosition = mousePosition
+      ? screenToWorld(mousePosition)
+      : screenToWorld({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+
+    const x = pastePosition.x - cardWidth / 2;
+    const y = pastePosition.y - cardHeight / 2;
+
+    const cardId = generateCardId();
+    const newCard: Card = {
+      id: cardId,
+      sessionId,
+      content: cardData.content,
+      color: cardData.color,
+      x,
+      y,
+      votes: 0,
+      votedBy: [],
+      reactions: {},
+      createdById: visitorId,
+      updatedAt: new Date(),
+    };
+
+    setNewCardId(cardId);
+    addCard(newCard);
+
+    try {
+      const result = await createCard(newCard, visitorId);
+      if (result.error) {
+        console.error("Failed to paste card:", result.error);
+        // Remove from local state if server creation failed
+        removeCard(cardId);
+      }
+    } catch (error) {
+      console.error("Error pasting card:", error);
+      removeCard(cardId);
+    }
+  }, [
+    copiedCard,
+    username,
+    visitorId,
+    session,
+    playSound,
+    screenToWorld,
+    sessionId,
+    addCard,
+    mousePosition,
+    removeCard,
+  ]);
+
+  const handleDuplicateCard = useCallback(
+    async (card: Card) => {
+      if (!username || !visitorId) return;
+
+      // Check if session allows adding cards
+      if (!canAddCard(session)) return;
+
+      playSound();
+
+      const isMobile = window.innerWidth < 640;
+      const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
+      const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
+
+      // Try different offsets to find a free position
+      const offsets = [
+        { x: 30, y: 30 },
+        { x: -30, y: 30 },
+        { x: 30, y: -30 },
+        { x: -30, y: -30 },
+        { x: 60, y: 0 },
+        { x: -60, y: 0 },
+        { x: 0, y: 60 },
+        { x: 0, y: -60 },
+      ];
+
+      let x = card.x + 30;
+      let y = card.y + 30;
+
+      // Find a position without collision
+      for (const offset of offsets) {
+        const testX = card.x + offset.x;
+        const testY = card.y + offset.y;
+
+        // Check if any card is too close (simple collision detection)
+        const hasCollision = cards.some((c) => {
+          if (c.id === card.id) return false;
+          const dx = Math.abs(c.x - testX);
+          const dy = Math.abs(c.y - testY);
+          return dx < cardWidth * 0.8 && dy < cardHeight * 0.8;
+        });
+
+        if (!hasCollision) {
+          x = testX;
+          y = testY;
+          break;
+        }
+      }
+
+      const cardId = generateCardId();
+      const newCard: Card = {
+        id: cardId,
+        sessionId,
+        content: card.content,
+        color: card.color,
+        x,
+        y,
+        votes: 0,
+        votedBy: [],
+        reactions: {},
+        createdById: visitorId,
+        updatedAt: new Date(),
+      };
+
+      setNewCardId(cardId);
+      addCard(newCard);
+
+      try {
+        const result = await createCard(newCard, visitorId);
+        if (result.error) {
+          console.error("Failed to duplicate card:", result.error);
+          removeCard(cardId);
+        }
+      } catch (error) {
+        console.error("Error duplicating card:", error);
+        removeCard(cardId);
+      }
+    },
+    [
+      username,
+      visitorId,
+      session,
+      playSound,
+      sessionId,
+      addCard,
+      cards,
+      removeCard,
+    ],
+  );
+
+  // Keyboard shortcuts for new card (key "N"), copy (Ctrl+C), and paste (Ctrl+V)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip if user is typing in an input or textarea
@@ -579,6 +818,27 @@ export function Board({
         return;
       }
 
+      // Ctrl+C or Cmd+C to copy selected card
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        if (selectedCardId) {
+          const card = cards.find((c) => c.id === selectedCardId);
+          if (card) {
+            e.preventDefault();
+            handleCopyCard(card);
+          }
+        }
+        return;
+      }
+
+      // Ctrl+V or Cmd+V to paste card
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        if (copiedCard) {
+          e.preventDefault();
+          handlePasteCard();
+        }
+        return;
+      }
+
       // "N" to create a new card
       if (e.key === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
@@ -587,7 +847,15 @@ export function Board({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commandOpen, handleAddCard]);
+  }, [
+    commandOpen,
+    handleAddCard,
+    selectedCardId,
+    cards,
+    handleCopyCard,
+    copiedCard,
+    handlePasteCard,
+  ]);
 
   if (!username || isFingerprintLoading || isUsernameLoading || !visitorId) {
     return (
@@ -956,7 +1224,19 @@ export function Board({
         style={{
           cursor: isPanning ? "grabbing" : isSpacePressed ? "grab" : "default",
         }}
-        onMouseDown={canvasHandlers.onMouseDown}
+        onMouseDown={(e) => {
+          // Deselect card if clicking directly on canvas (not on a card)
+          const target = e.target as HTMLElement;
+          if (
+            !target.closest("[data-card]") &&
+            !target.closest("button") &&
+            !isSpacePressed &&
+            e.button === 0
+          ) {
+            setSelectedCardId(null);
+          }
+          canvasHandlers.onMouseDown(e);
+        }}
         onTouchStart={canvasHandlers.onTouchStart}
         onTouchMove={canvasHandlers.onTouchMove}
         onTouchEnd={canvasHandlers.onTouchEnd}
@@ -979,6 +1259,9 @@ export function Board({
               visitorId={visitorId}
               autoFocus={card.id === newCardId}
               onFocused={() => setNewCardId(null)}
+              isSelected={card.id === selectedCardId}
+              onSelect={() => setSelectedCardId(card.id)}
+              onDuplicate={handleDuplicateCard}
               onMove={moveCard}
               onType={typeCard}
               onChangeColor={changeColor}
