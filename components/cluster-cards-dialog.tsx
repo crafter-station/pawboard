@@ -33,7 +33,6 @@ export function ClusterCardsDialog({
   const [open, setOpen] = useState(false);
   const [isClustering, setIsClustering] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showConfirmation, setShowConfirmation] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [clusterResult, setClusterResult] = useState<{
     clusterCount: number;
@@ -47,7 +46,6 @@ export function ClusterCardsDialog({
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
     if (newOpen) {
-      setShowConfirmation(false);
       setShowSuccess(false);
       setError(null);
       setClusterResult(null);
@@ -80,7 +78,6 @@ export function ClusterCardsDialog({
         cardsProcessed: result.cardsProcessed,
       });
       setShowSuccess(true);
-      setShowConfirmation(false);
 
       // Close dialog after showing success
       setTimeout(() => {
@@ -93,18 +90,6 @@ export function ClusterCardsDialog({
     } finally {
       setIsClustering(false);
     }
-  };
-
-  const handleInitialClick = () => {
-    if (cardsWithContent.length === 0) {
-      setError("No cards with content to cluster");
-      return;
-    }
-    if (cardsWithContent.length === 1) {
-      setError("Need at least 2 cards with content to cluster");
-      return;
-    }
-    setShowConfirmation(true);
   };
 
   return (
@@ -147,7 +132,7 @@ export function ClusterCardsDialog({
                 </div>
               </div>
             </div>
-          ) : !showConfirmation ? (
+          ) : (
             <div className="space-y-4">
               <div className="p-4 bg-muted rounded-md">
                 <p className="text-sm">
@@ -171,17 +156,6 @@ export function ClusterCardsDialog({
                 </div>
               )}
             </div>
-          ) : (
-            <div className="space-y-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-md border border-amber-200 dark:border-amber-900">
-              <p className="text-sm text-amber-800 dark:text-amber-300">
-                This will rearrange all {cardsWithContent.length} cards on the
-                board. Card positions will be changed to group similar content
-                together.
-              </p>
-              <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">
-                Continue?
-              </p>
-            </div>
           )}
 
           {error && (
@@ -193,47 +167,29 @@ export function ClusterCardsDialog({
 
         {!showSuccess && (
           <DialogFooter>
-            {!showConfirmation ? (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => setOpen(false)}
-                  disabled={isClustering}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleInitialClick}
-                  disabled={isClustering || cardsWithContent.length < 2}
-                >
+            <Button
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={isClustering}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCluster}
+              disabled={isClustering || cardsWithContent.length < 2}
+            >
+              {isClustering ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Clustering...
+                </>
+              ) : (
+                <>
                   <Sparkles className="h-4 w-4 mr-2" />
                   Cluster Cards
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowConfirmation(false)}
-                  disabled={isClustering}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={handleCluster} disabled={isClustering}>
-                  {isClustering ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Clustering...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      Yes, Cluster
-                    </>
-                  )}
-                </Button>
-              </>
-            )}
+                </>
+              )}
+            </Button>
           </DialogFooter>
         )}
       </DialogContent>
