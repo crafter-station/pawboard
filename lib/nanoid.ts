@@ -7,3 +7,7 @@ export function generateSessionId() {
 export function generateCardId() {
   return nanoid(12);
 }
+
+export function generateElementId() {
+  return nanoid(12);
+}

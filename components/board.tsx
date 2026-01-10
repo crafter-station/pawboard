@@ -21,12 +21,15 @@ import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createCard,
+  createElement,
   deleteCard,
+  deleteElement,
   deleteEmptyCards,
   deleteSession,
   joinSession,
   toggleReaction,
   updateCard,
+  updateElement,
   updateSessionName,
   updateSessionSettings,
   voteCard as voteCardAction,
@@ -41,6 +44,9 @@ import { Minimap } from "@/components/minimap";
 import { ParticipantsDialog } from "@/components/participants-dialog";
 import { RealtimeCursors } from "@/components/realtime-cursors";
 import { SessionSettingsDialog } from "@/components/session-settings-dialog";
+import { ShapeElement } from "@/components/shape-element";
+import { TextElement } from "@/components/text-element";
+import { Toolbox, type ToolType } from "@/components/toolbox";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -50,17 +56,27 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { UserBadge } from "@/components/user-badge";
-import type { Card, Session, SessionRole } from "@/db/schema";
+import type {
+  Card,
+  Element,
+  ElementData,
+  Session,
+  SessionRole,
+  ShapeData,
+  ShapeType,
+  TextData,
+} from "@/db/schema";
 import { useCanvasGestures } from "@/hooks/use-canvas-gestures";
 import { useCatSound } from "@/hooks/use-cat-sound";
 import { useFingerprint } from "@/hooks/use-fingerprint";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
 import { useRealtimeCards } from "@/hooks/use-realtime-cards";
+import { useRealtimeElements } from "@/hooks/use-realtime-elements";
 import { useRealtimePresence } from "@/hooks/use-realtime-presence";
 import { useSessionUsername } from "@/hooks/use-session-username";
 import { DARK_COLORS, LIGHT_COLORS } from "@/lib/colors";
-import { generateCardId } from "@/lib/nanoid";
-import { canAddCard } from "@/lib/permissions";
+import { generateCardId, generateElementId } from "@/lib/nanoid";
+import { canAddCard, canAddElement } from "@/lib/permissions";
 import { getAvatarForUser } from "@/lib/utils";
 
 export interface Participant {
@@ -72,6 +88,7 @@ interface BoardProps {
   sessionId: string;
   initialSession: Session;
   initialCards: Card[];
+  initialElements: Element[];
   initialParticipants: Participant[];
 }
 
@@ -85,6 +102,7 @@ export function Board({
   sessionId,
   initialSession,
   initialCards,
+  initialElements,
   initialParticipants,
 }: BoardProps) {
   const router = useRouter();
@@ -100,6 +118,7 @@ export function Board({
   const [participants, setParticipants] = useState<Map<string, string>>(
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
+  const [selectedTool, setSelectedTool] = useState<ToolType>("select");
   const hasInitializedViewRef = useRef(false);
   const { resolvedTheme } = useTheme();
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
@@ -252,6 +271,16 @@ export function Board({
     handleRemoteSessionSettingsChange,
   );
 
+  // Elements realtime sync
+  const {
+    elements,
+    addElement,
+    moveElement,
+    resizeElement,
+    updateElementData,
+    removeElement,
+  } = useRealtimeElements(sessionId, initialElements, visitorId || "");
+
   // Fit all cards in view
   const fitAllCards = useCallback(() => {
     if (cards.length === 0) {
@@ -398,6 +427,104 @@ export function Board({
     cards.length,
     centerOn,
   ]);
+
+  // Handle adding elements (text, shapes)
+  const handleAddElement = useCallback(
+    async (tool: ToolType, worldX: number, worldY: number) => {
+      if (!visitorId || tool === "select") return;
+      if (!canAddElement(session)) return;
+
+      const elementId = generateElementId();
+      let elementData: ElementData;
+      let width = 200;
+      let height = 100;
+
+      if (tool === "text") {
+        elementData = {
+          content: "",
+          fontSize: 16,
+          fontWeight: "normal",
+          textAlign: "left",
+          color: resolvedTheme === "dark" ? "#ffffff" : "#000000",
+        } as TextData;
+        width = 200;
+        height = 100;
+      } else {
+        // Shape tools
+        const shapeType: ShapeType =
+          tool === "rectangle"
+            ? "rectangle"
+            : tool === "circle"
+              ? "circle"
+              : tool === "diamond"
+                ? "diamond"
+                : "arrow";
+
+        elementData = {
+          shapeType,
+          fill: resolvedTheme === "dark" ? "#3b82f6" : "#3b82f6",
+          stroke: resolvedTheme === "dark" ? "#1d4ed8" : "#1d4ed8",
+          strokeWidth: 2,
+        } as ShapeData;
+
+        if (tool === "arrow") {
+          width = 150;
+          height = 50;
+        } else {
+          width = 100;
+          height = 100;
+        }
+      }
+
+      const newElement: Element = {
+        id: elementId,
+        sessionId,
+        type: tool === "text" ? "text" : "shape",
+        x: worldX - width / 2,
+        y: worldY - height / 2,
+        width,
+        height,
+        data: elementData,
+        createdById: visitorId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      addElement(newElement);
+      await createElement(newElement, visitorId);
+
+      // Reset to select tool after creating
+      setSelectedTool("select");
+    },
+    [visitorId, session, sessionId, resolvedTheme, addElement],
+  );
+
+  // Element persistence handlers
+  const handlePersistElementMove = async (id: string, x: number, y: number) => {
+    if (!visitorId) return;
+    await updateElement(id, { x, y }, visitorId);
+  };
+
+  const handlePersistElementResize = async (
+    id: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ) => {
+    if (!visitorId) return;
+    await updateElement(id, { x, y, width, height }, visitorId);
+  };
+
+  const handlePersistElementData = async (id: string, data: ElementData) => {
+    if (!visitorId) return;
+    await updateElement(id, { data }, visitorId);
+  };
+
+  const handlePersistElementDelete = async (id: string) => {
+    if (!visitorId) return;
+    await deleteElement(id, visitorId);
+  };
 
   const handlePersistContent = async (id: string, content: string) => {
     if (!visitorId) return;
@@ -946,6 +1073,13 @@ export function Board({
         </div>
       </div>
 
+      {/* Toolbox */}
+      <Toolbox
+        selectedTool={selectedTool}
+        onToolSelect={setSelectedTool}
+        disabled={isLocked}
+      />
+
       {/* Viewport with gesture handlers */}
       <div
         ref={canvasRef}
@@ -953,12 +1087,30 @@ export function Board({
         aria-label="Idea board canvas - use mouse wheel to pan, Shift+scroll to pan horizontally, Ctrl+scroll to zoom, hold Space+drag to pan"
         className="relative w-full h-screen overflow-hidden"
         style={{
-          cursor: isPanning ? "grabbing" : isSpacePressed ? "grab" : "default",
+          cursor: isPanning
+            ? "grabbing"
+            : isSpacePressed
+              ? "grab"
+              : selectedTool !== "select"
+                ? "crosshair"
+                : "default",
         }}
         onMouseDown={canvasHandlers.onMouseDown}
         onTouchStart={canvasHandlers.onTouchStart}
         onTouchMove={canvasHandlers.onTouchMove}
         onTouchEnd={canvasHandlers.onTouchEnd}
+        onClick={(e) => {
+          // Create element on click when a tool is selected
+          // Only create if clicking directly on the viewport div (not on cards/elements)
+          if (
+            selectedTool !== "select" &&
+            !isPanning &&
+            e.currentTarget === e.target
+          ) {
+            const worldPos = screenToWorld({ x: e.clientX, y: e.clientY });
+            handleAddElement(selectedTool, worldPos.x, worldPos.y);
+          }
+        }}
       >
         {/* Transformable canvas */}
         <div
@@ -967,6 +1119,53 @@ export function Board({
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           }}
         >
+          {/* Elements (text, shapes) - rendered below cards */}
+          {elements.map((element) =>
+            element.type === "text" ? (
+              <TextElement
+                key={element.id}
+                element={element}
+                session={session}
+                userRole={userRole}
+                visitorId={visitorId}
+                onMove={moveElement}
+                onResize={resizeElement}
+                onUpdateData={(id, data) =>
+                  updateElementData(id, data as TextData)
+                }
+                onDelete={removeElement}
+                onPersistMove={handlePersistElementMove}
+                onPersistResize={handlePersistElementResize}
+                onPersistData={handlePersistElementData}
+                onPersistDelete={handlePersistElementDelete}
+                screenToWorld={screenToWorld}
+                zoom={zoom}
+                isSpacePressed={isSpacePressed}
+              />
+            ) : (
+              <ShapeElement
+                key={element.id}
+                element={element}
+                session={session}
+                userRole={userRole}
+                visitorId={visitorId}
+                onMove={moveElement}
+                onResize={resizeElement}
+                onUpdateData={(id, data) =>
+                  updateElementData(id, data as ShapeData)
+                }
+                onDelete={removeElement}
+                onPersistMove={handlePersistElementMove}
+                onPersistResize={handlePersistElementResize}
+                onPersistData={handlePersistElementData}
+                onPersistDelete={handlePersistElementDelete}
+                screenToWorld={screenToWorld}
+                zoom={zoom}
+                isSpacePressed={isSpacePressed}
+              />
+            ),
+          )}
+
           {/* Cards */}
           {cards.map((card) => (
             <IdeaCard
