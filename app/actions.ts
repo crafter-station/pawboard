@@ -5,20 +5,32 @@ import { db } from "@/db";
 import type {
   Card,
   DeletePermission,
+  Element,
   MovePermission,
   NewCard,
+  NewElement,
   Session,
   SessionRole,
   User,
 } from "@/db/schema";
-import { cards, sessionParticipants, sessions, users } from "@/db/schema";
+import {
+  cards,
+  elements,
+  sessionParticipants,
+  sessions,
+  users,
+} from "@/db/schema";
 import { generateSessionName, generateUsername } from "@/lib/names";
 import {
   canAddCard,
+  canAddElement,
   canChangeColor,
   canDeleteCard,
+  canDeleteElement,
   canEditCard,
+  canEditElement,
   canMoveCard,
+  canMoveElement,
   canReact,
   canVote,
 } from "@/lib/permissions";
@@ -735,5 +747,145 @@ export async function deleteEmptyCards(
       deletedCount: 0,
       error: "Failed to delete empty cards",
     };
+  }
+}
+
+// Element Actions
+
+export async function getSessionElements(sessionId: string) {
+  try {
+    return await db.query.elements.findMany({
+      where: eq(elements.sessionId, sessionId),
+    });
+  } catch (error) {
+    console.error("Database error in getSessionElements:", error);
+    return [];
+  }
+}
+
+export async function createElement(
+  data: NewElement,
+  _userId: string,
+): Promise<{ element: Element | null; error: string | null }> {
+  try {
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, data.sessionId),
+    });
+
+    if (!session) {
+      return { element: null, error: "Session not found" };
+    }
+
+    if (!canAddElement(session)) {
+      return {
+        element: null,
+        error: "Session is locked. Cannot add new elements.",
+      };
+    }
+
+    const [element] = await db.insert(elements).values(data).returning();
+    return { element, error: null };
+  } catch (error) {
+    console.error("Database error in createElement:", error);
+    return { element: null, error: "Failed to create element" };
+  }
+}
+
+export async function updateElement(
+  id: string,
+  data: Partial<Pick<Element, "x" | "y" | "width" | "height" | "data">>,
+  userId: string,
+): Promise<{ element: Element | null; error: string | null }> {
+  try {
+    const existingElement = await db.query.elements.findFirst({
+      where: eq(elements.id, id),
+    });
+
+    if (!existingElement) {
+      return { element: null, error: "Element not found" };
+    }
+
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, existingElement.sessionId),
+    });
+
+    if (!session) {
+      return { element: null, error: "Session not found" };
+    }
+
+    // Check permissions based on what's being updated
+    if (data.data !== undefined) {
+      if (!canEditElement(session, existingElement, userId)) {
+        return {
+          element: null,
+          error: "You don't have permission to edit this element",
+        };
+      }
+    }
+
+    if (
+      data.x !== undefined ||
+      data.y !== undefined ||
+      data.width !== undefined ||
+      data.height !== undefined
+    ) {
+      if (!canMoveElement(session, existingElement, userId)) {
+        return {
+          element: null,
+          error: "You don't have permission to move this element",
+        };
+      }
+    }
+
+    const [element] = await db
+      .update(elements)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(elements.id, id))
+      .returning();
+
+    return { element, error: null };
+  } catch (error) {
+    console.error("Database error in updateElement:", error);
+    return { element: null, error: "Failed to update element" };
+  }
+}
+
+export async function deleteElement(
+  id: string,
+  visitorId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const existing = await db.query.elements.findFirst({
+      where: eq(elements.id, id),
+    });
+
+    if (!existing) {
+      return { success: false, error: "Element not found" };
+    }
+
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, existing.sessionId),
+    });
+
+    if (!session) {
+      return { success: false, error: "Session not found" };
+    }
+
+    const userRole = await getUserRoleInSession(visitorId, existing.sessionId);
+
+    if (
+      !canDeleteElement(session, existing, visitorId, userRole ?? "participant")
+    ) {
+      return {
+        success: false,
+        error: "You don't have permission to delete this element",
+      };
+    }
+
+    await db.delete(elements).where(eq(elements.id, id));
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in deleteElement:", error);
+    return { success: false, error: "Failed to delete element" };
   }
 }

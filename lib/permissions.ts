@@ -1,4 +1,4 @@
-import type { Card, Session, SessionRole } from "@/db/schema";
+import type { Card, Element, Session, SessionRole } from "@/db/schema";
 
 /**
  * Check if user can add a new card to the session
@@ -132,4 +132,68 @@ export function canDeleteSession(userRole: SessionRole): boolean {
  */
 export function canEditSessionName(userRole: SessionRole): boolean {
   return userRole === "creator";
+}
+
+// Element Permissions (text, shapes)
+
+/**
+ * Check if user can add a new element to the session
+ * - Allowed when session is not locked
+ */
+export function canAddElement(session: Session): boolean {
+  return !session.isLocked;
+}
+
+/**
+ * Check if user can edit an element's data (content, colors, etc.)
+ * - Allowed when session is not locked AND user is the element creator
+ */
+export function canEditElement(
+  session: Session,
+  element: Element,
+  userId: string,
+): boolean {
+  return !session.isLocked && element.createdById === userId;
+}
+
+/**
+ * Check if user can move/resize an element
+ * - Never allowed when session is locked
+ * - When unlocked: depends on movePermission setting
+ *   - "creator": only element creator can move
+ *   - "everyone": anyone can move any element
+ */
+export function canMoveElement(
+  session: Session,
+  element: Element,
+  userId: string,
+): boolean {
+  if (session.isLocked) return false;
+
+  if (session.movePermission === "everyone") return true;
+
+  return element.createdById === userId;
+}
+
+/**
+ * Check if user can delete an element
+ * - Session creator can ALWAYS delete any element (even when locked)
+ * - When locked: only session creator can delete
+ * - When unlocked: depends on deletePermission setting
+ *   - "creator": only element creator can delete their own elements
+ *   - "everyone": anyone can delete any element
+ */
+export function canDeleteElement(
+  session: Session,
+  element: Element,
+  userId: string,
+  userRole: SessionRole,
+): boolean {
+  if (userRole === "creator") return true;
+
+  if (session.isLocked) return false;
+
+  if (session.deletePermission === "everyone") return true;
+
+  return element.createdById === userId;
 }
