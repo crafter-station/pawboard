@@ -13,6 +13,7 @@ import {
   Plus,
   Settings,
   Share2,
+  Sparkles,
   Trash,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,6 +34,7 @@ import {
 } from "@/app/actions";
 import { AddCardButton } from "@/components/add-card-button";
 import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
+import { ClusterCardsDialog } from "@/components/cluster-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
@@ -242,6 +244,8 @@ export function Board({
     broadcastNameChange,
     broadcastSessionRename,
     broadcastSessionSettings,
+    applyClusterPositions,
+    broadcastClusterPositions,
   } = useRealtimeCards(
     sessionId,
     initialCards,
@@ -375,6 +379,7 @@ export function Board({
       votes: 0,
       votedBy: [],
       reactions: {},
+      embedding: null,
       createdById: visitorId,
       updatedAt: new Date(),
     };
@@ -563,6 +568,17 @@ export function Board({
     return { success: true, deletedCount };
   };
 
+  // Handle cluster cards callback
+  const handleClusterCards = useCallback(
+    (positions: Array<{ id: string; x: number; y: number }>) => {
+      // Apply positions locally (this triggers animation)
+      applyClusterPositions(positions);
+      // Broadcast to other participants
+      broadcastClusterPositions(positions);
+    },
+    [applyClusterPositions, broadcastClusterPositions],
+  );
+
   // Keyboard shortcut for new card (key "N")
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -692,6 +708,23 @@ export function Board({
                   title="Clean up empty cards"
                 >
                   <Trash className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </Button>
+              }
+            />
+            <ClusterCardsDialog
+              cards={cards}
+              sessionId={sessionId}
+              userId={visitorId}
+              onCluster={handleClusterCards}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+                  title="Cluster cards by similarity"
+                  disabled={isLocked}
+                >
+                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </Button>
               }
             />
