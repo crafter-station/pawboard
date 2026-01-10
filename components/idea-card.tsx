@@ -120,6 +120,8 @@ export function IdeaCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const startPos = useRef({ x: 0, y: 0 });
+  const dragStartScreenPos = useRef<{ x: number; y: number } | null>(null);
+  const hasDraggedRef = useRef(false);
 
   // Permission checks
   const isOwnCard = card.createdById === visitorId;
@@ -130,7 +132,7 @@ export function IdeaCard({
     session,
     card,
     visitorId,
-    userRole ?? "participant"
+    userRole ?? "participant",
   );
   const allowChangeColor = canChangeColor(session, card, visitorId);
   const allowRefine = canRefine(session, card, visitorId);
@@ -161,6 +163,8 @@ export function IdeaCard({
   const handleDragStart = (clientX: number, clientY: number) => {
     if (!allowMove) return;
     setIsDragging(true);
+    hasDraggedRef.current = false;
+    dragStartScreenPos.current = { x: clientX, y: clientY };
     startPos.current = { x: card.x, y: card.y };
     // Calculate the offset in world coordinates
     // The click position in world space minus the card's world position
@@ -176,7 +180,7 @@ export function IdeaCard({
     // or when space is pressed (space+click is for canvas panning)
     if (e.button === 1 || isSpacePressed) return;
 
-    // Select card on click (but not if clicking on interactive elements)
+    // Check if clicking on interactive elements
     const target = e.target as HTMLElement;
     const isInteractiveElement =
       target.closest("button") ||
@@ -184,10 +188,12 @@ export function IdeaCard({
       target.closest("[role='button']") ||
       target.closest(".popover-content");
 
+    // Only select if not clicking on interactive elements
     if (!isInteractiveElement && onSelect) {
       onSelect();
     }
 
+    // Start drag tracking (but won't actually move until threshold is met)
     handleDragStart(e.clientX, e.clientY);
   };
 
@@ -202,7 +208,21 @@ export function IdeaCard({
   useEffect(() => {
     if (!isDragging) return;
 
+    const DRAG_THRESHOLD = 5; // pixels
+
     const handleMouseMove = (e: MouseEvent) => {
+      // Check if we've moved enough to consider it a drag
+      if (!hasDraggedRef.current && dragStartScreenPos.current) {
+        const dx = Math.abs(e.clientX - dragStartScreenPos.current.x);
+        const dy = Math.abs(e.clientY - dragStartScreenPos.current.y);
+        if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) {
+          // Haven't moved enough yet, don't update position
+          return;
+        }
+        // Threshold exceeded, now it's a real drag
+        hasDraggedRef.current = true;
+      }
+
       // Convert screen position to world position and apply offset
       const worldPos = screenToWorld({ x: e.clientX, y: e.clientY });
       const x = worldPos.x - dragOffset.current.x;
@@ -213,6 +233,17 @@ export function IdeaCard({
     const handleTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 1) {
         const touch = e.touches[0];
+
+        // Check drag threshold for touch
+        if (!hasDraggedRef.current && dragStartScreenPos.current) {
+          const dx = Math.abs(touch.clientX - dragStartScreenPos.current.x);
+          const dy = Math.abs(touch.clientY - dragStartScreenPos.current.y);
+          if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) {
+            return;
+          }
+          hasDraggedRef.current = true;
+        }
+
         // Convert screen position to world position and apply offset
         const worldPos = screenToWorld({ x: touch.clientX, y: touch.clientY });
         const x = worldPos.x - dragOffset.current.x;
@@ -223,9 +254,17 @@ export function IdeaCard({
 
     const handleEnd = () => {
       setIsDragging(false);
-      if (card.x !== startPos.current.x || card.y !== startPos.current.y) {
+      dragStartScreenPos.current = null;
+
+      // Only persist if we actually dragged (moved the card)
+      if (
+        hasDraggedRef.current &&
+        (card.x !== startPos.current.x || card.y !== startPos.current.y)
+      ) {
         onPersistMove(card.id, card.x, card.y);
       }
+
+      hasDraggedRef.current = false;
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -259,7 +298,7 @@ export function IdeaCard({
   };
 
   const handleContentKeyDown = (
-    e: React.KeyboardEvent<HTMLTextAreaElement>
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
   ) => {
     if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
@@ -364,8 +403,8 @@ export function IdeaCard({
       ? "bg-black/10"
       : "bg-transparent group-hover:bg-black/10"
     : isMobile
-    ? "bg-stone-900/5"
-    : "bg-transparent group-hover:bg-stone-900/5";
+      ? "bg-stone-900/5"
+      : "bg-transparent group-hover:bg-stone-900/5";
 
   return (
     <motion.div
@@ -766,8 +805,8 @@ export function IdeaCard({
                     hasReacted
                       ? "bg-stone-900/15 cursor-pointer"
                       : allowReact
-                      ? `${hoverBgClass} cursor-pointer`
-                      : "opacity-50 cursor-default"
+                        ? `${hoverBgClass} cursor-pointer`
+                        : "opacity-50 cursor-default"
                   }`}
                 >
                   <span>{emoji}</span>
@@ -875,10 +914,10 @@ export function IdeaCard({
                       !allowVote
                         ? "opacity-30 cursor-not-allowed"
                         : hasVoted
-                        ? isPurpleDark
-                          ? "bg-white/20 text-white"
-                          : "bg-stone-900/15 text-stone-800"
-                        : `${hoverBgClass} cursor-pointer`
+                          ? isPurpleDark
+                            ? "bg-white/20 text-white"
+                            : "bg-stone-900/15 text-stone-800"
+                          : `${hoverBgClass} cursor-pointer`
                     }`}
                   >
                     <ChevronUp
@@ -896,10 +935,10 @@ export function IdeaCard({
                   {isOwnCard
                     ? "Can't vote on your own"
                     : session.isLocked
-                    ? "Session is locked"
-                    : hasVoted
-                    ? "Remove vote"
-                    : "Vote"}
+                      ? "Session is locked"
+                      : hasVoted
+                        ? "Remove vote"
+                        : "Vote"}
                 </TooltipContent>
               </Tooltip>
             </div>

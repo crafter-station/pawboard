@@ -98,12 +98,16 @@ export function Board({
   const [session, setSession] = useState<Session>(initialSession);
   const [userRole, setUserRole] = useState<SessionRole | null>(null);
   const [participants, setParticipants] = useState<Map<string, string>>(
-    () => new Map(initialParticipants.map((p) => [p.visitorId, p.username]))
+    () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [copiedCard, setCopiedCard] = useState<{
     content: string;
     color: string;
+  } | null>(null);
+  const [mousePosition, setMousePosition] = useState<{
+    x: number;
+    y: number;
   } | null>(null);
   const hasInitializedViewRef = useRef(false);
   const { resolvedTheme } = useTheme();
@@ -166,12 +170,34 @@ export function Board({
     return () => window.removeEventListener("resize", updateViewportSize);
   }, []);
 
+  // Track mouse position for intelligent paste
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
+
+  // Restore clipboard from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("pawboard_clipboard");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setCopiedCard(parsed);
+      }
+    } catch (error) {
+      console.warn("Failed to restore clipboard from sessionStorage:", error);
+    }
+  }, []);
+
   // Helper to get username for a user ID
   const getUsernameForId = useCallback(
     (userId: string): string => {
       return participants.get(userId) ?? "Unknown";
     },
-    [participants]
+    [participants],
   );
 
   const {
@@ -194,7 +220,7 @@ export function Board({
     (worldPoint: { x: number; y: number }) => {
       centerOn(worldPoint, zoom); // Keep current zoom level
     },
-    [centerOn, zoom]
+    [centerOn, zoom],
   );
 
   // Handle minimap zoom
@@ -207,7 +233,7 @@ export function Board({
       const screenPoint = worldToScreen(worldPoint);
       zoomTo(newZoom, screenPoint);
     },
-    [zoom, zoomTo, worldToScreen]
+    [zoom, zoomTo, worldToScreen],
   );
 
   // Handle incoming name change events from realtime
@@ -219,7 +245,7 @@ export function Board({
         return next;
       });
     },
-    []
+    [],
   );
 
   // Handle incoming session rename events from realtime
@@ -232,7 +258,7 @@ export function Board({
     (settings: SessionSettings) => {
       setSession((prev) => ({ ...prev, ...settings }));
     },
-    []
+    [],
   );
 
   const {
@@ -254,7 +280,7 @@ export function Board({
     username,
     handleRemoteNameChange,
     handleRemoteSessionRename,
-    handleRemoteSessionSettingsChange
+    handleRemoteSessionSettingsChange,
   );
 
   // Fit all cards in view
@@ -275,7 +301,7 @@ export function Board({
         maxX: Math.max(acc.maxX, card.x + cardWidth),
         maxY: Math.max(acc.maxY, card.y + cardHeight),
       }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
     );
 
     fitToBounds(bounds);
@@ -301,7 +327,7 @@ export function Board({
         maxX: Math.max(acc.maxX, card.x + cardWidth),
         maxY: Math.max(acc.maxY, card.y + cardHeight),
       }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
     );
 
     // Center on cards at 100% zoom
@@ -498,7 +524,7 @@ export function Board({
     const { session: updatedSession, error } = await updateSessionName(
       sessionId,
       newName,
-      visitorId
+      visitorId,
     );
     if (updatedSession && !error) {
       // Update local state
@@ -520,7 +546,7 @@ export function Board({
     const { session: updatedSession, error } = await updateSessionSettings(
       sessionId,
       settings,
-      visitorId
+      visitorId,
     );
     if (updatedSession && !error) {
       // Update local state
@@ -553,7 +579,7 @@ export function Board({
 
     const { deletedIds, deletedCount, error } = await deleteEmptyCards(
       sessionId,
-      visitorId
+      visitorId,
     );
 
     if (error) {
@@ -568,19 +594,58 @@ export function Board({
     return { success: true, deletedCount };
   };
 
-  const handleCopyCard = useCallback((card: Card) => {
-    setCopiedCard({
+  const handleCopyCard = useCallback(async (card: Card) => {
+    const cardData = {
+      type: "pawboard-card",
       content: card.content,
       color: card.color,
-    });
+    };
+
+    try {
+      // Save to system clipboard as JSON
+      await navigator.clipboard.writeText(JSON.stringify(cardData));
+    } catch (error) {
+      // Clipboard API may not be available or blocked
+      console.warn("Failed to write to clipboard:", error);
+    }
+
+    // Always save to memory as fallback
+    const clipboardData = { content: card.content, color: card.color };
+    setCopiedCard(clipboardData);
+
+    // Persist to sessionStorage
+    try {
+      sessionStorage.setItem(
+        "pawboard_clipboard",
+        JSON.stringify(clipboardData),
+      );
+    } catch (error) {
+      // sessionStorage may be full or blocked
+      console.warn("Failed to save to sessionStorage:", error);
+    }
+
     setSelectedCardId(card.id);
   }, []);
 
   const handlePasteCard = useCallback(async () => {
-    if (!copiedCard || !username || !visitorId) return;
-
-    // Check if session allows adding cards
+    if (!username || !visitorId) return;
     if (!canAddCard(session)) return;
+
+    let cardData = copiedCard;
+
+    // Try to read from system clipboard first
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      const parsed = JSON.parse(clipboardText);
+      if (parsed.type === "pawboard-card") {
+        cardData = { content: parsed.content, color: parsed.color };
+      }
+    } catch (error) {
+      // Use memory fallback if clipboard read fails
+      console.warn("Failed to read from clipboard, using fallback:", error);
+    }
+
+    if (!cardData) return;
 
     playSound();
 
@@ -588,22 +653,23 @@ export function Board({
     const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
     const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
 
-    // Position at screen center with slight offset
-    const screenCenter = {
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
-    };
-    const worldCenter = screenToWorld(screenCenter);
-    const offset = 20; // Small offset to avoid exact overlap
-    const x = worldCenter.x - cardWidth / 2 + offset;
-    const y = worldCenter.y - cardHeight / 2 + offset;
+    // Position at mouse cursor if available, otherwise at screen center
+    const pastePosition = mousePosition
+      ? screenToWorld(mousePosition)
+      : screenToWorld({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+
+    const x = pastePosition.x - cardWidth / 2;
+    const y = pastePosition.y - cardHeight / 2;
 
     const cardId = generateCardId();
     const newCard: Card = {
       id: cardId,
       sessionId,
-      content: copiedCard.content,
-      color: copiedCard.color,
+      content: cardData.content,
+      color: cardData.color,
       x,
       y,
       votes: 0,
@@ -615,7 +681,18 @@ export function Board({
 
     setNewCardId(cardId);
     addCard(newCard);
-    await createCard(newCard, visitorId);
+
+    try {
+      const result = await createCard(newCard, visitorId);
+      if (result.error) {
+        console.error("Failed to paste card:", result.error);
+        // Remove from local state if server creation failed
+        removeCard(cardId);
+      }
+    } catch (error) {
+      console.error("Error pasting card:", error);
+      removeCard(cardId);
+    }
   }, [
     copiedCard,
     username,
@@ -625,6 +702,8 @@ export function Board({
     screenToWorld,
     sessionId,
     addCard,
+    mousePosition,
+    removeCard,
   ]);
 
   const handleDuplicateCard = useCallback(
@@ -640,10 +719,40 @@ export function Board({
       const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
       const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
 
-      // Position with slight offset from original
-      const offset = 30;
-      const x = card.x + offset;
-      const y = card.y + offset;
+      // Try different offsets to find a free position
+      const offsets = [
+        { x: 30, y: 30 },
+        { x: -30, y: 30 },
+        { x: 30, y: -30 },
+        { x: -30, y: -30 },
+        { x: 60, y: 0 },
+        { x: -60, y: 0 },
+        { x: 0, y: 60 },
+        { x: 0, y: -60 },
+      ];
+
+      let x = card.x + 30;
+      let y = card.y + 30;
+
+      // Find a position without collision
+      for (const offset of offsets) {
+        const testX = card.x + offset.x;
+        const testY = card.y + offset.y;
+
+        // Check if any card is too close (simple collision detection)
+        const hasCollision = cards.some((c) => {
+          if (c.id === card.id) return false;
+          const dx = Math.abs(c.x - testX);
+          const dy = Math.abs(c.y - testY);
+          return dx < cardWidth * 0.8 && dy < cardHeight * 0.8;
+        });
+
+        if (!hasCollision) {
+          x = testX;
+          y = testY;
+          break;
+        }
+      }
 
       const cardId = generateCardId();
       const newCard: Card = {
@@ -662,9 +771,28 @@ export function Board({
 
       setNewCardId(cardId);
       addCard(newCard);
-      await createCard(newCard, visitorId);
+
+      try {
+        const result = await createCard(newCard, visitorId);
+        if (result.error) {
+          console.error("Failed to duplicate card:", result.error);
+          removeCard(cardId);
+        }
+      } catch (error) {
+        console.error("Error duplicating card:", error);
+        removeCard(cardId);
+      }
     },
-    [username, visitorId, session, playSound, sessionId, addCard]
+    [
+      username,
+      visitorId,
+      session,
+      playSound,
+      sessionId,
+      addCard,
+      cards,
+      removeCard,
+    ],
   );
 
   // Keyboard shortcuts for new card (key "N"), copy (Ctrl+C), and paste (Ctrl+V)
