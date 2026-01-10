@@ -31,7 +31,7 @@ import {
   updateSessionSettings,
   voteCard as voteCardAction,
 } from "@/app/actions";
-import { AddCardButton } from "@/components/add-card-button";
+
 import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
@@ -892,7 +892,6 @@ export function Board({
           currentUserId={visitorId}
           onlineUsers={onlineUsers}
         />
-        <AddCardButton onClick={handleAddCard} disabled={isLocked} />
       </div>
 
       {/* Minimap (Desktop Only) */}
