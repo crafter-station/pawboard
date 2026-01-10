@@ -61,9 +61,8 @@ jobs:
             core.setOutput('branch', pr.head.ref);
 
       - name: Trigger Vercel redeploy
-        run: npx vercel redeploy --yes
+        run: npx vercel redeploy --yes --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
@@ -127,9 +126,8 @@ jobs:
 
       - name: Trigger Vercel redeploy
         if: steps.check-migrations.outputs.changed == 'true'
-        run: npx vercel redeploy --yes
+        run: npx vercel redeploy --yes --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
