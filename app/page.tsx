@@ -451,7 +451,7 @@ export default function Home() {
           <GithubBadge />
           <Link
             href="/pricing"
-            className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-amber-500/30 text-xs font-medium text-amber-200 hover:text-amber-100 hover:border-amber-500/50 transition-colors"
+            className="bg-gradient-to-r from-amber-500/20 to-orange-500/20 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-amber-500/30 text-xs font-medium text-amber-700 hover:text-amber-600 dark:text-amber-200 dark:hover:text-amber-100 hover:border-amber-500/50 transition-colors"
           >
             Upgrade
           </Link>
