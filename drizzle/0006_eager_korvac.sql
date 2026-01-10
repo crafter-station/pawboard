@@ -1,0 +1,1 @@
+ALTER TABLE "cards" ADD COLUMN IF NOT EXISTS "hidden" boolean DEFAULT false NOT NULL;
