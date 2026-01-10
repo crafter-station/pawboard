@@ -67,7 +67,6 @@ export const cards = pgTable("cards", {
     .$type<Record<string, string[]>>()
     .notNull()
     .default({}),
-  hidden: boolean("hidden").notNull().default(false),
   createdById: text("created_by_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
