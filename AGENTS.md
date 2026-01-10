@@ -288,6 +288,30 @@ GROQ_API_KEY=gsk_...
 NEXT_PUBLIC_SITE_URL=https://pawboard.app
 ```
 
+## Git Commit Conventions
+
+Commit messages must follow the format: `type(scope): description`
+
+**Valid types:**
+- `feat` - New feature
+- `fix` - Bug fix
+- `docs` - Documentation changes
+- `style` - Code style changes (formatting, no logic change)
+- `refactor` - Code refactoring (no feature or fix)
+- `perf` - Performance improvements
+- `test` - Adding or updating tests
+- `chore` - Maintenance tasks
+- `revert` - Reverting changes
+
+**Examples:**
+```
+feat(auth): add login functionality
+fix(cards): prevent duplicate card creation
+refactor(cluster): simplify dialog to single step
+docs(readme): update setup instructions
+chore(deps): upgrade drizzle-orm to v0.35
+```
+
 ## Do's and Don'ts
 
 **Do:**
