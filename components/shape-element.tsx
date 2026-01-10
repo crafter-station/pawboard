@@ -171,6 +171,7 @@ export function ShapeElement({
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isSelected, setIsSelected] = useState(false);
   const elementRef = useRef<HTMLDivElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const startPos = useRef({ x: 0, y: 0, width: 0, height: 0 });
@@ -207,12 +208,14 @@ export function ShapeElement({
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button === 1 || isSpacePressed) return;
     e.stopPropagation();
+    setIsSelected(true);
     handleDragStart(e.clientX, e.clientY);
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       e.stopPropagation();
+      setIsSelected(true);
       const touch = e.touches[0];
       handleDragStart(touch.clientX, touch.clientY);
     }
@@ -347,6 +350,23 @@ export function ShapeElement({
     screenToWorld,
   ]);
 
+  // Deselect when clicking outside
+  useEffect(() => {
+    if (!isSelected) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        elementRef.current &&
+        !elementRef.current.contains(e.target as Node)
+      ) {
+        setIsSelected(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isSelected]);
+
   const handleColorChange = (colorType: "fill" | "stroke", color: string) => {
     const newData = { ...data, [colorType]: color };
     onUpdateData(element.id, newData);
@@ -400,7 +420,7 @@ export function ShapeElement({
       </svg>
 
       {/* Color picker and delete button */}
-      {isHovered && (
+      {(isSelected || isHovered) && (
         <div
           className="absolute -top-10 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-card/90 backdrop-blur-sm rounded-lg border p-1 shadow-lg"
           onMouseDown={(e) => e.stopPropagation()}
