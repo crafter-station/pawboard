@@ -1,4 +1,3 @@
-import { createGroq } from "@ai-sdk/groq";
 import type { UIMessage } from "ai";
 import { convertToModelMessages, streamText } from "ai";
 import { and, eq } from "drizzle-orm";
@@ -20,13 +19,6 @@ import {
   type ToolContext,
   updateCardSchema,
 } from "@/lib/ai/tools";
-
-const groq = createGroq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-
-// Use a model that supports tool calling
-const MODEL = "llama-3.3-70b-versatile";
 
 export async function POST(req: Request) {
   try {
@@ -107,7 +99,7 @@ export async function POST(req: Request) {
 
     // Stream the response with tools
     const result = streamText({
-      model: groq(MODEL),
+      model: "openai/gpt-4o-mini",
       system: systemPrompt,
       messages: modelMessages,
       tools: {
