@@ -957,7 +957,7 @@ export function Board({
       {/* Main board area */}
       <div
         className={cn(
-          "flex-1 min-h-screen overflow-hidden relative transition-all duration-200 ease-out",
+          "flex-1 min-h-screen overflow-hidden relative",
           isChatOpen && viewportSize.width >= 640 && "w-[60%]",
         )}
       >
