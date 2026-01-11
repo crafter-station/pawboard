@@ -410,7 +410,7 @@ export function IdeaCard({
     <motion.div
       ref={cardRef}
       data-card
-      className={`absolute group touch-none transition-[width] duration-200 ${
+      className={`absolute group touch-none select-none transition-[width] duration-200 ${
         isExpanded ? "w-72 sm:w-96" : "w-40 sm:w-56"
       }`}
       initial={{ x: card.x, y: card.y }}
