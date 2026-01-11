@@ -49,24 +49,19 @@ export function ChatMessage({ message }: ChatMessageProps) {
       </div>
 
       {/* Content */}
-      <div
-        className={cn(
-          "flex-1 space-y-2 overflow-hidden",
-          isUser && "text-right",
-        )}
-      >
+      <div className={cn("flex-1 space-y-2 min-w-0", isUser && "text-right")}>
         {/* Text content */}
         {textContent && (
           <div
             className={cn(
-              "rounded-lg px-3 py-2 max-w-[90%] overflow-hidden",
+              "rounded-lg px-3 py-2",
               isUser
-                ? "bg-primary text-primary-foreground"
+                ? "bg-primary text-primary-foreground inline-block max-w-[90%]"
                 : "bg-muted text-foreground",
             )}
           >
             {isAssistant ? (
-              <div className="prose prose-sm dark:prose-invert max-w-none overflow-x-auto [&_pre]:overflow-x-auto [&_code]:break-words">
+              <div className="prose prose-sm dark:prose-invert max-w-none [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-words [&_p]:break-words">
                 <ReactMarkdown>{textContent}</ReactMarkdown>
               </div>
             ) : (
