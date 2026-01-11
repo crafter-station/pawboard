@@ -57,7 +57,8 @@ export function ChatPanel({
   const [files, setFiles] = useState<BoardFile[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(true);
 
-  // Create transport with custom body
+  // Create transport with custom body and headers
+  // selectedCardId is sent in headers to ensure it's included in every request
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -65,8 +66,10 @@ export function ChatPanel({
         body: {
           sessionId,
           userId,
-          selectedCardId,
         },
+        headers: async () => ({
+          "X-Selected-Card-Id": selectedCardId || "",
+        }),
       }),
     [sessionId, userId, selectedCardId],
   );

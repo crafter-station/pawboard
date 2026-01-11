@@ -24,17 +24,21 @@ import {
 
 export async function POST(req: Request) {
   try {
-    const {
-      messages,
-      sessionId,
-      userId,
-      selectedCardId,
-    }: {
+    const body: {
       messages: UIMessage[];
       sessionId: string;
       userId: string;
       selectedCardId?: string;
     } = await req.json();
+
+    const { messages, sessionId, userId } = body;
+
+    // Read selectedCardId from header (dynamic, sent per-request) or fallback to body
+    const selectedCardIdFromHeader = req.headers.get("X-Selected-Card-Id");
+    const selectedCardId =
+      selectedCardIdFromHeader && selectedCardIdFromHeader !== ""
+        ? selectedCardIdFromHeader
+        : body.selectedCardId;
 
     // Validate required fields
     if (!sessionId) {
@@ -89,15 +93,31 @@ export async function POST(req: Request) {
     // Convert UIMessages to ModelMessages for the AI model
     const modelMessages = await convertToModelMessages(messages);
 
+    // Debug logging
     console.log(
       "[chat] Starting streamText with",
       modelMessages.length,
       "messages",
     );
+    console.log("[chat] selectedCardId:", selectedCardId || "(none)", {
+      fromHeader: selectedCardIdFromHeader || "(not set)",
+      fromBody: body.selectedCardId || "(not set)",
+    });
+    console.log("[chat] System prompt length:", systemPrompt.length);
     console.log(
-      "[chat] Tool context:",
-      JSON.stringify({ sessionId, userId, selectedCardId }),
+      "[chat] Selected card section included:",
+      systemPrompt.includes("### Selected Card"),
     );
+    if (selectedCardId) {
+      const selectedCard = sessionCards.find((c) => c.id === selectedCardId);
+      console.log("[chat] Selected card found:", !!selectedCard);
+      if (selectedCard) {
+        console.log(
+          "[chat] Selected card preview:",
+          selectedCard.content.slice(0, 100),
+        );
+      }
+    }
 
     // Stream the response with tools
     const result = streamText({
