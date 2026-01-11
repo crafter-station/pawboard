@@ -1,11 +1,12 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import type { BoardFile, Card } from "@/db/schema";
-import { boardFiles } from "@/db/schema";
+import { boardFiles, sessionParticipants, users } from "@/db/schema";
 
 export interface ChatContext {
   sessionId: string;
   userId: string;
+  username?: string;
   cards: Card[];
   selectedCardId?: string;
   files?: BoardFile[];
@@ -16,7 +17,7 @@ export interface ChatContext {
  * Includes board context, selected card, and available tools
  */
 export async function buildSystemPrompt(context: ChatContext): Promise<string> {
-  const { sessionId, cards, selectedCardId, files } = context;
+  const { sessionId, userId, username, cards, selectedCardId, files } = context;
 
   // Get files if not provided
   let boardFilesList = files;
@@ -30,14 +31,33 @@ export async function buildSystemPrompt(context: ChatContext): Promise<string> {
     (f) => f.ingestionStatus === "completed",
   );
 
+  // Get participants for this session
+  const participants = await getSessionParticipants(sessionId);
+
+  // Get current user's name if not provided
+  const currentUsername = username || (await getCurrentUsername(userId));
+
   // Build card context
   const cardContext = buildCardContext(cards, selectedCardId);
 
   // Build file context
   const fileContext = buildFileContext(completedFiles);
 
+  // Build participants context
+  const participantsContext = buildParticipantsContext(participants, userId);
+
+  // Build selected card context
+  const selectedCardContext = buildSelectedCardContext(
+    cards,
+    selectedCardId,
+    participants,
+  );
+
   // Build the system prompt
   const systemPrompt = `You are Pawboard's AI assistant, helping users brainstorm and organize ideas on a collaborative board.
+
+## Current User
+You are chatting with: **${currentUsername || "Unknown User"}**
 
 ## Your Tools
 
@@ -73,8 +93,12 @@ export async function buildSystemPrompt(context: ChatContext): Promise<string> {
 - When asked to create multiple ideas, create separate cards for each
 - If no card is selected, you cannot use update_card
 - When summarizing the board, first fetch all cards with get_all_cards
+- Address the user by their name when appropriate
 
-## Current Board Context
+## Board Context
+
+### Participants
+${participantsContext}
 
 ### Cards Overview
 ${cardContext}
@@ -82,7 +106,7 @@ ${cardContext}
 ### Uploaded Files
 ${fileContext}
 
-${selectedCardId ? `### Currently Selected Card\nCard ID: ${selectedCardId}\n${getSelectedCardContent(cards, selectedCardId)}` : "### No card is currently selected"}
+${selectedCardContext}
 
 ## Response Style
 - Be helpful and collaborative
@@ -92,6 +116,89 @@ ${selectedCardId ? `### Currently Selected Card\nCard ID: ${selectedCardId}\n${g
 - If the user's request is unclear, ask for clarification`;
 
   return systemPrompt;
+}
+
+interface Participant {
+  odilUserId: string;
+  username: string;
+}
+
+/**
+ * Get all participants in a session
+ */
+async function getSessionParticipants(
+  sessionId: string,
+): Promise<Participant[]> {
+  const participants = await db
+    .select({
+      odilUserId: sessionParticipants.userId,
+      username: users.username,
+    })
+    .from(sessionParticipants)
+    .innerJoin(users, eq(sessionParticipants.userId, users.id))
+    .where(eq(sessionParticipants.sessionId, sessionId));
+
+  return participants;
+}
+
+/**
+ * Get the current user's username
+ */
+async function getCurrentUsername(userId: string): Promise<string | undefined> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+  return user?.username;
+}
+
+/**
+ * Build context string for participants
+ */
+function buildParticipantsContext(
+  participants: Participant[],
+  currentUserId: string,
+): string {
+  if (participants.length === 0) {
+    return "No participants found.";
+  }
+
+  const lines = participants.map((p) => {
+    const isCurrentUser = p.odilUserId === currentUserId;
+    return `- ${p.username}${isCurrentUser ? " (you)" : ""}`;
+  });
+
+  return `${participants.length} participant(s) on this board:\n${lines.join("\n")}`;
+}
+
+/**
+ * Build detailed context for the selected card
+ */
+function buildSelectedCardContext(
+  cards: Card[],
+  selectedCardId: string | undefined,
+  participants: Participant[],
+): string {
+  if (!selectedCardId) {
+    return "### Selected Card\nNo card is currently selected. You cannot use the update_card tool.";
+  }
+
+  const card = cards.find((c) => c.id === selectedCardId);
+  if (!card) {
+    return "### Selected Card\nSelected card not found.";
+  }
+
+  const creator = participants.find((p) => p.odilUserId === card.createdById);
+  const creatorName = creator?.username || "Unknown";
+
+  let context = `### Selected Card\n`;
+  context += `- **ID**: ${card.id}\n`;
+  context += `- **Created by**: ${creatorName}\n`;
+  context += `- **Color**: ${card.color}\n`;
+  context += `- **Votes**: ${card.votes}\n`;
+  context += `- **Content**:\n${card.content || "(empty)"}\n`;
+  context += `\nYou can use the update_card tool to modify this card's content.`;
+
+  return context;
 }
 
 /**
