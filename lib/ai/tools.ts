@@ -2,7 +2,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import type { BoardFile, Card, NewCard } from "@/db/schema";
-import { boardFiles, cards, fileChunks } from "@/db/schema";
+import { boardFiles, cards, fileChunks, users } from "@/db/schema";
 import { generateEmbedding } from "@/lib/embeddings";
 import { generateCardId } from "@/lib/nanoid";
 
@@ -49,11 +49,26 @@ export const readFileSchema = z.object({
 
 export const listFilesSchema = z.object({});
 
-export const summarizeContextSchema = z.object({
-  focus: z
-    .enum(["cards", "files", "all"])
-    .default("all")
-    .describe("What to include in the summary: cards only, files only, or all"),
+export const searchCardsSchema = z.object({
+  query: z
+    .string()
+    .describe(
+      "The search query - describe what you're looking for in the cards",
+    ),
+  limit: z
+    .number()
+    .min(1)
+    .max(20)
+    .optional()
+    .describe("Maximum number of results to return (default: 5)"),
+});
+
+export const getAllCardsSchema = z.object({});
+
+export const getCardsByUserSchema = z.object({
+  username: z
+    .string()
+    .describe("The username of the person whose cards you want to retrieve"),
 });
 
 // Tool execution functions
@@ -380,60 +395,159 @@ export async function executeListFiles(
   }
 }
 
-export async function executeSummarizeContext(
-  params: z.infer<typeof summarizeContextSchema>,
+export async function executeSearchCards(
+  params: z.infer<typeof searchCardsSchema>,
   context: ToolContext,
 ) {
-  const { focus } = params;
-  const { sessionId, cards: contextCards } = context;
-
-  const summary: {
-    cards?: {
-      count: number;
-      themes: string[];
-      samples: string[];
-    };
-    files?: {
-      count: number;
-      names: string[];
-    };
-  } = {};
+  const { query, limit = 5 } = params;
+  const { sessionId } = context;
 
   try {
-    // Summarize cards
-    if (focus === "cards" || focus === "all") {
-      const cardContents = contextCards
-        .filter((c) => c.content && c.content.trim().length > 0)
-        .map((c) => c.content);
+    // Generate embedding for the search query
+    const queryEmbedding = await generateEmbedding(query);
 
-      summary.cards = {
-        count: contextCards.length,
-        themes: [],
-        samples: cardContents.slice(0, 5).map((c) => c.slice(0, 100)),
-      };
-    }
+    // Find cards with embeddings in this session
+    const results = await db
+      .select({
+        id: cards.id,
+        content: cards.content,
+        color: cards.color,
+        createdById: cards.createdById,
+        similarity: sql<number>`1 - (${cards.embedding} <=> ${JSON.stringify(queryEmbedding)}::vector)`,
+      })
+      .from(cards)
+      .where(
+        and(
+          eq(cards.sessionId, sessionId),
+          sql`${cards.embedding} IS NOT NULL`,
+        ),
+      )
+      .orderBy(
+        sql`${cards.embedding} <=> ${JSON.stringify(queryEmbedding)}::vector`,
+      )
+      .limit(limit);
 
-    // Summarize files
-    if (focus === "files" || focus === "all") {
-      const files = await db.query.boardFiles.findMany({
-        where: eq(boardFiles.sessionId, sessionId),
-      });
-
-      summary.files = {
-        count: files.length,
-        names: files.map((f) => f.filename),
+    if (results.length === 0) {
+      return {
+        success: true,
+        cards: [],
+        message:
+          "No cards found matching your query. Cards may not have embeddings yet - try editing them first.",
       };
     }
 
     return {
       success: true,
-      summary,
-      message: `Board has ${summary.cards?.count || 0} cards and ${summary.files?.count || 0} files`,
+      cards: results.map((r) => ({
+        id: r.id,
+        content: r.content,
+        color: r.color,
+        similarity: r.similarity,
+      })),
+      message: `Found ${results.length} card(s) matching your query`,
     };
   } catch (error) {
     return {
       success: false,
-      error: `Failed to summarize: ${error instanceof Error ? error.message : "Unknown error"}`,
+      cards: [],
+      error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
+  }
+}
+
+export async function executeGetAllCards(
+  _params: z.infer<typeof getAllCardsSchema>,
+  context: ToolContext,
+) {
+  const { cards: contextCards } = context;
+
+  try {
+    if (contextCards.length === 0) {
+      return {
+        success: true,
+        cards: [],
+        message: "No cards on this board yet.",
+      };
+    }
+
+    // Return all cards with their content
+    const cardList = contextCards.map((card) => ({
+      id: card.id,
+      content: card.content,
+      color: card.color,
+      createdById: card.createdById,
+    }));
+
+    return {
+      success: true,
+      cards: cardList,
+      totalCount: cardList.length,
+      message: `Found ${cardList.length} card(s) on this board`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      cards: [],
+      error: `Failed to get cards: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
+  }
+}
+
+export async function executeGetCardsByUser(
+  params: z.infer<typeof getCardsByUserSchema>,
+  context: ToolContext,
+) {
+  const { username } = params;
+  const { sessionId } = context;
+
+  try {
+    // Find user by username
+    const user = await db.query.users.findFirst({
+      where: sql`LOWER(${users.username}) = LOWER(${username})`,
+    });
+
+    if (!user) {
+      return {
+        success: false,
+        cards: [],
+        error: `User "${username}" not found`,
+      };
+    }
+
+    // Get cards created by this user in this session
+    const userCards = await db.query.cards.findMany({
+      where: and(
+        eq(cards.sessionId, sessionId),
+        eq(cards.createdById, user.id),
+      ),
+    });
+
+    if (userCards.length === 0) {
+      return {
+        success: true,
+        cards: [],
+        message: `No cards found for user "${username}" on this board.`,
+      };
+    }
+
+    const cardList = userCards.map((card) => ({
+      id: card.id,
+      content: card.content,
+      color: card.color,
+    }));
+
+    return {
+      success: true,
+      cards: cardList,
+      username: user.username,
+      totalCount: cardList.length,
+      message: `Found ${cardList.length} card(s) created by "${user.username}"`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      cards: [],
+      error: `Failed to get cards: ${error instanceof Error ? error.message : "Unknown error"}`,
     };
   }
 }
@@ -465,10 +579,20 @@ export const toolDefinitions = {
       "List all files that have been uploaded to this board, including their processing status.",
     parameters: listFilesSchema,
   },
-  summarize_context: {
+  search_cards: {
     description:
-      "Generate a summary of the current board context including cards and/or files. Useful for getting an overview of what's on the board.",
-    parameters: summarizeContextSchema,
+      "Search for cards on the board using semantic search. Use this to find cards related to a specific topic or query.",
+    parameters: searchCardsSchema,
+  },
+  get_all_cards: {
+    description:
+      "Get all cards on the board. Use this when you need to see everything on the board, summarize the board content, or get an overview.",
+    parameters: getAllCardsSchema,
+  },
+  get_cards_by_user: {
+    description:
+      "Get all cards created by a specific user. Use this to see what a particular person has contributed to the board.",
+    parameters: getCardsByUserSchema,
   },
 };
 
@@ -501,9 +625,19 @@ export async function executeTool(
         params as z.infer<typeof listFilesSchema>,
         context,
       );
-    case "summarize_context":
-      return executeSummarizeContext(
-        params as z.infer<typeof summarizeContextSchema>,
+    case "search_cards":
+      return executeSearchCards(
+        params as z.infer<typeof searchCardsSchema>,
+        context,
+      );
+    case "get_all_cards":
+      return executeGetAllCards(
+        params as z.infer<typeof getAllCardsSchema>,
+        context,
+      );
+    case "get_cards_by_user":
+      return executeGetCardsByUser(
+        params as z.infer<typeof getCardsByUserSchema>,
         context,
       );
     default:

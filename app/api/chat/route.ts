@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai";
-import { convertToModelMessages, streamText } from "ai";
+import { convertToModelMessages, stepCountIs, streamText } from "ai";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cards, sessionParticipants } from "@/db/schema";
@@ -7,15 +7,19 @@ import { buildSystemPrompt } from "@/lib/ai/context-builder";
 import {
   createCardSchema,
   executeCreateCard,
+  executeGetAllCards,
+  executeGetCardsByUser,
   executeGrepFiles,
   executeListFiles,
   executeReadFile,
-  executeSummarizeContext,
+  executeSearchCards,
   executeUpdateCard,
+  getAllCardsSchema,
+  getCardsByUserSchema,
   grepFilesSchema,
   listFilesSchema,
   readFileSchema,
-  summarizeContextSchema,
+  searchCardsSchema,
   type ToolContext,
   updateCardSchema,
 } from "@/lib/ai/tools";
@@ -99,7 +103,7 @@ export async function POST(req: Request) {
 
     // Stream the response with tools
     const result = streamText({
-      model: "openai/gpt-oss-120b",
+      model: "anthropic/claude-sonnet-4.5",
       system: systemPrompt,
       messages: modelMessages,
       tools: {
@@ -141,18 +145,32 @@ export async function POST(req: Request) {
           inputSchema: listFilesSchema,
           execute: async () => executeListFiles({}, toolContext),
         },
-        summarize_context: {
+        search_cards: {
           description:
-            "Generate a summary of the current board context including cards and/or files.",
-          inputSchema: summarizeContextSchema,
-          execute: async (params: { focus?: "cards" | "files" | "all" }) =>
-            executeSummarizeContext(
-              { ...params, focus: params.focus ?? "all" },
+            "Search for cards on the board using semantic search. Use this to find cards related to a specific topic or query.",
+          inputSchema: searchCardsSchema,
+          execute: async (params: { query: string; limit?: number }) =>
+            executeSearchCards(
+              { ...params, limit: params.limit ?? 5 },
               toolContext,
             ),
         },
+        get_all_cards: {
+          description:
+            "Get all cards on the board. Use this when you need to see everything on the board, summarize the board content, or get an overview of all ideas.",
+          inputSchema: getAllCardsSchema,
+          execute: async () => executeGetAllCards({}, toolContext),
+        },
+        get_cards_by_user: {
+          description:
+            "Get all cards created by a specific user. Use this to see what a particular person has contributed to the board.",
+          inputSchema: getCardsByUserSchema,
+          execute: async (params: { username: string }) =>
+            executeGetCardsByUser(params, toolContext),
+        },
       },
       temperature: 0.7,
+      stopWhen: stepCountIs(10),
     });
 
     return result.toUIMessageStreamResponse();
