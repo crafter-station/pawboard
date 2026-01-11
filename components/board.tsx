@@ -1298,7 +1298,7 @@ export function Board({
 
         {/* Minimap (Desktop Only) */}
         {viewportSize.width >= 640 && (
-          <div className="fixed top-20 right-4 z-50">
+          <div className="fixed top-20 left-4 z-50">
             <Minimap
               cards={cards}
               pan={pan}
