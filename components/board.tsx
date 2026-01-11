@@ -13,6 +13,7 @@ import {
   Plus,
   Settings,
   Share2,
+  Sparkles,
   Trash,
 } from "lucide-react";
 import Link from "next/link";
@@ -36,6 +37,7 @@ import {
 } from "@/app/actions";
 
 import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
+import { ClusterCardsDialog } from "@/components/cluster-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
@@ -69,6 +71,7 @@ import type {
 import { useCanvasGestures } from "@/hooks/use-canvas-gestures";
 import { useCatSound } from "@/hooks/use-cat-sound";
 import { useFingerprint } from "@/hooks/use-fingerprint";
+import { useMarqueeSelection } from "@/hooks/use-marquee-selection";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
 import { useRealtimeCards } from "@/hooks/use-realtime-cards";
 import { useRealtimeElements } from "@/hooks/use-realtime-elements";
@@ -119,6 +122,14 @@ export function Board({
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
   const [selectedTool, setSelectedTool] = useState<ToolType>("select");
+  const [copiedCard, setCopiedCard] = useState<{
+    content: string;
+    color: string;
+  } | null>(null);
+  const [mousePosition, setMousePosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const hasInitializedViewRef = useRef(false);
   const { resolvedTheme } = useTheme();
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
@@ -178,6 +189,35 @@ export function Board({
     updateViewportSize();
     window.addEventListener("resize", updateViewportSize);
     return () => window.removeEventListener("resize", updateViewportSize);
+  }, []);
+
+  // Track mouse position for intelligent paste (throttled to 50ms)
+  useEffect(() => {
+    let lastUpdate = 0;
+    const THROTTLE_MS = 50;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const now = Date.now();
+      if (now - lastUpdate >= THROTTLE_MS) {
+        lastUpdate = now;
+        setMousePosition({ x: e.clientX, y: e.clientY });
+      }
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
+
+  // Restore clipboard from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("pawboard_clipboard");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setCopiedCard(parsed);
+      }
+    } catch (error) {
+      console.warn("Failed to restore clipboard from sessionStorage:", error);
+    }
   }, []);
 
   // Helper to get username for a user ID
@@ -261,6 +301,8 @@ export function Board({
     broadcastNameChange,
     broadcastSessionRename,
     broadcastSessionSettings,
+    applyClusterPositions,
+    broadcastClusterPositions,
   } = useRealtimeCards(
     sessionId,
     initialCards,
@@ -280,6 +322,22 @@ export function Board({
     updateElementData,
     removeElement,
   } = useRealtimeElements(sessionId, initialElements, visitorId || "");
+
+  // Marquee selection for multiple cards
+  const {
+    isSelecting,
+    selectionRect,
+    selectedCardIds,
+    startSelection,
+    clearSelection,
+    setSelectedCardIds,
+  } = useMarqueeSelection({
+    cards,
+    screenToWorld,
+    cardWidth: CARD_WIDTH,
+    cardHeight: CARD_HEIGHT,
+    isSpacePressed,
+  });
 
   // Fit all cards in view
   const fitAllCards = useCallback(() => {
@@ -404,6 +462,7 @@ export function Board({
       votes: 0,
       votedBy: [],
       reactions: {},
+      embedding: null,
       createdById: visitorId,
       updatedAt: new Date(),
     };
@@ -535,6 +594,39 @@ export function Board({
     if (!visitorId) return;
     await updateCard(id, { x, y }, visitorId);
   };
+
+  const handleMoveSelectedCards = useCallback(
+    (deltaX: number, deltaY: number) => {
+      // Update position for all selected cards
+      for (const cardId of selectedCardIds) {
+        const card = cards.find((c) => c.id === cardId);
+        if (card) {
+          moveCard(cardId, card.x + deltaX, card.y + deltaY);
+        }
+      }
+    },
+    [selectedCardIds, cards, moveCard],
+  );
+
+  const handlePersistMultiMove = useCallback(async () => {
+    if (!visitorId) return;
+
+    // Get positions of all selected cards
+    const positions = Array.from(selectedCardIds)
+      .map((id) => cards.find((c) => c.id === id))
+      .filter((card): card is Card => card !== undefined)
+      .map((card) => ({ id: card.id, x: card.x, y: card.y }));
+
+    // Persist each card position to database
+    await Promise.all(
+      positions.map((pos) =>
+        updateCard(pos.id, { x: pos.x, y: pos.y }, visitorId),
+      ),
+    );
+
+    // Broadcast cluster update to other users
+    broadcastClusterPositions(positions);
+  }, [selectedCardIds, cards, visitorId, broadcastClusterPositions]);
 
   const handlePersistColor = async (id: string, color: string) => {
     if (!visitorId) return;
@@ -690,7 +782,224 @@ export function Board({
     return { success: true, deletedCount };
   };
 
-  // Keyboard shortcut for new card (key "N")
+  // Handle cluster cards callback
+  const handleClusterCards = useCallback(
+    (positions: Array<{ id: string; x: number; y: number }>) => {
+      // Apply positions locally (this triggers animation)
+      applyClusterPositions(positions);
+      // Broadcast to other participants
+      broadcastClusterPositions(positions);
+    },
+    [applyClusterPositions, broadcastClusterPositions],
+  );
+
+  const handleCopyCard = useCallback(
+    async (card: Card) => {
+      const cardData = {
+        type: "pawboard-card",
+        content: card.content,
+        color: card.color,
+      };
+
+      try {
+        // Save to system clipboard as JSON
+        await navigator.clipboard.writeText(JSON.stringify(cardData));
+      } catch (error) {
+        // Clipboard API may not be available or blocked
+        console.warn("Failed to write to clipboard:", error);
+      }
+
+      // Always save to memory as fallback
+      const clipboardData = { content: card.content, color: card.color };
+      setCopiedCard(clipboardData);
+
+      // Persist to sessionStorage
+      try {
+        sessionStorage.setItem(
+          "pawboard_clipboard",
+          JSON.stringify(clipboardData),
+        );
+      } catch (error) {
+        // sessionStorage may be full or blocked
+        console.warn("Failed to save to sessionStorage:", error);
+      }
+
+      setSelectedCardIds(new Set([card.id]));
+    },
+    [setSelectedCardIds],
+  );
+
+  const handlePasteCard = useCallback(async () => {
+    if (!username || !visitorId) return;
+    if (!canAddCard(session)) return;
+
+    let cardData = copiedCard;
+
+    // Try to read from system clipboard first
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      const parsed = JSON.parse(clipboardText);
+      if (parsed.type === "pawboard-card") {
+        cardData = { content: parsed.content, color: parsed.color };
+      }
+    } catch (error) {
+      // Use memory fallback if clipboard read fails
+      console.warn("Failed to read from clipboard, using fallback:", error);
+    }
+
+    if (!cardData) return;
+
+    playSound();
+
+    const isMobile = window.innerWidth < 640;
+    const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
+    const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
+
+    // Position at mouse cursor if available, otherwise at screen center
+    const pastePosition = mousePosition
+      ? screenToWorld(mousePosition)
+      : screenToWorld({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+
+    const x = pastePosition.x - cardWidth / 2;
+    const y = pastePosition.y - cardHeight / 2;
+
+    const cardId = generateCardId();
+    const newCard: Card = {
+      id: cardId,
+      sessionId,
+      content: cardData.content,
+      color: cardData.color,
+      x,
+      y,
+      votes: 0,
+      votedBy: [],
+      reactions: {},
+      embedding: null,
+      createdById: visitorId,
+      updatedAt: new Date(),
+    };
+
+    setNewCardId(cardId);
+    addCard(newCard);
+
+    try {
+      const result = await createCard(newCard, visitorId);
+      if (result.error) {
+        console.error("Failed to paste card:", result.error);
+        // Remove from local state if server creation failed
+        removeCard(cardId);
+      }
+    } catch (error) {
+      console.error("Error pasting card:", error);
+      removeCard(cardId);
+    }
+  }, [
+    copiedCard,
+    username,
+    visitorId,
+    session,
+    playSound,
+    screenToWorld,
+    sessionId,
+    addCard,
+    mousePosition,
+    removeCard,
+  ]);
+
+  const handleDuplicateCard = useCallback(
+    async (card: Card) => {
+      if (!username || !visitorId) return;
+
+      // Check if session allows adding cards
+      if (!canAddCard(session)) return;
+
+      playSound();
+
+      const isMobile = window.innerWidth < 640;
+      const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
+      const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
+
+      // Try different offsets to find a free position
+      const offsets = [
+        { x: 30, y: 30 },
+        { x: -30, y: 30 },
+        { x: 30, y: -30 },
+        { x: -30, y: -30 },
+        { x: 60, y: 0 },
+        { x: -60, y: 0 },
+        { x: 0, y: 60 },
+        { x: 0, y: -60 },
+      ];
+
+      let x = card.x + 30;
+      let y = card.y + 30;
+
+      // Find a position without collision
+      for (const offset of offsets) {
+        const testX = card.x + offset.x;
+        const testY = card.y + offset.y;
+
+        // Check if any card is too close (simple collision detection)
+        const hasCollision = cards.some((c) => {
+          if (c.id === card.id) return false;
+          const dx = Math.abs(c.x - testX);
+          const dy = Math.abs(c.y - testY);
+          return dx < cardWidth * 0.8 && dy < cardHeight * 0.8;
+        });
+
+        if (!hasCollision) {
+          x = testX;
+          y = testY;
+          break;
+        }
+      }
+
+      const cardId = generateCardId();
+      const newCard: Card = {
+        id: cardId,
+        sessionId,
+        content: card.content,
+        color: card.color,
+        x,
+        y,
+        votes: 0,
+        votedBy: [],
+        reactions: {},
+        embedding: null,
+        createdById: visitorId,
+        updatedAt: new Date(),
+      };
+
+      setNewCardId(cardId);
+      addCard(newCard);
+
+      try {
+        const result = await createCard(newCard, visitorId);
+        if (result.error) {
+          console.error("Failed to duplicate card:", result.error);
+          removeCard(cardId);
+        }
+      } catch (error) {
+        console.error("Error duplicating card:", error);
+        removeCard(cardId);
+      }
+    },
+    [
+      username,
+      visitorId,
+      session,
+      playSound,
+      sessionId,
+      addCard,
+      cards,
+      removeCard,
+    ],
+  );
+
+  // Keyboard shortcuts for new card (key "N"), copy (Ctrl+C), and paste (Ctrl+V)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip if user is typing in an input or textarea
@@ -706,6 +1015,28 @@ export function Board({
         return;
       }
 
+      // Ctrl+C or Cmd+C to copy selected card (first selected if multiple)
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        if (selectedCardIds.size > 0) {
+          const firstSelectedId = selectedCardIds.values().next().value;
+          const card = cards.find((c) => c.id === firstSelectedId);
+          if (card) {
+            e.preventDefault();
+            handleCopyCard(card);
+          }
+        }
+        return;
+      }
+
+      // Ctrl+V or Cmd+V to paste card
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        if (copiedCard) {
+          e.preventDefault();
+          handlePasteCard();
+        }
+        return;
+      }
+
       // "N" to create a new card
       if (e.key === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
@@ -714,7 +1045,15 @@ export function Board({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commandOpen, handleAddCard]);
+  }, [
+    commandOpen,
+    handleAddCard,
+    selectedCardIds,
+    cards,
+    handleCopyCard,
+    copiedCard,
+    handlePasteCard,
+  ]);
 
   if (!username || isFingerprintLoading || isUsernameLoading || !visitorId) {
     return (
@@ -819,6 +1158,23 @@ export function Board({
                   title="Clean up empty cards"
                 >
                   <Trash className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </Button>
+              }
+            />
+            <ClusterCardsDialog
+              cards={cards}
+              sessionId={sessionId}
+              userId={visitorId}
+              onCluster={handleClusterCards}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+                  title="Cluster cards by similarity"
+                  disabled={isLocked}
+                >
+                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </Button>
               }
             />
@@ -1095,7 +1451,19 @@ export function Board({
                 ? "crosshair"
                 : "default",
         }}
-        onMouseDown={canvasHandlers.onMouseDown}
+        onMouseDown={(e) => {
+          // Start potential marquee selection if clicking on empty canvas
+          const target = e.target as HTMLElement;
+          if (
+            !target.closest("[data-card]") &&
+            !target.closest("button") &&
+            !isSpacePressed &&
+            e.button === 0
+          ) {
+            startSelection(e.clientX, e.clientY);
+          }
+          canvasHandlers.onMouseDown(e);
+        }}
         onTouchStart={canvasHandlers.onTouchStart}
         onTouchMove={canvasHandlers.onTouchMove}
         onTouchEnd={canvasHandlers.onTouchEnd}
@@ -1177,6 +1545,9 @@ export function Board({
               visitorId={visitorId}
               autoFocus={card.id === newCardId}
               onFocused={() => setNewCardId(null)}
+              isSelected={selectedCardIds.has(card.id)}
+              onSelect={() => setSelectedCardIds(new Set([card.id]))}
+              onDuplicate={handleDuplicateCard}
               onMove={moveCard}
               onType={typeCard}
               onChangeColor={changeColor}
@@ -1190,8 +1561,24 @@ export function Board({
               screenToWorld={screenToWorld}
               zoom={zoom}
               isSpacePressed={isSpacePressed}
+              selectedCardIds={selectedCardIds}
+              onMoveSelectedCards={handleMoveSelectedCards}
+              onPersistMultiMove={handlePersistMultiMove}
             />
           ))}
+
+          {/* Marquee selection rectangle */}
+          {isSelecting && selectionRect && (
+            <div
+              className="absolute border-2 border-dashed border-primary bg-primary/10 pointer-events-none z-50"
+              style={{
+                left: selectionRect.x,
+                top: selectionRect.y,
+                width: selectionRect.width,
+                height: selectionRect.height,
+              }}
+            />
+          )}
 
           {/* Cursors - rendered in world space */}
           <RealtimeCursors

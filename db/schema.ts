@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -8,6 +9,7 @@ import {
   real,
   text,
   timestamp,
+  vector,
 } from "drizzle-orm/pg-core";
 
 // Permission types
@@ -56,6 +58,7 @@ export const sessions = pgTable("sessions", {
     .notNull()
     .default("creator"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
 });
 
 export const sessionParticipants = pgTable(
@@ -69,30 +72,42 @@ export const sessionParticipants = pgTable(
       .references(() => sessions.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("participant"), // "creator" | "participant"
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
+    lastActiveAt: timestamp("last_active_at").defaultNow().notNull(),
   },
   (table) => [primaryKey({ columns: [table.userId, table.sessionId] })],
 );
 
-export const cards = pgTable("cards", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id")
-    .notNull()
-    .references(() => sessions.id, { onDelete: "cascade" }),
-  content: text("content").notNull().default(""),
-  color: text("color").notNull().default("#fef08a"),
-  x: real("x").notNull().default(100),
-  y: real("y").notNull().default(100),
-  votes: integer("votes").notNull().default(0),
-  votedBy: jsonb("voted_by").$type<string[]>().notNull().default([]),
-  reactions: jsonb("reactions")
-    .$type<Record<string, string[]>>()
-    .notNull()
-    .default({}),
-  createdById: text("created_by_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const cards = pgTable(
+  "cards",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    content: text("content").notNull().default(""),
+    color: text("color").notNull().default("#fef08a"),
+    x: real("x").notNull().default(100),
+    y: real("y").notNull().default(100),
+    votes: integer("votes").notNull().default(0),
+    votedBy: jsonb("voted_by").$type<string[]>().notNull().default([]),
+    reactions: jsonb("reactions")
+      .$type<Record<string, string[]>>()
+      .notNull()
+      .default({}),
+    embedding: vector("embedding", { dimensions: 1536 }), // AI embedding for content similarity (text-embedding-3-small)
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    // HNSW index for fast cosine similarity search
+    index("cards_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
+  ],
+);
 
 export const elements = pgTable("elements", {
   id: text("id").primaryKey(),

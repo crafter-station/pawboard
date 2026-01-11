@@ -15,15 +15,57 @@ bun build               # Production build
 bun start               # Start production server
 
 # Linting
-bun lint                # Run ESLint
+bun check               # Run Biome linter
 
 # Database
-bun db:push             # Push schema to database
-bun db:generate         # Generate migrations
-bun db:migrate          # Apply migrations
+bun db:generate         # Generate migrations from schema changes
+bun db:generate:local   # Generate migrations (using local env)
+bun db:migrate          # Apply migrations to database
+bun db:migrate:local    # Apply migrations to local Supabase
+bun db:seed:local       # Seed local database with test data
+
+# Local Supabase
+bun supabase:start      # Start local Supabase stack (Docker)
+bun supabase:stop       # Stop local Supabase
+bun supabase:status     # Check local Supabase status
+bun supabase:reset      # Reset local DB and run seed.sql
 ```
 
 **Note:** No test framework is configured. When adding tests, use Vitest or Jest with React Testing Library.
+
+## Local Development Setup
+
+### Prerequisites
+- Docker Desktop (or compatible container runtime)
+- Bun
+
+### First-time Setup
+1. Copy `.env.local.example` to `.env.local`
+2. Start local Supabase: `bun supabase:start`
+3. Copy the `anon key` from the CLI output to your `.env.local`
+4. Apply migrations to local DB: `bun db:migrate:local`
+5. Seed the database: `bun db:seed:local`
+6. Start dev server: `bun dev`
+
+### Daily Development
+```bash
+bun supabase:start      # Start local Supabase (if not running)
+bun dev                 # Start Next.js dev server
+```
+
+### Environment Configuration
+
+| Environment | Database | Supabase Realtime | Configuration |
+|-------------|----------|-------------------|---------------|
+| Local       | Docker (port 54322) | Docker (port 54321) | `.env.local` |
+| Preview     | pawboard-dev project | pawboard-dev project | Vercel Preview env vars |
+| Production  | pawboard project | pawboard project | Vercel Production env vars |
+
+### Local URLs
+- Next.js: http://localhost:3000
+- Supabase Studio: http://localhost:54323
+- Supabase API: http://localhost:54321
+- PostgreSQL: localhost:54322
 
 ## Tech Stack
 
@@ -244,6 +286,30 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY=eyJ...
 GROQ_API_KEY=gsk_...
 NEXT_PUBLIC_SITE_URL=https://pawboard.app
+```
+
+## Git Commit Conventions
+
+Commit messages must follow the format: `type(scope): description`
+
+**Valid types:**
+- `feat` - New feature
+- `fix` - Bug fix
+- `docs` - Documentation changes
+- `style` - Code style changes (formatting, no logic change)
+- `refactor` - Code refactoring (no feature or fix)
+- `perf` - Performance improvements
+- `test` - Adding or updating tests
+- `chore` - Maintenance tasks
+- `revert` - Reverting changes
+
+**Examples:**
+```
+feat(auth): add login functionality
+fix(cards): prevent duplicate card creation
+refactor(cluster): simplify dialog to single step
+docs(readme): update setup instructions
+chore(deps): upgrade drizzle-orm to v0.35
 ```
 
 ## Do's and Don'ts

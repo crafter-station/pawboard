@@ -1,0 +1,42 @@
+name: Check Migrations
+
+on:
+  pull_request:
+    paths:
+      - "drizzle/**/*.sql"
+      - "db/schema.ts"
+      - "scripts/check-migrations.ts"
+
+jobs:
+  check-migrations:
+    name: Validate Migration Safety
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Check migration safety patterns
+        run: bun scripts/check-migrations.ts
+
+      - name: Verify schema and migrations are in sync
+        run: |
+          echo "Checking that db/schema.ts changes have corresponding migrations..."
+
+          # Get list of changed files
+          git fetch origin ${{ github.base_ref }} --depth=1
+
+          SCHEMA_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -c "db/schema.ts" || true)
+          MIGRATIONS_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -c "drizzle/.*\.sql" || true)
+
+          if [ "$SCHEMA_CHANGED" -gt 0 ] && [ "$MIGRATIONS_CHANGED" -eq 0 ]; then
+            echo "::warning::db/schema.ts was modified but no new migration files were added."
+            echo "Did you forget to run 'bun db:generate:local'?"
+          fi
+
+          echo "Schema changes: $SCHEMA_CHANGED, Migration changes: $MIGRATIONS_CHANGED"

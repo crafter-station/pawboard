@@ -1,1 +1,1 @@
-ALTER TABLE "session_participants" ADD COLUMN "role" text DEFAULT 'participant' NOT NULL;
+ALTER TABLE "session_participants" ADD COLUMN IF NOT EXISTS "role" text DEFAULT 'participant' NOT NULL;

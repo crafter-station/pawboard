@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ListTodo } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -488,6 +488,18 @@ export default function Home() {
               Join
             </Button>
           </form>
+
+          <Button
+            onClick={() => {
+              playSound();
+              router.push("/sessions");
+            }}
+            variant="outline"
+            className="w-full h-12 text-base font-medium rounded-xl border-border/50 hover:bg-card/80"
+          >
+            <ListTodo className="w-4 h-4 mr-2" />
+            My Sessions
+          </Button>
         </div>
 
         <div className="pt-4 flex flex-col items-center gap-3">
