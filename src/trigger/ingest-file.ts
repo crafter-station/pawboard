@@ -40,15 +40,6 @@ function createStorageClient() {
   });
 }
 
-// Create OpenAI client for embeddings
-function createEmbeddingClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY environment variable is not set");
-  }
-  return createOpenAI({ apiKey });
-}
-
 const BUCKET_NAME = "board-files";
 const MAX_EMBEDDING_BATCH_SIZE = 100; // OpenAI limit
 
@@ -71,7 +62,6 @@ export const ingestFileTask = task({
 
     const db = createDbClient();
     const supabase = createStorageClient();
-    const openai = createEmbeddingClient();
 
     try {
       // 1. Fetch file metadata from DB
@@ -170,7 +160,7 @@ export const ingestFileTask = task({
         });
 
         const { embeddings } = await embedMany({
-          model: openai.embedding("text-embedding-3-small"),
+          model: "text-embedding-3-small",
           values: batchTexts,
         });
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import type { BoardFile, Card, NewCard } from "@/db/schema";
@@ -219,9 +219,15 @@ export async function executeGrepFiles(
   const { query, limit } = params;
   const { sessionId } = context;
 
+  console.log("[grep_files] Searching for:", query, "in session:", sessionId);
+
   try {
     // Generate embedding for the search query
     const queryEmbedding = await generateEmbedding(query);
+    console.log(
+      "[grep_files] Generated embedding, dimensions:",
+      queryEmbedding.length,
+    );
 
     // Find all completed files for this session
     const sessionFiles = await db.query.boardFiles.findMany({
@@ -230,6 +236,8 @@ export async function executeGrepFiles(
         eq(boardFiles.ingestionStatus, "completed"),
       ),
     });
+
+    console.log("[grep_files] Found", sessionFiles.length, "completed files");
 
     if (sessionFiles.length === 0) {
       return {
@@ -240,8 +248,19 @@ export async function executeGrepFiles(
     }
 
     const fileIds = sessionFiles.map((f) => f.id);
+    console.log("[grep_files] File IDs:", fileIds);
 
-    // Perform vector similarity search
+    // Check if there are any chunks for these files
+    const chunkCount = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(fileChunks)
+      .where(inArray(fileChunks.fileId, fileIds));
+    console.log(
+      "[grep_files] Total chunks for these files:",
+      chunkCount[0]?.count,
+    );
+
+    // Perform vector similarity search using inArray instead of ANY
     const results = await db
       .select({
         id: fileChunks.id,
@@ -251,11 +270,18 @@ export async function executeGrepFiles(
         similarity: sql<number>`1 - (${fileChunks.embedding} <=> ${JSON.stringify(queryEmbedding)}::vector)`,
       })
       .from(fileChunks)
-      .where(sql`${fileChunks.fileId} = ANY(${fileIds})`)
+      .where(
+        and(
+          inArray(fileChunks.fileId, fileIds),
+          sql`${fileChunks.embedding} IS NOT NULL`,
+        ),
+      )
       .orderBy(
         sql`${fileChunks.embedding} <=> ${JSON.stringify(queryEmbedding)}::vector`,
       )
       .limit(limit);
+
+    console.log("[grep_files] Found", results.length, "results");
 
     // Join with file metadata
     const enrichedResults = results.map((result) => {
@@ -271,9 +297,10 @@ export async function executeGrepFiles(
     return {
       success: true,
       results: enrichedResults,
-      message: `Found ${enrichedResults.length} relevant excerpts`,
+      message: `Found ${enrichedResults.length} relevant excerpts from ${sessionFiles.length} file(s)`,
     };
   } catch (error) {
+    console.error("[grep_files] Error:", error);
     return {
       success: false,
       error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
