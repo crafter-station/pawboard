@@ -111,6 +111,24 @@ export function ChatPanel({
     fetchFiles();
   }, [fetchFiles]);
 
+  // Poll for file status updates every 3 seconds if there are pending/processing files
+  useEffect(() => {
+    const hasPendingFiles = files.some(
+      (f) =>
+        f.ingestionStatus === "pending" || f.ingestionStatus === "processing",
+    );
+
+    if (!hasPendingFiles) {
+      return; // No polling needed if all files are completed/failed
+    }
+
+    const interval = setInterval(() => {
+      fetchFiles();
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [files, fetchFiles]);
+
   // Scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
