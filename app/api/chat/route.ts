@@ -1,5 +1,6 @@
 import { createGroq } from "@ai-sdk/groq";
-import { streamText, tool } from "ai";
+import type { UIMessage } from "ai";
+import { convertToModelMessages, streamText, tool } from "ai";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cards, sessionParticipants } from "@/db/schema";
@@ -20,16 +21,19 @@ import {
   updateCardSchema,
 } from "@/lib/ai/tools";
 
-const groq = createGroq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-
-// Use a model that supports tool calling
-const MODEL = "llama-3.3-70b-versatile";
-
 export async function POST(req: Request) {
   try {
-    const { messages, sessionId, userId, selectedCardId } = await req.json();
+    const {
+      messages,
+      sessionId,
+      userId,
+      selectedCardId,
+    }: {
+      messages: UIMessage[];
+      sessionId: string;
+      userId: string;
+      selectedCardId?: string;
+    } = await req.json();
 
     // Validate required fields
     if (!sessionId) {
@@ -81,11 +85,14 @@ export async function POST(req: Request) {
       selectedCardId,
     });
 
+    // Convert UIMessages to ModelMessages for the AI model
+    const modelMessages = await convertToModelMessages(messages);
+
     // Stream the response with tools
     const result = streamText({
-      model: groq(MODEL),
+      model: "openai/gpt-oss-120b",
       system: systemPrompt,
-      messages,
+      messages: modelMessages,
       tools: {
         create_card: tool({
           description:
@@ -127,7 +134,7 @@ export async function POST(req: Request) {
       temperature: 0.7,
     });
 
-    return result.toTextStreamResponse();
+    return result.toUIMessageStreamResponse();
   } catch (error) {
     console.error("Chat API error:", error);
     return Response.json(

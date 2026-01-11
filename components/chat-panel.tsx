@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { TextStreamChatTransport } from "ai";
+import { DefaultChatTransport } from "ai";
 import {
   AlertCircle,
   CheckCircle,
@@ -44,7 +44,7 @@ export function ChatPanel({
   // Create transport with custom body
   const transport = useMemo(
     () =>
-      new TextStreamChatTransport({
+      new DefaultChatTransport({
         api: "/api/chat",
         body: {
           sessionId,
@@ -177,8 +177,8 @@ export function ChatPanel({
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-4" ref={scrollRef}>
-        <div className="py-4 space-y-1">
+      <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
+        <div className="px-4 py-4 space-y-1">
           {messages.length === 0 && (
             <div className="text-center text-muted-foreground py-8">
               <p className="text-sm">Start a conversation with your board.</p>

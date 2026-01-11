@@ -59,18 +59,20 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {textContent && (
           <div
             className={cn(
-              "inline-block rounded-lg px-3 py-2 max-w-[90%]",
+              "rounded-lg px-3 py-2 max-w-[90%] overflow-hidden",
               isUser
                 ? "bg-primary text-primary-foreground"
                 : "bg-muted text-foreground",
             )}
           >
             {isAssistant ? (
-              <div className="prose prose-sm dark:prose-invert max-w-none">
+              <div className="prose prose-sm dark:prose-invert max-w-none overflow-x-auto [&_pre]:overflow-x-auto [&_code]:break-words">
                 <ReactMarkdown>{textContent}</ReactMarkdown>
               </div>
             ) : (
-              <p className="text-sm whitespace-pre-wrap">{textContent}</p>
+              <p className="text-sm whitespace-pre-wrap break-words">
+                {textContent}
+              </p>
             )}
           </div>
         )}
