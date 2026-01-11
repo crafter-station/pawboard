@@ -80,6 +80,9 @@ interface IdeaCardProps {
   screenToWorld: (screen: Point) => Point;
   zoom: number;
   isSpacePressed?: boolean;
+  selectedCardIds?: Set<string>;
+  onMoveSelectedCards?: (deltaX: number, deltaY: number) => void;
+  onPersistMultiMove?: () => void;
 }
 
 export function IdeaCard({
@@ -106,6 +109,9 @@ export function IdeaCard({
   screenToWorld,
   zoom: _zoom,
   isSpacePressed = false,
+  selectedCardIds,
+  onMoveSelectedCards,
+  onPersistMultiMove,
 }: IdeaCardProps) {
   void _zoom; // Reserved for future use (cursor scaling, etc.)
   const [isDragging, setIsDragging] = useState(false);
@@ -122,6 +128,7 @@ export function IdeaCard({
   const startPos = useRef({ x: 0, y: 0 });
   const dragStartScreenPos = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
+  const lastWorldPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Permission checks
   const isOwnCard = card.createdById === visitorId;
@@ -173,6 +180,8 @@ export function IdeaCard({
       x: clickWorld.x - card.x,
       y: clickWorld.y - card.y,
     };
+    // Initialize last world position for multi-card dragging
+    lastWorldPosRef.current = clickWorld;
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -189,7 +198,8 @@ export function IdeaCard({
       target.closest(".popover-content");
 
     // Only select if not clicking on interactive elements
-    if (!isInteractiveElement && onSelect) {
+    // AND the card is not already selected (to preserve multi-selection)
+    if (!isInteractiveElement && onSelect && !isSelected) {
       onSelect();
     }
 
@@ -223,11 +233,29 @@ export function IdeaCard({
         hasDraggedRef.current = true;
       }
 
-      // Convert screen position to world position and apply offset
+      // Convert screen position to world position
       const worldPos = screenToWorld({ x: e.clientX, y: e.clientY });
-      const x = worldPos.x - dragOffset.current.x;
-      const y = worldPos.y - dragOffset.current.y;
-      onMove(card.id, x, y);
+
+      // Check if this card is part of a multi-selection
+      if (
+        isSelected &&
+        selectedCardIds &&
+        selectedCardIds.size > 1 &&
+        onMoveSelectedCards
+      ) {
+        // Multi-card drag: calculate delta from last position
+        if (lastWorldPosRef.current) {
+          const deltaX = worldPos.x - lastWorldPosRef.current.x;
+          const deltaY = worldPos.y - lastWorldPosRef.current.y;
+          onMoveSelectedCards(deltaX, deltaY);
+        }
+        lastWorldPosRef.current = worldPos;
+      } else {
+        // Single card drag: apply offset
+        const x = worldPos.x - dragOffset.current.x;
+        const y = worldPos.y - dragOffset.current.y;
+        onMove(card.id, x, y);
+      }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
@@ -244,24 +272,53 @@ export function IdeaCard({
           hasDraggedRef.current = true;
         }
 
-        // Convert screen position to world position and apply offset
+        // Convert screen position to world position
         const worldPos = screenToWorld({ x: touch.clientX, y: touch.clientY });
-        const x = worldPos.x - dragOffset.current.x;
-        const y = worldPos.y - dragOffset.current.y;
-        onMove(card.id, x, y);
+
+        // Check if this card is part of a multi-selection
+        if (
+          isSelected &&
+          selectedCardIds &&
+          selectedCardIds.size > 1 &&
+          onMoveSelectedCards
+        ) {
+          // Multi-card drag: calculate delta from last position
+          if (lastWorldPosRef.current) {
+            const deltaX = worldPos.x - lastWorldPosRef.current.x;
+            const deltaY = worldPos.y - lastWorldPosRef.current.y;
+            onMoveSelectedCards(deltaX, deltaY);
+          }
+          lastWorldPosRef.current = worldPos;
+        } else {
+          // Single card drag: apply offset
+          const x = worldPos.x - dragOffset.current.x;
+          const y = worldPos.y - dragOffset.current.y;
+          onMove(card.id, x, y);
+        }
       }
     };
 
     const handleEnd = () => {
       setIsDragging(false);
       dragStartScreenPos.current = null;
+      lastWorldPosRef.current = null;
 
       // Only persist if we actually dragged (moved the card)
       if (
         hasDraggedRef.current &&
         (card.x !== startPos.current.x || card.y !== startPos.current.y)
       ) {
-        onPersistMove(card.id, card.x, card.y);
+        // Check if this was a multi-card drag
+        if (
+          isSelected &&
+          selectedCardIds &&
+          selectedCardIds.size > 1 &&
+          onPersistMultiMove
+        ) {
+          onPersistMultiMove();
+        } else {
+          onPersistMove(card.id, card.x, card.y);
+        }
       }
 
       hasDraggedRef.current = false;
@@ -286,6 +343,10 @@ export function IdeaCard({
     onMove,
     onPersistMove,
     screenToWorld,
+    isSelected,
+    selectedCardIds,
+    onMoveSelectedCards,
+    onPersistMultiMove,
   ]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
