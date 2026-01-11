@@ -45,13 +45,12 @@ export async function DELETE(
       );
     }
 
-    // Only the uploader or session creator can delete files
+    // Only the uploader can delete files
     const isUploader = file.uploadedById === userId;
-    const isCreator = participant.role === "creator";
 
-    if (!isUploader && !isCreator) {
+    if (!isUploader) {
       return Response.json(
-        { error: "Only the file uploader or session creator can delete files" },
+        { error: "You can only delete files that you uploaded" },
         { status: 403 },
       );
     }
