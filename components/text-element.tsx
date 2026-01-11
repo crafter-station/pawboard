@@ -2,7 +2,7 @@
 
 import { Trash2 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -78,8 +78,14 @@ export function TextElement({
   const dragOffset = useRef({ x: 0, y: 0 });
   const startPos = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const resizeCorner = useRef<string | null>(null);
+  const contentRef = useRef<string>("");
 
   const data = element.data as TextData;
+
+  // Keep contentRef in sync with the latest content
+  useEffect(() => {
+    contentRef.current = data.content;
+  }, [data.content]);
 
   // Permissions
   const allowMove = canMoveElement(session, element, visitorId);
@@ -192,6 +198,33 @@ export function TextElement({
           const x = worldPos.x - dragOffset.current.x;
           const y = worldPos.y - dragOffset.current.y;
           onMove(element.id, x, y);
+        } else if (isResizing) {
+          const deltaX = worldPos.x - dragOffset.current.x;
+          const deltaY = worldPos.y - dragOffset.current.y;
+          let newX = startPos.current.x;
+          let newY = startPos.current.y;
+          let newWidth = startPos.current.width;
+          let newHeight = startPos.current.height;
+
+          const corner = resizeCorner.current;
+          if (corner?.includes("e")) {
+            newWidth = Math.max(100, startPos.current.width + deltaX);
+          }
+          if (corner?.includes("w")) {
+            const widthDelta = Math.min(deltaX, startPos.current.width - 100);
+            newX = startPos.current.x + widthDelta;
+            newWidth = startPos.current.width - widthDelta;
+          }
+          if (corner?.includes("s")) {
+            newHeight = Math.max(50, startPos.current.height + deltaY);
+          }
+          if (corner?.includes("n")) {
+            const heightDelta = Math.min(deltaY, startPos.current.height - 50);
+            newY = startPos.current.y + heightDelta;
+            newHeight = startPos.current.height - heightDelta;
+          }
+
+          onResize(element.id, newX, newY, newWidth, newHeight);
         }
       }
     };
@@ -251,14 +284,20 @@ export function TextElement({
     screenToWorld,
   ]);
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onUpdateData(element.id, { ...data, content: e.target.value });
-  };
+  const handleContentChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const newContent = e.target.value;
+      contentRef.current = newContent;
+      onUpdateData(element.id, { ...data, content: newContent });
+    },
+    [element.id, data, onUpdateData],
+  );
 
-  const handleContentBlur = () => {
+  const handleContentBlur = useCallback(() => {
     setIsEditing(false);
-    onPersistData(element.id, data);
-  };
+    // Use ref to get the latest content, avoiding stale closure
+    onPersistData(element.id, { ...data, content: contentRef.current });
+  }, [element.id, data, onPersistData]);
 
   const handleDoubleClick = () => {
     if (allowEdit) {
