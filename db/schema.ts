@@ -88,16 +88,66 @@ export const cards = pgTable(
   ],
 );
 
+// Ingestion status type
+export type IngestionStatus = "pending" | "processing" | "completed" | "failed";
+
+// Board files - stores metadata about uploaded files
+export const boardFiles = pgTable("board_files", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(), // Original filename
+  mimeType: text("mime_type").notNull(), // text/plain or text/markdown
+  sizeBytes: integer("size_bytes").notNull(),
+  storagePath: text("storage_path").notNull(), // Supabase storage path
+  uploadedById: text("uploaded_by_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+  // Ingestion status
+  ingestionStatus: text("ingestion_status")
+    .$type<IngestionStatus>()
+    .notNull()
+    .default("pending"),
+  ingestionError: text("ingestion_error"), // Error message if failed
+  processedAt: timestamp("processed_at"), // When ingestion completed
+});
+
+// File chunks - stores text chunks with embeddings for semantic search
+export const fileChunks = pgTable(
+  "file_chunks",
+  {
+    id: text("id").primaryKey(),
+    fileId: text("file_id")
+      .notNull()
+      .references(() => boardFiles.id, { onDelete: "cascade" }),
+    chunkIndex: integer("chunk_index").notNull(), // Order in file
+    content: text("content").notNull(), // The actual text chunk
+    embedding: vector("embedding", { dimensions: 1536 }), // text-embedding-3-small
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    // HNSW index for fast cosine similarity search
+    index("file_chunks_embedding_idx").using(
+      "hnsw",
+      table.embedding.op("vector_cosine_ops"),
+    ),
+  ],
+);
+
 // Relations
 
 export const usersRelations = relations(users, ({ many }) => ({
   participations: many(sessionParticipants),
   cards: many(cards),
+  uploadedFiles: many(boardFiles),
 }));
 
 export const sessionsRelations = relations(sessions, ({ many }) => ({
   participants: many(sessionParticipants),
   cards: many(cards),
+  files: many(boardFiles),
 }));
 
 export const sessionParticipantsRelations = relations(
@@ -125,6 +175,25 @@ export const cardsRelations = relations(cards, ({ one }) => ({
   }),
 }));
 
+export const boardFilesRelations = relations(boardFiles, ({ one, many }) => ({
+  session: one(sessions, {
+    fields: [boardFiles.sessionId],
+    references: [sessions.id],
+  }),
+  uploader: one(users, {
+    fields: [boardFiles.uploadedById],
+    references: [users.id],
+  }),
+  chunks: many(fileChunks),
+}));
+
+export const fileChunksRelations = relations(fileChunks, ({ one }) => ({
+  file: one(boardFiles, {
+    fields: [fileChunks.fileId],
+    references: [boardFiles.id],
+  }),
+}));
+
 // Types
 
 export type User = typeof users.$inferSelect;
@@ -136,3 +205,7 @@ export type Card = typeof cards.$inferSelect;
 export type NewCard = typeof cards.$inferInsert;
 export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type NewSessionParticipant = typeof sessionParticipants.$inferInsert;
+export type BoardFile = typeof boardFiles.$inferSelect;
+export type NewBoardFile = typeof boardFiles.$inferInsert;
+export type FileChunk = typeof fileChunks.$inferSelect;
+export type NewFileChunk = typeof fileChunks.$inferInsert;

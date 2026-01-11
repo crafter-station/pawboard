@@ -32,6 +32,7 @@
     "@react-three/fiber": "^9.4.2",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
+    "@trigger.dev/sdk": "4.3.2",
     "@vercel/analytics": "^1.6.1",
     "ai": "^6.0.3",
     "class-variance-authority": "^0.7.1",
@@ -56,6 +57,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",
     "@tailwindcss/postcss": "^4",
+    "@trigger.dev/build": "4.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

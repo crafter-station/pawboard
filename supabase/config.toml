@@ -110,12 +110,11 @@ enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
-# Uncomment to configure local storage buckets
-# [storage.buckets.images]
-# public = false
-# file_size_limit = "50MiB"
-# allowed_mime_types = ["image/png", "image/jpeg"]
-# objects_path = "./images"
+# Board files storage bucket for AI chat context
+[storage.buckets.board-files]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = ["text/plain", "text/markdown"]
 
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
