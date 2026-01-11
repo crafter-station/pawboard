@@ -18,7 +18,7 @@ import { FileUploadZone } from "@/components/file-upload-zone";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import type { BoardFile } from "@/db/schema";
+import type { BoardFile, Card } from "@/db/schema";
 import { formatFileSize } from "@/lib/files/validation";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +27,8 @@ interface ChatPanelProps {
   userId: string;
   selectedCardId?: string;
   onClose: () => void;
+  onCardCreated?: (card: Card) => void;
+  onCardUpdated?: (card: Card) => void;
 }
 
 export function ChatPanel({
@@ -34,6 +36,8 @@ export function ChatPanel({
   userId,
   selectedCardId,
   onClose,
+  onCardCreated,
+  onCardUpdated,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -90,6 +94,64 @@ export function ChatPanel({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Track processed tool call IDs to avoid duplicate handling
+  const processedToolCallsRef = useRef<Set<string>>(new Set());
+
+  // Process tool results from messages to trigger card callbacks
+  useEffect(() => {
+    for (const message of messages) {
+      if (message.role !== "assistant") continue;
+
+      for (const part of message.parts) {
+        // Check if this is a tool part (type starts with "tool-")
+        if (!part.type.startsWith("tool-")) continue;
+
+        const toolPart = part as {
+          type: string;
+          toolCallId: string;
+          state: string;
+          output?: unknown;
+        };
+
+        // Only process completed tool calls
+        if (toolPart.state !== "output-available") continue;
+
+        // Skip if already processed
+        if (processedToolCallsRef.current.has(toolPart.toolCallId)) continue;
+
+        const output = toolPart.output as
+          | {
+              success?: boolean;
+              card?: Card;
+            }
+          | undefined;
+
+        if (!output?.success || !output?.card) continue;
+
+        // Mark as processed
+        processedToolCallsRef.current.add(toolPart.toolCallId);
+
+        // Handle create_card tool
+        if (part.type === "tool-create_card" && onCardCreated) {
+          console.log(
+            "[chat-panel] Broadcasting created card:",
+            output.card.id,
+          );
+          onCardCreated(output.card);
+        }
+
+        // Handle update_card tool
+        if (part.type === "tool-update_card" && onCardUpdated) {
+          console.log(
+            "[chat-panel] Broadcasting updated card:",
+            output.card.id,
+          );
+          onCardUpdated(output.card);
+        }
+      }
+    }
+  }, [messages, onCardCreated, onCardUpdated]);
 
   // Focus input on mount
   useEffect(() => {

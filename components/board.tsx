@@ -281,6 +281,7 @@ export function Board({
   const {
     cards,
     addCard,
+    updateCard: updateCardRealtime,
     moveCard,
     typeCard,
     changeColor,
@@ -1489,6 +1490,8 @@ export function Board({
             userId={visitorId}
             selectedCardId={selectedCardIdForChat}
             onClose={closeChat}
+            onCardCreated={addCard}
+            onCardUpdated={updateCardRealtime}
           />
         </div>
       )}
