@@ -10,14 +10,12 @@ import {
   executeGetAllCards,
   executeGetCardsByUser,
   executeGrepFiles,
-  executeListFiles,
   executeReadFile,
   executeSearchCards,
   executeUpdateCard,
   getAllCardsSchema,
   getCardsByUserSchema,
   grepFilesSchema,
-  listFilesSchema,
   readFileSchema,
   searchCardsSchema,
   type ToolContext,
@@ -140,11 +138,7 @@ export async function POST(req: Request) {
           execute: async (params: { filename: string }) =>
             executeReadFile(params, toolContext),
         },
-        list_files: {
-          description: "List all files that have been uploaded to this board.",
-          inputSchema: listFilesSchema,
-          execute: async () => executeListFiles({}, toolContext),
-        },
+
         search_cards: {
           description:
             "Search for cards on the board using semantic search. Use this to find cards related to a specific topic or query.",

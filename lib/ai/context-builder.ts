@@ -71,7 +71,7 @@ You are chatting with: **${currentUsername || "Unknown User"}**
 ### File Tools
 - **grep_files**: Search through uploaded files using semantic search.
 - **read_file**: Read the complete contents of a specific file.
-- **list_files**: List all uploaded files on the board.
+
 
 ## When to Use Each Tool
 

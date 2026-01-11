@@ -47,8 +47,6 @@ export const readFileSchema = z.object({
   filename: z.string().describe("The name of the file to read"),
 });
 
-export const listFilesSchema = z.object({});
-
 export const searchCardsSchema = z.object({
   query: z
     .string()
@@ -380,48 +378,6 @@ async function readFileContent(file: BoardFile) {
   };
 }
 
-export async function executeListFiles(
-  _params: z.infer<typeof listFilesSchema>,
-  context: ToolContext,
-) {
-  const { sessionId } = context;
-
-  try {
-    const files = await db.query.boardFiles.findMany({
-      where: eq(boardFiles.sessionId, sessionId),
-      orderBy: [desc(boardFiles.uploadedAt)],
-    });
-
-    if (files.length === 0) {
-      return {
-        success: true,
-        files: [],
-        message: "No files have been uploaded to this board yet.",
-      };
-    }
-
-    const fileList = files.map((f) => ({
-      filename: f.filename,
-      mimeType: f.mimeType,
-      sizeBytes: f.sizeBytes,
-      status: f.ingestionStatus,
-      uploadedAt: f.uploadedAt.toISOString(),
-    }));
-
-    return {
-      success: true,
-      files: fileList,
-      message: `Found ${files.length} file(s) in this board`,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      files: [],
-      error: `Failed to list files: ${error instanceof Error ? error.message : "Unknown error"}`,
-    };
-  }
-}
-
 export async function executeSearchCards(
   params: z.infer<typeof searchCardsSchema>,
   context: ToolContext,
@@ -601,11 +557,7 @@ export const toolDefinitions = {
       "Read the complete contents of a specific uploaded file by name. Use this when you need to see the full content of a file.",
     parameters: readFileSchema,
   },
-  list_files: {
-    description:
-      "List all files that have been uploaded to this board, including their processing status.",
-    parameters: listFilesSchema,
-  },
+
   search_cards: {
     description:
       "Search for cards on the board using semantic search. Use this to find cards related to a specific topic or query.",
@@ -647,11 +599,7 @@ export async function executeTool(
       );
     case "read_file":
       return executeReadFile(params as z.infer<typeof readFileSchema>, context);
-    case "list_files":
-      return executeListFiles(
-        params as z.infer<typeof listFilesSchema>,
-        context,
-      );
+
     case "search_cards":
       return executeSearchCards(
         params as z.infer<typeof searchCardsSchema>,
