@@ -3,8 +3,6 @@ import { db } from "@/db";
 import { boardFiles, sessionParticipants } from "@/db/schema";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const BUCKET_NAME = "board-files";
-
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ fileId: string }> },
@@ -58,7 +56,7 @@ export async function DELETE(
     // Delete from Supabase Storage
     const supabase = createAdminClient();
     const { error: storageError } = await supabase.storage
-      .from(BUCKET_NAME)
+      .from(process.env.SUPABASE_BUCKET_NAME!)
       .remove([file.storagePath]);
 
     if (storageError) {

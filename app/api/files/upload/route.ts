@@ -12,8 +12,6 @@ import { generateFileId } from "@/lib/nanoid";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ingestFileTask } from "../../../../src/trigger/ingest-file";
 
-const BUCKET_NAME = "board-files";
-
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -75,7 +73,7 @@ export async function POST(req: Request) {
     const fileBuffer = await file.arrayBuffer();
 
     const { error: uploadError } = await supabase.storage
-      .from(BUCKET_NAME)
+      .from(process.env.SUPABASE_BUCKET_NAME!)
       .upload(storagePath, fileBuffer, {
         contentType: validation.mimeType,
         upsert: false,

@@ -1,4 +1,3 @@
-import { createOpenAI } from "@ai-sdk/openai";
 import { createClient } from "@supabase/supabase-js";
 import { logger, task } from "@trigger.dev/sdk/v3";
 import { embedMany } from "ai";
@@ -40,7 +39,6 @@ function createStorageClient() {
   });
 }
 
-const BUCKET_NAME = "board-files";
 const MAX_EMBEDDING_BATCH_SIZE = 100; // OpenAI limit
 
 export interface IngestFilePayload {
@@ -87,7 +85,7 @@ export const ingestFileTask = task({
 
       // 2. Download file from Supabase Storage
       const { data: fileData, error: downloadError } = await supabase.storage
-        .from(BUCKET_NAME)
+        .from(process.env.SUPABASE_BUCKET_NAME!)
         .download(file.storagePath);
 
       if (downloadError || !fileData) {
