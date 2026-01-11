@@ -69,12 +69,24 @@ export async function executeCreateCard(
   );
 
   const { content, color } = params;
-  const { sessionId, userId } = context;
+  const { sessionId, userId, cards: existingCards } = context;
 
-  // Calculate position - place in center with slight offset
-  const offsetRange = 100;
-  const x = Math.random() * offsetRange * 2 - offsetRange;
-  const y = Math.random() * offsetRange * 2 - offsetRange;
+  // Calculate position - place near existing cards with slight offset
+  let centerX = 0;
+  let centerY = 0;
+
+  if (existingCards.length > 0) {
+    // Calculate the center of all existing cards
+    const sumX = existingCards.reduce((sum, card) => sum + card.x, 0);
+    const sumY = existingCards.reduce((sum, card) => sum + card.y, 0);
+    centerX = sumX / existingCards.length;
+    centerY = sumY / existingCards.length;
+  }
+
+  // Add random offset from center (within 200px range)
+  const offsetRange = 200;
+  const x = centerX + (Math.random() * offsetRange - offsetRange / 2);
+  const y = centerY + (Math.random() * offsetRange - offsetRange / 2);
 
   const cardId = generateCardId();
   const defaultColors = [
