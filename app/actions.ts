@@ -765,9 +765,18 @@ export async function getSessionElements(sessionId: string) {
 
 export async function createElement(
   data: NewElement,
-  _userId: string,
+  userId: string,
 ): Promise<{ element: Element | null; error: string | null }> {
   try {
+    // Verify user is a session participant
+    const userRole = await getUserRoleInSession(userId, data.sessionId);
+    if (!userRole) {
+      return {
+        element: null,
+        error: "You are not a participant in this session",
+      };
+    }
+
     const session = await db.query.sessions.findFirst({
       where: eq(sessions.id, data.sessionId),
     });
@@ -783,7 +792,11 @@ export async function createElement(
       };
     }
 
-    const [element] = await db.insert(elements).values(data).returning();
+    // Force server-side userId to prevent ownership spoofing
+    const [element] = await db
+      .insert(elements)
+      .values({ ...data, createdById: userId })
+      .returning();
     return { element, error: null };
   } catch (error) {
     console.error("Database error in createElement:", error);
@@ -803,6 +816,18 @@ export async function updateElement(
 
     if (!existingElement) {
       return { element: null, error: "Element not found" };
+    }
+
+    // Verify user is a session participant
+    const userRole = await getUserRoleInSession(
+      userId,
+      existingElement.sessionId,
+    );
+    if (!userRole) {
+      return {
+        element: null,
+        error: "You are not a participant in this session",
+      };
     }
 
     const session = await db.query.sessions.findFirst({
@@ -873,9 +898,15 @@ export async function deleteElement(
 
     const userRole = await getUserRoleInSession(visitorId, existing.sessionId);
 
-    if (
-      !canDeleteElement(session, existing, visitorId, userRole ?? "participant")
-    ) {
+    // Reject if user is not a session participant
+    if (!userRole) {
+      return {
+        success: false,
+        error: "You are not a participant in this session",
+      };
+    }
+
+    if (!canDeleteElement(session, existing, visitorId, userRole)) {
       return {
         success: false,
         error: "You don't have permission to delete this element",
