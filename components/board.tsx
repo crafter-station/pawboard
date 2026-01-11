@@ -56,6 +56,7 @@ import type { Card, Session, SessionRole } from "@/db/schema";
 import { useCanvasGestures } from "@/hooks/use-canvas-gestures";
 import { useCatSound } from "@/hooks/use-cat-sound";
 import { useFingerprint } from "@/hooks/use-fingerprint";
+import { useMarqueeSelection } from "@/hooks/use-marquee-selection";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
 import { useRealtimeCards } from "@/hooks/use-realtime-cards";
 import { useRealtimePresence } from "@/hooks/use-realtime-presence";
@@ -102,7 +103,6 @@ export function Board({
   const [participants, setParticipants] = useState<Map<string, string>>(
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [copiedCard, setCopiedCard] = useState<{
     content: string;
     color: string;
@@ -294,6 +294,22 @@ export function Board({
     handleRemoteSessionSettingsChange,
   );
 
+  // Marquee selection for multiple cards
+  const {
+    isSelecting,
+    selectionRect,
+    selectedCardIds,
+    startSelection,
+    clearSelection,
+    setSelectedCardIds,
+  } = useMarqueeSelection({
+    cards,
+    screenToWorld,
+    cardWidth: CARD_WIDTH,
+    cardHeight: CARD_HEIGHT,
+    isSpacePressed,
+  });
+
   // Fit all cards in view
   const fitAllCards = useCallback(() => {
     if (cards.length === 0) {
@@ -451,6 +467,39 @@ export function Board({
     if (!visitorId) return;
     await updateCard(id, { x, y }, visitorId);
   };
+
+  const handleMoveSelectedCards = useCallback(
+    (deltaX: number, deltaY: number) => {
+      // Update position for all selected cards
+      for (const cardId of selectedCardIds) {
+        const card = cards.find((c) => c.id === cardId);
+        if (card) {
+          moveCard(cardId, card.x + deltaX, card.y + deltaY);
+        }
+      }
+    },
+    [selectedCardIds, cards, moveCard],
+  );
+
+  const handlePersistMultiMove = useCallback(async () => {
+    if (!visitorId) return;
+
+    // Get positions of all selected cards
+    const positions = Array.from(selectedCardIds)
+      .map((id) => cards.find((c) => c.id === id))
+      .filter((card): card is Card => card !== undefined)
+      .map((card) => ({ id: card.id, x: card.x, y: card.y }));
+
+    // Persist each card position to database
+    await Promise.all(
+      positions.map((pos) =>
+        updateCard(pos.id, { x: pos.x, y: pos.y }, visitorId),
+      ),
+    );
+
+    // Broadcast cluster update to other users
+    broadcastClusterPositions(positions);
+  }, [selectedCardIds, cards, visitorId, broadcastClusterPositions]);
 
   const handlePersistColor = async (id: string, color: string) => {
     if (!visitorId) return;
@@ -617,38 +666,41 @@ export function Board({
     [applyClusterPositions, broadcastClusterPositions],
   );
 
-  const handleCopyCard = useCallback(async (card: Card) => {
-    const cardData = {
-      type: "pawboard-card",
-      content: card.content,
-      color: card.color,
-    };
+  const handleCopyCard = useCallback(
+    async (card: Card) => {
+      const cardData = {
+        type: "pawboard-card",
+        content: card.content,
+        color: card.color,
+      };
 
-    try {
-      // Save to system clipboard as JSON
-      await navigator.clipboard.writeText(JSON.stringify(cardData));
-    } catch (error) {
-      // Clipboard API may not be available or blocked
-      console.warn("Failed to write to clipboard:", error);
-    }
+      try {
+        // Save to system clipboard as JSON
+        await navigator.clipboard.writeText(JSON.stringify(cardData));
+      } catch (error) {
+        // Clipboard API may not be available or blocked
+        console.warn("Failed to write to clipboard:", error);
+      }
 
-    // Always save to memory as fallback
-    const clipboardData = { content: card.content, color: card.color };
-    setCopiedCard(clipboardData);
+      // Always save to memory as fallback
+      const clipboardData = { content: card.content, color: card.color };
+      setCopiedCard(clipboardData);
 
-    // Persist to sessionStorage
-    try {
-      sessionStorage.setItem(
-        "pawboard_clipboard",
-        JSON.stringify(clipboardData),
-      );
-    } catch (error) {
-      // sessionStorage may be full or blocked
-      console.warn("Failed to save to sessionStorage:", error);
-    }
+      // Persist to sessionStorage
+      try {
+        sessionStorage.setItem(
+          "pawboard_clipboard",
+          JSON.stringify(clipboardData),
+        );
+      } catch (error) {
+        // sessionStorage may be full or blocked
+        console.warn("Failed to save to sessionStorage:", error);
+      }
 
-    setSelectedCardId(card.id);
-  }, []);
+      setSelectedCardIds(new Set([card.id]));
+    },
+    [setSelectedCardIds],
+  );
 
   const handlePasteCard = useCallback(async () => {
     if (!username || !visitorId) return;
@@ -836,10 +888,11 @@ export function Board({
         return;
       }
 
-      // Ctrl+C or Cmd+C to copy selected card
+      // Ctrl+C or Cmd+C to copy selected card (first selected if multiple)
       if ((e.ctrlKey || e.metaKey) && e.key === "c") {
-        if (selectedCardId) {
-          const card = cards.find((c) => c.id === selectedCardId);
+        if (selectedCardIds.size > 0) {
+          const firstSelectedId = selectedCardIds.values().next().value;
+          const card = cards.find((c) => c.id === firstSelectedId);
           if (card) {
             e.preventDefault();
             handleCopyCard(card);
@@ -868,7 +921,7 @@ export function Board({
   }, [
     commandOpen,
     handleAddCard,
-    selectedCardId,
+    selectedCardIds,
     cards,
     handleCopyCard,
     copiedCard,
@@ -1260,7 +1313,7 @@ export function Board({
           cursor: isPanning ? "grabbing" : isSpacePressed ? "grab" : "default",
         }}
         onMouseDown={(e) => {
-          // Deselect card if clicking directly on canvas (not on a card)
+          // Start potential marquee selection if clicking on empty canvas
           const target = e.target as HTMLElement;
           if (
             !target.closest("[data-card]") &&
@@ -1268,7 +1321,7 @@ export function Board({
             !isSpacePressed &&
             e.button === 0
           ) {
-            setSelectedCardId(null);
+            startSelection(e.clientX, e.clientY);
           }
           canvasHandlers.onMouseDown(e);
         }}
@@ -1294,8 +1347,8 @@ export function Board({
               visitorId={visitorId}
               autoFocus={card.id === newCardId}
               onFocused={() => setNewCardId(null)}
-              isSelected={card.id === selectedCardId}
-              onSelect={() => setSelectedCardId(card.id)}
+              isSelected={selectedCardIds.has(card.id)}
+              onSelect={() => setSelectedCardIds(new Set([card.id]))}
               onDuplicate={handleDuplicateCard}
               onMove={moveCard}
               onType={typeCard}
@@ -1310,8 +1363,24 @@ export function Board({
               screenToWorld={screenToWorld}
               zoom={zoom}
               isSpacePressed={isSpacePressed}
+              selectedCardIds={selectedCardIds}
+              onMoveSelectedCards={handleMoveSelectedCards}
+              onPersistMultiMove={handlePersistMultiMove}
             />
           ))}
+
+          {/* Marquee selection rectangle */}
+          {isSelecting && selectionRect && (
+            <div
+              className="absolute border-2 border-dashed border-primary bg-primary/10 pointer-events-none z-50"
+              style={{
+                left: selectionRect.x,
+                top: selectionRect.y,
+                width: selectionRect.width,
+                height: selectionRect.height,
+              }}
+            />
+          )}
 
           {/* Cursors - rendered in world space */}
           <RealtimeCursors
