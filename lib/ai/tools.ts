@@ -5,6 +5,31 @@ import type { BoardFile, Card, NewCard } from "@/db/schema";
 import { boardFiles, cards, fileChunks } from "@/db/schema";
 import { generateEmbedding } from "@/lib/embeddings";
 import { generateCardId } from "@/lib/nanoid";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+// Broadcast a card event to all clients in a session
+async function broadcastCardEvent(
+  sessionId: string,
+  userId: string,
+  event: { type: string; [key: string]: unknown },
+) {
+  try {
+    const supabase = createAdminClient();
+    const channel = supabase.channel(`cards:${sessionId}`);
+
+    await channel.send({
+      type: "broadcast",
+      event: "card-event",
+      payload: { ...event, odilUserId: userId },
+    });
+
+    // Clean up the channel after sending
+    await supabase.removeChannel(channel);
+    console.log("[broadcast] Sent event:", event.type);
+  } catch (error) {
+    console.error("[broadcast] Failed to send event:", error);
+  }
+}
 
 // Context passed to tools during execution
 export interface ToolContext {
@@ -107,6 +132,12 @@ export async function executeCreateCard(
     const [insertedCard] = await db.insert(cards).values(newCard).returning();
     console.log("[create_card] Successfully inserted card:", insertedCard.id);
 
+    // Broadcast the new card to all clients in the session
+    await broadcastCardEvent(sessionId, userId, {
+      type: "card:add",
+      card: insertedCard,
+    });
+
     return {
       success: true,
       card: {
@@ -132,7 +163,7 @@ export async function executeUpdateCard(
   context: ToolContext,
 ) {
   const { content } = params;
-  const { selectedCardId } = context;
+  const { sessionId, userId, selectedCardId } = context;
 
   if (!selectedCardId) {
     return {
@@ -159,6 +190,12 @@ export async function executeUpdateCard(
       .set({ content, updatedAt: new Date() })
       .where(eq(cards.id, selectedCardId))
       .returning();
+
+    // Broadcast the updated card to all clients in the session
+    await broadcastCardEvent(sessionId, userId, {
+      type: "card:update",
+      card: updatedCard,
+    });
 
     return {
       success: true,

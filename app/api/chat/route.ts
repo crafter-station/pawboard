@@ -99,7 +99,7 @@ export async function POST(req: Request) {
 
     // Stream the response with tools
     const result = streamText({
-      model: "openai/gpt-4o-mini",
+      model: "openai/gpt-oss-120b",
       system: systemPrompt,
       messages: modelMessages,
       tools: {
