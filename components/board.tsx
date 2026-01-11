@@ -11,6 +11,7 @@ import {
   Pencil,
   Plus,
 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -956,7 +957,7 @@ export function Board({
       {/* Main board area */}
       <div
         className={cn(
-          "flex-1 min-h-screen overflow-hidden relative transition-all duration-300",
+          "flex-1 min-h-screen overflow-hidden relative transition-all duration-200 ease-out",
           isChatOpen && viewportSize.width >= 640 && "w-[60%]",
         )}
       >
@@ -997,8 +998,8 @@ export function Board({
           maxLength={50}
         />
 
-        {/* Fixed UI - Top Left */}
-        <div className="fixed top-2 sm:top-4 left-2 sm:left-4 z-50 flex items-center gap-1.5 sm:gap-3">
+        {/* UI - Top Left */}
+        <div className="absolute top-2 sm:top-4 left-2 sm:left-4 z-50 flex items-center gap-1.5 sm:gap-3">
           <Link href="/">
             <Button
               variant="outline"
@@ -1023,8 +1024,8 @@ export function Board({
           />
         </div>
 
-        {/* Fixed UI - Top Center: Session Name + Lock Indicator */}
-        <div className="fixed top-2 sm:top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+        {/* UI - Top Center: Session Name + Lock Indicator */}
+        <div className="absolute top-2 sm:top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
           {isLocked && (
             <div
               className="flex items-center gap-1.5 bg-destructive/10 text-destructive px-2.5 h-8 sm:h-9 rounded-lg border border-destructive/20"
@@ -1080,8 +1081,8 @@ export function Board({
           onOpenChange={setSettingsOpen}
         />
 
-        {/* Fixed UI - Top Right: Desktop - simplified */}
-        <div className="fixed top-2 sm:top-4 right-2 sm:right-4 z-50 hidden sm:flex items-center gap-2">
+        {/* UI - Top Right: Desktop - simplified */}
+        <div className="absolute top-2 sm:top-4 right-2 sm:right-4 z-50 hidden sm:flex items-center gap-2">
           <Button
             variant="outline"
             size="icon"
@@ -1109,8 +1110,8 @@ export function Board({
           </Button>
         </div>
 
-        {/* Fixed UI - Top Right: Mobile Hamburger Menu */}
-        <div className="fixed top-2 right-2 z-50 sm:hidden">
+        {/* UI - Top Right: Mobile Hamburger Menu */}
+        <div className="absolute top-2 right-2 z-50 sm:hidden">
           <Button
             variant="outline"
             size="icon"
@@ -1157,8 +1158,8 @@ export function Board({
           </DrawerContent>
         </Drawer>
 
-        {/* Fixed UI - Bottom Right: Participants only */}
-        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center gap-2">
+        {/* UI - Bottom Right: Participants only */}
+        <div className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center gap-2">
           <ParticipantsDialog
             participants={participants}
             currentUserId={visitorId}
@@ -1170,7 +1171,7 @@ export function Board({
 
         {/* Minimap (Desktop Only) */}
         {viewportSize.width >= 640 && (
-          <div className="fixed top-20 left-4 z-50">
+          <div className="absolute top-20 left-4 z-50">
             <Minimap
               cards={cards}
               pan={pan}
@@ -1183,8 +1184,8 @@ export function Board({
           </div>
         )}
 
-        {/* Fixed UI - Bottom Left: Zoom Controls */}
-        <div className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-50">
+        {/* UI - Bottom Left: Zoom Controls */}
+        <div className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6 z-50">
           <div className="flex items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border px-1 py-1">
             <Button
               variant="ghost"
@@ -1353,19 +1354,27 @@ export function Board({
         </div>
       </div>
 
-      {/* Chat Panel - Desktop only, 40% width */}
-      {isChatOpen && viewportSize.width >= 640 && (
-        <div className="w-[40%] h-screen shrink-0">
-          <ChatPanel
-            sessionId={sessionId}
-            userId={visitorId}
-            selectedCardId={selectedCardIdForChat}
-            onClose={closeChat}
-            onCardCreated={addCard}
-            onCardUpdated={updateCardRealtime}
-          />
-        </div>
-      )}
+      {/* Chat Panel - Desktop only, 40% width with slide animation */}
+      <AnimatePresence>
+        {isChatOpen && viewportSize.width >= 640 && (
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 30, stiffness: 400 }}
+            className="w-[40%] h-screen shrink-0"
+          >
+            <ChatPanel
+              sessionId={sessionId}
+              userId={visitorId}
+              selectedCardId={selectedCardIdForChat}
+              onClose={closeChat}
+              onCardCreated={addCard}
+              onCardUpdated={updateCardRealtime}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
