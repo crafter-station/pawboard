@@ -10,11 +10,23 @@ import {
   RefreshCw,
   Send,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatMessage, ChatMessageSkeleton } from "@/components/chat-message";
 import { FileUploadZone } from "@/components/file-upload-zone";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -231,7 +243,12 @@ export function ChatPanel({
             </div>
             <div className="space-y-1 max-h-24 overflow-y-auto">
               {files.map((file) => (
-                <FileListItem key={file.id} file={file} />
+                <FileListItem
+                  key={file.id}
+                  file={file}
+                  userId={userId}
+                  onDeleted={fetchFiles}
+                />
               ))}
             </div>
           </div>
@@ -318,9 +335,14 @@ export function ChatPanel({
 
 interface FileListItemProps {
   file: BoardFile;
+  userId: string;
+  onDeleted: () => void;
 }
 
-function FileListItem({ file }: FileListItemProps) {
+function FileListItem({ file, userId, onDeleted }: FileListItemProps) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
   const StatusIcon =
     file.ingestionStatus === "completed"
       ? CheckCircle
@@ -335,8 +357,29 @@ function FileListItem({ file }: FileListItemProps) {
         ? "text-destructive"
         : "text-muted-foreground";
 
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/files/${file.id}?userId=${userId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        onDeleted();
+      } else {
+        const data = await response.json();
+        console.error("Failed to delete file:", data.error);
+      }
+    } catch (error) {
+      console.error("Failed to delete file:", error);
+    } finally {
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-2 text-xs p-1.5 rounded hover:bg-muted/50">
+    <div className="group flex items-center gap-2 text-xs p-1.5 rounded hover:bg-muted/50">
       <FileText className="w-3 h-3 text-muted-foreground shrink-0" />
       <span className="truncate flex-1" title={file.filename}>
         {file.filename}
@@ -345,6 +388,39 @@ function FileListItem({ file }: FileListItemProps) {
         {formatFileSize(file.sizeBytes)}
       </span>
       <StatusIcon className={cn("w-3 h-3 shrink-0", statusColor)} />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            title="Delete file"
+            disabled={isDeleting}
+          >
+            <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete file?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{file.filename}</strong> and
+              all its processed chunks. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -26,6 +26,7 @@
     "@ai-sdk/react": "^3.0.29",
     "@fingerprintjs/fingerprintjs": "^5.0.1",
     "@number-flow/react": "^0.5.10",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-scroll-area": "^1.2.10",
