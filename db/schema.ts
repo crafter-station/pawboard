@@ -37,6 +37,7 @@ export const sessions = pgTable("sessions", {
     .notNull()
     .default("creator"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
 });
 
 export const sessionParticipants = pgTable(
@@ -50,6 +51,7 @@ export const sessionParticipants = pgTable(
       .references(() => sessions.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("participant"), // "creator" | "participant"
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
+    lastActiveAt: timestamp("last_active_at").defaultNow().notNull(),
   },
   (table) => [primaryKey({ columns: [table.userId, table.sessionId] })],
 );

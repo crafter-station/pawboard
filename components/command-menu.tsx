@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Moon, Pencil, Plus, Share2, Sun } from "lucide-react";
+import { Home, ListTodo, Moon, Pencil, Plus, Share2, Sun } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect } from "react";
@@ -66,6 +66,12 @@ export function CommandMenu({
           <CommandItem onSelect={() => runCommand(() => router.push("/"))}>
             <Home className="mr-2 h-4 w-4" />
             Go home
+          </CommandItem>
+          <CommandItem
+            onSelect={() => runCommand(() => router.push("/sessions"))}
+          >
+            <ListTodo className="mr-2 h-4 w-4" />
+            My sessions
           </CommandItem>
           <CommandItem onSelect={() => runCommand(onChangeName)}>
             <Pencil className="mr-2 h-4 w-4" />

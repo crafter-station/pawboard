@@ -50,6 +50,13 @@
       "when": 1768016824953,
       "tag": "0006_easy_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1768088290992,
+      "tag": "0007_worthless_stardust",
+      "breakpoints": true
     }
   ]
 }

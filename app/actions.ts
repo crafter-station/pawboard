@@ -25,6 +25,32 @@ import {
   canVote,
 } from "@/lib/permissions";
 
+// Helper function to update activity timestamps
+async function updateActivityTimestamps(sessionId: string, userId: string) {
+  const now = new Date();
+  try {
+    // Update session lastActivityAt
+    await db
+      .update(sessions)
+      .set({ lastActivityAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    // Update user's lastActiveAt in this session
+    await db
+      .update(sessionParticipants)
+      .set({ lastActiveAt: now })
+      .where(
+        and(
+          eq(sessionParticipants.sessionId, sessionId),
+          eq(sessionParticipants.userId, userId),
+        ),
+      );
+  } catch (error) {
+    console.error("Error updating activity timestamps:", error);
+    // Don't throw - this shouldn't break the main operation
+  }
+}
+
 // Session Actions
 
 export async function getOrCreateSession(id: string) {
@@ -105,13 +131,24 @@ export async function updateSessionName(
 
     const [session] = await db
       .update(sessions)
-      .set({ name: newName.trim() })
+      .set({ name: newName.trim(), lastActivityAt: new Date() })
       .where(eq(sessions.id, sessionId))
       .returning();
 
     if (!session) {
       return { session: null, error: "Session not found" };
     }
+
+    // Update user's lastActiveAt timestamp
+    await db
+      .update(sessionParticipants)
+      .set({ lastActiveAt: new Date() })
+      .where(
+        and(
+          eq(sessionParticipants.sessionId, sessionId),
+          eq(sessionParticipants.userId, userId),
+        ),
+      );
 
     return { session, error: null };
   } catch (error) {
@@ -145,13 +182,24 @@ export async function updateSessionSettings(
 
     const [session] = await db
       .update(sessions)
-      .set(settings)
+      .set({ ...settings, lastActivityAt: new Date() })
       .where(eq(sessions.id, sessionId))
       .returning();
 
     if (!session) {
       return { session: null, error: "Session not found" };
     }
+
+    // Update user's lastActiveAt timestamp
+    await db
+      .update(sessionParticipants)
+      .set({ lastActiveAt: new Date() })
+      .where(
+        and(
+          eq(sessionParticipants.sessionId, sessionId),
+          eq(sessionParticipants.userId, userId),
+        ),
+      );
 
     return { session, error: null };
   } catch (error) {
@@ -321,6 +369,16 @@ export async function joinSession(
     });
 
     if (existing) {
+      // Update lastActiveAt since user is joining/re-entering session
+      await db
+        .update(sessionParticipants)
+        .set({ lastActiveAt: new Date() })
+        .where(
+          and(
+            eq(sessionParticipants.userId, userId),
+            eq(sessionParticipants.sessionId, sessionId),
+          ),
+        );
       return { success: true, role: existing.role as SessionRole, error: null };
     }
 
@@ -342,6 +400,70 @@ export async function joinSession(
   } catch (error) {
     console.error("Database error in joinSession:", error);
     return { success: false, role: null, error: "Failed to join session" };
+  }
+}
+
+export async function getUserSessions(userId: string): Promise<{
+  sessions: Array<{
+    id: string;
+    name: string;
+    role: SessionRole;
+    creatorName: string;
+    lastActivityAt: Date;
+    lastActiveAt: Date;
+    cardCount: number;
+  }>;
+  error: string | null;
+}> {
+  try {
+    // Get all sessions where user is a participant
+    const participations = await db.query.sessionParticipants.findMany({
+      where: eq(sessionParticipants.userId, userId),
+      with: {
+        session: true,
+      },
+    });
+
+    // For each session, get the creator name and card count
+    const sessionsData = await Promise.all(
+      participations.map(async (participation) => {
+        // Get the creator of this session
+        const creator = await db.query.sessionParticipants.findFirst({
+          where: and(
+            eq(sessionParticipants.sessionId, participation.sessionId),
+            eq(sessionParticipants.role, "creator"),
+          ),
+          with: {
+            user: true,
+          },
+        });
+
+        // Get card count for this session
+        const sessionCards = await db.query.cards.findMany({
+          where: eq(cards.sessionId, participation.sessionId),
+        });
+
+        return {
+          id: participation.session.id,
+          name: participation.session.name,
+          role: participation.role as SessionRole,
+          creatorName: creator?.user.username ?? "Unknown",
+          lastActivityAt: participation.session.lastActivityAt,
+          lastActiveAt: participation.lastActiveAt,
+          cardCount: sessionCards.length,
+        };
+      }),
+    );
+
+    // Sort by lastActiveAt (most recent first)
+    sessionsData.sort(
+      (a, b) => b.lastActiveAt.getTime() - a.lastActiveAt.getTime(),
+    );
+
+    return { sessions: sessionsData, error: null };
+  } catch (error) {
+    console.error("Database error in getUserSessions:", error);
+    return { sessions: [], error: "Failed to fetch sessions" };
   }
 }
 
@@ -405,7 +527,7 @@ export async function getSessionCards(sessionId: string) {
 
 export async function createCard(
   data: NewCard,
-  _userId: string,
+  userId: string,
 ): Promise<{ card: Card | null; error: string | null }> {
   try {
     // Get session to check if locked
@@ -422,6 +544,10 @@ export async function createCard(
     }
 
     const [card] = await db.insert(cards).values(data).returning();
+
+    // Update activity timestamps
+    await updateActivityTimestamps(data.sessionId, userId);
+
     return { card, error: null };
   } catch (error) {
     console.error("Database error in createCard:", error);
@@ -485,6 +611,9 @@ export async function updateCard(
       .set({ ...data, updatedAt: new Date() })
       .where(eq(cards.id, id))
       .returning();
+
+    // Update activity timestamps
+    await updateActivityTimestamps(existingCard.sessionId, userId);
 
     // If content was updated AND actually changed, generate embedding in background
     const contentChanged =
@@ -595,6 +724,9 @@ export async function voteCard(
       .where(eq(cards.id, id))
       .returning();
 
+    // Update activity timestamps
+    await updateActivityTimestamps(existing.sessionId, visitorId);
+
     return { card, action: hasVoted ? "removed" : "added", error: null };
   } catch (error) {
     console.error("Database error in voteCard:", error);
@@ -663,6 +795,9 @@ export async function toggleReaction(
       .where(eq(cards.id, cardId))
       .returning();
 
+    // Update activity timestamps
+    await updateActivityTimestamps(existing.sessionId, userId);
+
     return { card, action: hasReacted ? "removed" : "added", error: null };
   } catch (error) {
     console.error("Database error in toggleReaction:", error);
@@ -705,6 +840,10 @@ export async function deleteCard(
     }
 
     await db.delete(cards).where(eq(cards.id, id));
+
+    // Update activity timestamps
+    await updateActivityTimestamps(existing.sessionId, visitorId);
+
     return { success: true, error: null };
   } catch (error) {
     console.error("Database error in deleteCard:", error);
@@ -769,6 +908,9 @@ export async function deleteEmptyCards(
 
     // Delete all empty cards
     await db.delete(cards).where(inArray(cards.id, emptyCardIds));
+
+    // Update activity timestamps
+    await updateActivityTimestamps(sessionId, userId);
 
     return {
       deletedIds: emptyCardIds,
