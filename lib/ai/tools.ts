@@ -168,7 +168,7 @@ export async function executeUpdateCard(
   context: ToolContext,
 ) {
   const { content } = params;
-  const { selectedCardId } = context;
+  const { selectedCardId, userId } = context;
 
   if (!selectedCardId) {
     return {
@@ -187,6 +187,15 @@ export async function executeUpdateCard(
       return {
         success: false,
         error: "Selected card not found",
+      };
+    }
+
+    // Check if user owns the card
+    if (existingCard.createdById !== userId) {
+      return {
+        success: false,
+        error:
+          "You can only update cards that you created. This card belongs to another user.",
       };
     }
 
