@@ -57,6 +57,14 @@ export function ChatPanel({
   const [files, setFiles] = useState<BoardFile[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(true);
 
+  // Use ref to track current selectedCardId so headers function always reads latest value
+  const selectedCardIdRef = useRef(selectedCardId);
+
+  // Update ref when selectedCardId changes
+  useEffect(() => {
+    selectedCardIdRef.current = selectedCardId;
+  }, [selectedCardId]);
+
   // Create transport with custom body and headers
   // selectedCardId is sent in headers to ensure it's included in every request
   const transport = useMemo(
@@ -68,10 +76,10 @@ export function ChatPanel({
           userId,
         },
         headers: async () => ({
-          "X-Selected-Card-Id": selectedCardId || "",
+          "X-Selected-Card-Id": selectedCardIdRef.current || "",
         }),
       }),
-    [sessionId, userId, selectedCardId],
+    [sessionId, userId],
   );
 
   const { messages, sendMessage, stop, status, error, clearError } = useChat({
