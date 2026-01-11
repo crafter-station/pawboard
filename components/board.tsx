@@ -11,7 +11,7 @@ import {
   Pencil,
   Plus,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -1354,27 +1354,19 @@ export function Board({
         </div>
       </div>
 
-      {/* Chat Panel - Desktop only, 40% width with slide animation */}
-      <AnimatePresence>
-        {isChatOpen && viewportSize.width >= 640 && (
-          <motion.div
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 400 }}
-            className="w-[40%] h-screen shrink-0"
-          >
-            <ChatPanel
-              sessionId={sessionId}
-              userId={visitorId}
-              selectedCardId={selectedCardIdForChat}
-              onClose={closeChat}
-              onCardCreated={addCard}
-              onCardUpdated={updateCardRealtime}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Chat Panel - Desktop only, 40% width */}
+      {isChatOpen && viewportSize.width >= 640 && (
+        <div className="w-[40%] h-screen shrink-0">
+          <ChatPanel
+            sessionId={sessionId}
+            userId={visitorId}
+            selectedCardId={selectedCardIdForChat}
+            onClose={closeChat}
+            onCardCreated={addCard}
+            onCardUpdated={updateCardRealtime}
+          />
+        </div>
+      )}
     </div>
   );
 }
