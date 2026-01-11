@@ -119,6 +119,22 @@ export async function executeCreateCard(
     const [insertedCard] = await db.insert(cards).values(newCard).returning();
     console.log("[create_card] Successfully inserted card:", insertedCard.id);
 
+    // Generate embedding for the card content (don't block on it)
+    generateEmbedding(content)
+      .then(async (embedding) => {
+        await db
+          .update(cards)
+          .set({ embedding })
+          .where(eq(cards.id, insertedCard.id));
+        console.log(
+          "[create_card] Generated embedding for card:",
+          insertedCard.id,
+        );
+      })
+      .catch((error) => {
+        console.error("[create_card] Failed to generate embedding:", error);
+      });
+
     // Return full card data so client can broadcast via realtime
     return {
       success: true,
