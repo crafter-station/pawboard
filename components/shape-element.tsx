@@ -291,6 +291,33 @@ export function ShapeElement({
           const x = worldPos.x - dragOffset.current.x;
           const y = worldPos.y - dragOffset.current.y;
           onMove(element.id, x, y);
+        } else if (isResizing) {
+          const deltaX = worldPos.x - dragOffset.current.x;
+          const deltaY = worldPos.y - dragOffset.current.y;
+          let newX = startPos.current.x;
+          let newY = startPos.current.y;
+          let newWidth = startPos.current.width;
+          let newHeight = startPos.current.height;
+
+          const corner = resizeCorner.current;
+          if (corner?.includes("e")) {
+            newWidth = Math.max(50, startPos.current.width + deltaX);
+          }
+          if (corner?.includes("w")) {
+            const widthDelta = Math.min(deltaX, startPos.current.width - 50);
+            newX = startPos.current.x + widthDelta;
+            newWidth = startPos.current.width - widthDelta;
+          }
+          if (corner?.includes("s")) {
+            newHeight = Math.max(50, startPos.current.height + deltaY);
+          }
+          if (corner?.includes("n")) {
+            const heightDelta = Math.min(deltaY, startPos.current.height - 50);
+            newY = startPos.current.y + heightDelta;
+            newHeight = startPos.current.height - heightDelta;
+          }
+
+          onResize(element.id, newX, newY, newWidth, newHeight);
         }
       }
     };
