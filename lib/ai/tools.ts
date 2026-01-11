@@ -5,7 +5,7 @@ import type { BoardFile, Card, NewCard } from "@/db/schema";
 import { boardFiles, cards, fileChunks } from "@/db/schema";
 import { generateEmbedding } from "@/lib/embeddings";
 import { generateCardId } from "@/lib/nanoid";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createServerClient } from "@/lib/supabase/admin";
 
 // Broadcast a card event to all clients in a session
 async function broadcastCardEvent(
@@ -14,7 +14,7 @@ async function broadcastCardEvent(
   event: { type: string; [key: string]: unknown },
 ) {
   try {
-    const supabase = createAdminClient();
+    const supabase = createServerClient();
     const channel = supabase.channel(`cards:${sessionId}`);
 
     await channel.send({
