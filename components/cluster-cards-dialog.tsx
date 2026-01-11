@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Loader2, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { clusterCards } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +21,8 @@ interface ClusterCardsDialogProps {
   userId: string;
   onCluster: (positions: Array<{ id: string; x: number; y: number }>) => void;
   trigger?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function ClusterCardsDialog({
@@ -29,8 +31,10 @@ export function ClusterCardsDialog({
   userId,
   onCluster,
   trigger,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: ClusterCardsDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [isClustering, setIsClustering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -39,17 +43,28 @@ export function ClusterCardsDialog({
     cardsProcessed: number;
   } | null>(null);
 
+  // Support both controlled and uncontrolled modes
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled
+    ? (value: boolean) => controlledOnOpenChange?.(value)
+    : setInternalOpen;
+
   const cardsWithContent = useMemo(() => {
     return cards.filter((card) => card.content && card.content.trim() !== "");
   }, [cards]);
 
-  const handleOpenChange = (newOpen: boolean) => {
-    setOpen(newOpen);
-    if (newOpen) {
+  // Reset state when dialog opens
+  useEffect(() => {
+    if (open) {
       setShowSuccess(false);
       setError(null);
       setClusterResult(null);
     }
+  }, [open]);
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen);
   };
 
   const handleCluster = async () => {
@@ -94,19 +109,7 @@ export function ClusterCardsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      {trigger ? (
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-      ) : (
-        <DialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Cluster cards by similarity"
-          >
-            <Sparkles className="h-4 w-4" />
-          </Button>
-        </DialogTrigger>
-      )}
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

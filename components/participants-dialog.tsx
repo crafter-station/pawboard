@@ -16,14 +16,27 @@ interface ParticipantsDialogProps {
   participants: Map<string, string>;
   currentUserId: string;
   onlineUsers?: Set<string>;
+  trigger?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function ParticipantsDialog({
   participants,
   currentUserId,
   onlineUsers = new Set(),
+  trigger,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: ParticipantsDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+
+  // Support both controlled and uncontrolled modes
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled
+    ? (value: boolean) => controlledOnOpenChange?.(value)
+    : setInternalOpen;
 
   const participantsList = Array.from(participants.entries()).map(
     ([visitorId, username]) => ({
@@ -44,18 +57,20 @@ export function ParticipantsDialog({
 
   const onlineCount = participantsList.filter((p) => p.isOnline).length;
 
+  const defaultTrigger = (
+    <Button
+      variant="outline"
+      size="icon"
+      className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+      title="View participants"
+    >
+      <Users className="w-4 h-4" />
+    </Button>
+  );
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-          title="View participants"
-        >
-          <Users className="w-4 h-4" />
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Trash } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,32 +22,47 @@ interface CleanupCardsDialogProps {
     error?: string;
   }>;
   trigger?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function CleanupCardsDialog({
   cards,
   onCleanup,
   trigger,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: CleanupCardsDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [deletedCount, setDeletedCount] = useState(0);
 
+  // Support both controlled and uncontrolled modes
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled
+    ? (value: boolean) => controlledOnOpenChange?.(value)
+    : setInternalOpen;
+
   const emptyCardsCount = useMemo(() => {
     return cards.filter((card) => !card.content || card.content.trim() === "")
       .length;
   }, [cards]);
 
-  const handleOpenChange = (newOpen: boolean) => {
-    setOpen(newOpen);
-    if (newOpen) {
+  // Reset state when dialog opens
+  useEffect(() => {
+    if (open) {
       setShowConfirmation(false);
       setShowSuccess(false);
       setError(null);
     }
+  }, [open]);
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen);
   };
 
   const handleCleanup = async () => {
@@ -88,15 +103,7 @@ export function CleanupCardsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      {trigger ? (
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-      ) : (
-        <DialogTrigger asChild>
-          <Button variant="ghost" size="icon" title="Clean up empty cards">
-            <Trash className="h-4 w-4" />
-          </Button>
-        </DialogTrigger>
-      )}
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

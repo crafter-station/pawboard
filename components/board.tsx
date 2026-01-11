@@ -1,9 +1,7 @@
 "use client";
 
 import {
-  Check,
   Command,
-  Copy,
   Home,
   Lock,
   Maximize2,
@@ -12,10 +10,6 @@ import {
   Minus,
   Pencil,
   Plus,
-  Settings,
-  Share2,
-  Sparkles,
-  Trash,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -33,13 +27,11 @@ import {
   updateSessionSettings,
   voteCard as voteCardAction,
 } from "@/app/actions";
-import { AddCardButton } from "@/components/add-card-button";
 import { ChatPanel } from "@/components/chat-panel";
 import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
 import { ClusterCardsDialog } from "@/components/cluster-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
-import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
 import { IdeaCard } from "@/components/idea-card";
 import { Minimap } from "@/components/minimap";
 import { ParticipantsDialog } from "@/components/participants-dialog";
@@ -94,13 +86,15 @@ export function Board({
   initialParticipants,
 }: BoardProps) {
   const router = useRouter();
-  const [copied, setCopied] = useState(false);
-  const [sessionIdCopied, setSessionIdCopied] = useState(false);
   const [newCardId, setNewCardId] = useState<string | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [editSessionNameOpen, setEditSessionNameOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [clusterOpen, setClusterOpen] = useState(false);
+  const [participantsOpen, setParticipantsOpen] = useState(false);
   const [session, setSession] = useState<Session>(initialSession);
   const [userRole, setUserRole] = useState<SessionRole | null>(null);
   const [participants, setParticipants] = useState<Map<string, string>>(
@@ -565,17 +559,13 @@ export function Board({
     await toggleReaction(id, emoji, visitorId);
   };
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     await navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  }, []);
 
-  const handleCopySessionId = async () => {
+  const handleCopySessionId = useCallback(async () => {
     await navigator.clipboard.writeText(sessionId);
-    setSessionIdCopied(true);
-    setTimeout(() => setSessionIdCopied(false), 2000);
-  };
+  }, [sessionId]);
 
   const handleUpdateUsername = async (newUsername: string) => {
     const result = await updateUsername(newUsername);
@@ -975,7 +965,16 @@ export function Board({
           onOpenChange={setCommandOpen}
           onAddCard={handleAddCard}
           onShare={handleShare}
+          onCopySessionId={handleCopySessionId}
           onChangeName={() => setEditNameOpen(true)}
+          onFitAllCards={fitAllCards}
+          onViewParticipants={() => setParticipantsOpen(true)}
+          isSessionCreator={isSessionCreator}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenCleanup={() => setCleanupOpen(true)}
+          onOpenCluster={() => setClusterOpen(true)}
+          onRenameBoard={() => setEditSessionNameOpen(true)}
+          isLocked={isLocked}
         />
 
         {/* Edit Username Dialog - controlled by command menu */}
@@ -1056,73 +1055,33 @@ export function Board({
               </span>
             </div>
           )}
-          {isSessionCreator && (
-            <>
-              <CleanupCardsDialog
-                cards={cards}
-                onCleanup={handleCleanupEmptyCards}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                    title="Clean up empty cards"
-                  >
-                    <Trash className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Button>
-                }
-              />
-              <ClusterCardsDialog
-                cards={cards}
-                sessionId={sessionId}
-                userId={visitorId}
-                onCluster={handleClusterCards}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                    title="Cluster cards by similarity"
-                    disabled={isLocked}
-                  >
-                    <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Button>
-                }
-              />
-              <SessionSettingsDialog
-                session={session}
-                onUpdateSettings={handleUpdateSessionSettings}
-                onDeleteSession={handleDeleteSession}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                    title="Session Settings"
-                  >
-                    <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Button>
-                }
-              />
-            </>
-          )}
         </div>
 
-        {/* Fixed UI - Top Right: Desktop */}
+        {/* Dialogs triggered from command menu */}
+        <CleanupCardsDialog
+          cards={cards}
+          onCleanup={handleCleanupEmptyCards}
+          open={cleanupOpen}
+          onOpenChange={setCleanupOpen}
+        />
+        <ClusterCardsDialog
+          cards={cards}
+          sessionId={sessionId}
+          userId={visitorId}
+          onCluster={handleClusterCards}
+          open={clusterOpen}
+          onOpenChange={setClusterOpen}
+        />
+        <SessionSettingsDialog
+          session={session}
+          onUpdateSettings={handleUpdateSessionSettings}
+          onDeleteSession={handleDeleteSession}
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+        />
+
+        {/* Fixed UI - Top Right: Desktop - simplified */}
         <div className="fixed top-2 sm:top-4 right-2 sm:right-4 z-50 hidden sm:flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleCopySessionId}
-            className="flex text-muted-foreground text-sm font-mono bg-card/80 backdrop-blur-sm px-3 h-9 items-center justify-center gap-2 rounded-md border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer"
-            title={sessionIdCopied ? "Copied!" : "Copy session ID"}
-          >
-            {sessionId}
-            {sessionIdCopied ? (
-              <Check className="w-3.5 h-3.5 text-sky-500" />
-            ) : (
-              <Copy className="w-3.5 h-3.5 opacity-50" />
-            )}
-          </button>
           <Button
             variant="outline"
             size="icon"
@@ -1131,18 +1090,6 @@ export function Board({
             title={isLocked ? "Session is locked" : "Add card (N)"}
           >
             <Plus className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleShare}
-            title={copied ? "Copied!" : "Share"}
-          >
-            {copied ? (
-              <Check className="w-4 h-4 text-sky-500" />
-            ) : (
-              <Share2 className="w-4 h-4" />
-            )}
           </Button>
           <Button
             variant="outline"
@@ -1160,9 +1107,6 @@ export function Board({
           >
             <MessageSquare className="w-4 h-4" />
           </Button>
-          <div className="bg-card/80 backdrop-blur-sm h-9 flex items-center px-2 rounded-lg border border-border">
-            <ThemeSwitcherToggle />
-          </div>
         </div>
 
         {/* Fixed UI - Top Right: Mobile Hamburger Menu */}
@@ -1177,7 +1121,7 @@ export function Board({
           </Button>
         </div>
 
-        {/* Mobile Menu Drawer */}
+        {/* Mobile Menu Drawer - simplified */}
         <Drawer open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <DrawerContent>
             <DrawerHeader>
@@ -1197,75 +1141,7 @@ export function Board({
                 </Button>
               </DrawerClose>
 
-              {/* Share Link */}
-              <DrawerClose asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-11"
-                  onClick={handleShare}
-                >
-                  {copied ? (
-                    <Check className="w-4 h-4 text-sky-500" />
-                  ) : (
-                    <Share2 className="w-4 h-4" />
-                  )}
-                  {copied ? "Link copied!" : "Copy share link"}
-                </Button>
-              </DrawerClose>
-
-              {/* Copy Session ID */}
-              <DrawerClose asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-11"
-                  onClick={handleCopySessionId}
-                >
-                  {sessionIdCopied ? (
-                    <Check className="w-4 h-4 text-sky-500" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                  <span className="flex-1 text-left">
-                    {sessionIdCopied ? "Copied!" : "Copy session ID"}
-                  </span>
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {sessionId}
-                  </span>
-                </Button>
-              </DrawerClose>
-
-              {/* Edit Username */}
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-3 h-11"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setEditNameOpen(true);
-                }}
-              >
-                <Pencil className="w-4 h-4" />
-                Change your name
-              </Button>
-
-              {/* Clean up Empty Cards (Session Creator Only) */}
-              {isSessionCreator && (
-                <CleanupCardsDialog
-                  cards={cards}
-                  onCleanup={handleCleanupEmptyCards}
-                  trigger={
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start gap-3 h-11"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      <Trash className="w-4 h-4" />
-                      Clean up empty cards
-                    </Button>
-                  }
-                />
-              )}
-
-              {/* Command Menu */}
+              {/* Command Menu - gives access to all other actions */}
               <Button
                 variant="outline"
                 className="w-full justify-start gap-3 h-11"
@@ -1275,26 +1151,21 @@ export function Board({
                 }}
               >
                 <Command className="w-4 h-4" />
-                Command menu
+                All actions (⌘K)
               </Button>
-
-              {/* Theme Toggle */}
-              <div className="flex items-center justify-between h-11 px-4 rounded-md border border-input bg-background">
-                <span className="text-sm">Theme</span>
-                <ThemeSwitcherToggle />
-              </div>
             </div>
           </DrawerContent>
         </Drawer>
 
-        {/* Fixed UI - Bottom Right */}
+        {/* Fixed UI - Bottom Right: Participants only */}
         <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center gap-2">
           <ParticipantsDialog
             participants={participants}
             currentUserId={visitorId}
             onlineUsers={onlineUsers}
+            open={participantsOpen}
+            onOpenChange={setParticipantsOpen}
           />
-          <AddCardButton onClick={handleAddCard} disabled={isLocked} />
         </div>
 
         {/* Minimap (Desktop Only) */}

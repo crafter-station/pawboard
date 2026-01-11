@@ -1,7 +1,7 @@
 "use client";
 
 import { Lock, Move, Settings, Trash, Trash2, Unlock } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,6 +23,8 @@ interface SessionSettingsDialogProps {
   }) => Promise<{ success: boolean; error?: string }>;
   onDeleteSession: () => Promise<{ success: boolean; error?: string }>;
   trigger?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function SessionSettingsDialog({
@@ -30,8 +32,10 @@ export function SessionSettingsDialog({
   onUpdateSettings,
   onDeleteSession,
   trigger,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: SessionSettingsDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [isLocked, setIsLocked] = useState(session.isLocked);
   const [movePermission, setMovePermission] = useState<MovePermission>(
     session.movePermission,
@@ -44,21 +48,36 @@ export function SessionSettingsDialog({
   const [error, setError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Support both controlled and uncontrolled modes
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled
+    ? (value: boolean) => controlledOnOpenChange?.(value)
+    : setInternalOpen;
+
   const hasChanges =
     isLocked !== session.isLocked ||
     movePermission !== session.movePermission ||
     deletePermission !== session.deletePermission;
 
-  const handleOpenChange = (newOpen: boolean) => {
-    setOpen(newOpen);
-    if (newOpen) {
-      // Reset to current session values
+  // Reset state when dialog opens
+  useEffect(() => {
+    if (open) {
       setIsLocked(session.isLocked);
       setMovePermission(session.movePermission);
       setDeletePermission(session.deletePermission);
       setError(null);
       setShowDeleteConfirm(false);
     }
+  }, [
+    open,
+    session.isLocked,
+    session.movePermission,
+    session.deletePermission,
+  ]);
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen);
   };
 
   const handleSave = async () => {
@@ -117,15 +136,7 @@ export function SessionSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      {trigger ? (
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-      ) : (
-        <DialogTrigger asChild>
-          <Button variant="ghost" size="icon" title="Session Settings">
-            <Settings className="h-4 w-4" />
-          </Button>
-        </DialogTrigger>
-      )}
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
