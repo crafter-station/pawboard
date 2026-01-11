@@ -929,7 +929,9 @@ export async function deleteEmptyCards(
 
 // Clustering Actions
 
-import { isNotNull } from "drizzle-orm";
+import { desc, isNotNull } from "drizzle-orm";
+import type { BoardFile } from "@/db/schema";
+import { boardFiles } from "@/db/schema";
 import { type CardPosition, clusterAndPosition } from "@/lib/clustering";
 
 export async function clusterCards(
@@ -1045,5 +1047,40 @@ export async function clusterCards(
       cardsProcessed: 0,
       error: "Failed to cluster cards",
     };
+  }
+}
+
+// File Actions
+
+export async function getSessionFiles(
+  sessionId: string,
+  userId: string,
+): Promise<{ files: BoardFile[]; error: string | null }> {
+  try {
+    // Verify user is a session participant
+    const participant = await db.query.sessionParticipants.findFirst({
+      where: and(
+        eq(sessionParticipants.userId, userId),
+        eq(sessionParticipants.sessionId, sessionId),
+      ),
+    });
+
+    if (!participant) {
+      return {
+        files: [],
+        error: "You must be a participant to view files",
+      };
+    }
+
+    // Get all files for the session
+    const files = await db.query.boardFiles.findMany({
+      where: eq(boardFiles.sessionId, sessionId),
+      orderBy: [desc(boardFiles.uploadedAt)],
+    });
+
+    return { files, error: null };
+  } catch (error) {
+    console.error("Database error in getSessionFiles:", error);
+    return { files: [], error: "Failed to fetch files" };
   }
 }
