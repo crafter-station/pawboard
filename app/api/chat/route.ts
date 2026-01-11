@@ -1,6 +1,6 @@
 import { createGroq } from "@ai-sdk/groq";
 import type { UIMessage } from "ai";
-import { convertToModelMessages, streamText, tool } from "ai";
+import { convertToModelMessages, streamText } from "ai";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cards, sessionParticipants } from "@/db/schema";
@@ -20,6 +20,13 @@ import {
   type ToolContext,
   updateCardSchema,
 } from "@/lib/ai/tools";
+
+const groq = createGroq({
+  apiKey: process.env.GROQ_API_KEY,
+});
+
+// Use a model that supports tool calling
+const MODEL = "llama-3.3-70b-versatile";
 
 export async function POST(req: Request) {
   try {
@@ -88,48 +95,70 @@ export async function POST(req: Request) {
     // Convert UIMessages to ModelMessages for the AI model
     const modelMessages = await convertToModelMessages(messages);
 
+    console.log(
+      "[chat] Starting streamText with",
+      modelMessages.length,
+      "messages",
+    );
+    console.log(
+      "[chat] Tool context:",
+      JSON.stringify({ sessionId, userId, selectedCardId }),
+    );
+
     // Stream the response with tools
     const result = streamText({
-      model: "openai/gpt-oss-120b",
+      model: groq(MODEL),
       system: systemPrompt,
       messages: modelMessages,
       tools: {
-        create_card: tool({
+        create_card: {
           description:
             "Create a new idea card on the board. Use this when the user wants to add a new idea or note.",
           inputSchema: createCardSchema,
-          execute: async (params) => executeCreateCard(params, toolContext),
-        }),
-        update_card: tool({
+          execute: async (params: { content: string; color?: string }) => {
+            console.log("[chat] create_card tool called with:", params);
+            return executeCreateCard(params, toolContext);
+          },
+        },
+        update_card: {
           description:
             "Update the content of the currently selected card. Only works when exactly one card is selected.",
           inputSchema: updateCardSchema,
-          execute: async (params) => executeUpdateCard(params, toolContext),
-        }),
-        grep_files: tool({
+          execute: async (params: { content: string }) =>
+            executeUpdateCard(params, toolContext),
+        },
+        grep_files: {
           description:
             "Search for information across all uploaded files using semantic search.",
           inputSchema: grepFilesSchema,
-          execute: async (params) => executeGrepFiles(params, toolContext),
-        }),
-        read_file: tool({
+          execute: async (params: { query: string; limit?: number }) =>
+            executeGrepFiles(
+              { ...params, limit: params.limit ?? 5 },
+              toolContext,
+            ),
+        },
+        read_file: {
           description:
             "Read the complete contents of a specific uploaded file by name.",
           inputSchema: readFileSchema,
-          execute: async (params) => executeReadFile(params, toolContext),
-        }),
-        list_files: tool({
+          execute: async (params: { filename: string }) =>
+            executeReadFile(params, toolContext),
+        },
+        list_files: {
           description: "List all files that have been uploaded to this board.",
           inputSchema: listFilesSchema,
           execute: async () => executeListFiles({}, toolContext),
-        }),
-        summarize_context: tool({
+        },
+        summarize_context: {
           description:
             "Generate a summary of the current board context including cards and/or files.",
           inputSchema: summarizeContextSchema,
-          execute: async (params) =>
-            executeSummarizeContext(params, toolContext),
-        }),
+          execute: async (params: { focus?: "cards" | "files" | "all" }) =>
+            executeSummarizeContext(
+              { ...params, focus: params.focus ?? "all" },
+              toolContext,
+            ),
+        },
       },
       temperature: 0.7,
     });

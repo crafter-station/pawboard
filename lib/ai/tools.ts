@@ -62,6 +62,12 @@ export async function executeCreateCard(
   params: z.infer<typeof createCardSchema>,
   context: ToolContext,
 ) {
+  console.log("[create_card] Tool called with params:", JSON.stringify(params));
+  console.log(
+    "[create_card] Context:",
+    JSON.stringify({ sessionId: context.sessionId, userId: context.userId }),
+  );
+
   const { content, color } = params;
   const { sessionId, userId } = context;
 
@@ -95,8 +101,11 @@ export async function executeCreateCard(
     createdById: userId,
   };
 
+  console.log("[create_card] Inserting card:", JSON.stringify(newCard));
+
   try {
     const [insertedCard] = await db.insert(cards).values(newCard).returning();
+    console.log("[create_card] Successfully inserted card:", insertedCard.id);
 
     return {
       success: true,
@@ -110,6 +119,7 @@ export async function executeCreateCard(
       message: `Created card with content: "${content.slice(0, 50)}${content.length > 50 ? "..." : ""}"`,
     };
   } catch (error) {
+    console.error("[create_card] Error inserting card:", error);
     return {
       success: false,
       error: `Failed to create card: ${error instanceof Error ? error.message : "Unknown error"}`,
