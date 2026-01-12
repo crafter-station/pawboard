@@ -16,6 +16,27 @@ import {
 export type MovePermission = "creator" | "everyone";
 export type DeletePermission = "creator" | "everyone";
 
+// Element types
+export type ElementType = "text" | "shape";
+export type ShapeType = "rectangle" | "circle" | "diamond" | "arrow";
+
+export type TextData = {
+  content: string;
+  fontSize: number;
+  fontWeight: "normal" | "bold";
+  textAlign: "left" | "center" | "right";
+  color: string;
+};
+
+export type ShapeData = {
+  shapeType: ShapeType;
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+};
+
+export type ElementData = TextData | ShapeData;
+
 // Tables
 
 export const users = pgTable("users", {
@@ -88,16 +109,36 @@ export const cards = pgTable(
   ],
 );
 
+export const elements = pgTable("elements", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  type: text("type").$type<ElementType>().notNull(),
+  x: real("x").notNull().default(0),
+  y: real("y").notNull().default(0),
+  width: real("width").notNull().default(200),
+  height: real("height").notNull().default(100),
+  data: jsonb("data").$type<ElementData>().notNull(),
+  createdById: text("created_by_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Relations
 
 export const usersRelations = relations(users, ({ many }) => ({
   participations: many(sessionParticipants),
   cards: many(cards),
+  elements: many(elements),
 }));
 
 export const sessionsRelations = relations(sessions, ({ many }) => ({
   participants: many(sessionParticipants),
   cards: many(cards),
+  elements: many(elements),
 }));
 
 export const sessionParticipantsRelations = relations(
@@ -125,6 +166,17 @@ export const cardsRelations = relations(cards, ({ one }) => ({
   }),
 }));
 
+export const elementsRelations = relations(elements, ({ one }) => ({
+  session: one(sessions, {
+    fields: [elements.sessionId],
+    references: [sessions.id],
+  }),
+  creator: one(users, {
+    fields: [elements.createdById],
+    references: [users.id],
+  }),
+}));
+
 // Types
 
 export type User = typeof users.$inferSelect;
@@ -136,3 +188,5 @@ export type Card = typeof cards.$inferSelect;
 export type NewCard = typeof cards.$inferInsert;
 export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type NewSessionParticipant = typeof sessionParticipants.$inferInsert;
+export type Element = typeof elements.$inferSelect;
+export type NewElement = typeof elements.$inferInsert;

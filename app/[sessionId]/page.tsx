@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   getOrCreateSession,
   getSessionCards,
+  getSessionElements,
   getSessionParticipants,
 } from "@/app/actions";
 import { Board } from "@/components/board";
@@ -44,16 +45,19 @@ export default async function SessionPage({ params }: Props) {
     );
   }
 
-  const [initialCards, initialParticipants] = await Promise.all([
-    getSessionCards(sessionId),
-    getSessionParticipants(sessionId),
-  ]);
+  const [initialCards, initialElements, initialParticipants] =
+    await Promise.all([
+      getSessionCards(sessionId),
+      getSessionElements(sessionId),
+      getSessionParticipants(sessionId),
+    ]);
 
   return (
     <Board
       sessionId={sessionId}
       initialSession={session}
       initialCards={initialCards}
+      initialElements={initialElements}
       initialParticipants={initialParticipants}
     />
   );
