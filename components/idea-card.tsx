@@ -712,7 +712,7 @@ export function IdeaCard({
           </TooltipProvider>
         </div>
         <div
-          className="p-2.5 sm:p-3.5 relative transition-all duration-200 min-h-[inherit] flex flex-col"
+          className="p-2.5 sm:p-3.5 relative min-h-[inherit] flex flex-col antialiased transition-[box-shadow] duration-200"
           style={
             isEditing
               ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" }
@@ -732,7 +732,7 @@ export function IdeaCard({
                 className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none ${isExpanded
                   ? "text-[13px] sm:text-[15px]"
                   : "text-[11px] sm:text-[13px]"
-                  } ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-all duration-200 w-full h-full ${isExpanded
+                  } ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-[min-height,max-height] duration-200 w-full h-full ${isExpanded
                     ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
                     : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
                   }`}
@@ -746,7 +746,7 @@ export function IdeaCard({
                 ? "text-[13px] sm:text-[15px]"
                 : "text-[11px] sm:text-[13px]"
                 } ${textColorClass} ${allowEdit ? "cursor-text" : "cursor-default"
-                } transition-all duration-200 ${isExpanded
+                } transition-[min-height,max-height] duration-200 ${isExpanded
                   ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
                   : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
                 }`}
