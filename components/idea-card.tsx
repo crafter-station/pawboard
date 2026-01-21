@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { useTheme } from "next-themes";
 import NumberFlow from "@number-flow/react";
 import {
   Check,
@@ -16,10 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import Image from "next/image";
-import { useTheme } from "next-themes";
-import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
+
 import {
   Popover,
   PopoverContent,
@@ -32,7 +33,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { Card, Session, SessionRole } from "@/db/schema";
+import { VoiceTrigger, VoiceVisualizer } from "@/components/voice-recorder";
+
+import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
+
 import {
   DARK_COLORS,
   getDisplayColor as getDisplayColorUtil,
@@ -48,7 +52,8 @@ import {
   canVote,
 } from "@/lib/permissions";
 import { getAvatarForUser } from "@/lib/utils";
-import { VoiceRecorder } from "@/components/voice-recorder";
+
+import type { Card, Session, SessionRole } from "@/db/schema";
 
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
 
@@ -124,13 +129,27 @@ export function IdeaCard({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const { resolvedTheme } = useTheme();
-  const [isRecording, setIsRecording] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const startPos = useRef({ x: 0, y: 0 });
   const dragStartScreenPos = useRef<{ x: number; y: number } | null>(null);
   const hasDraggedRef = useRef(false);
   const lastWorldPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  /* Voice Recorder Hook */
+  const {
+    isRecording: isRecordingVoice,
+    isTranscribing: isTranscribingVoice,
+    audioLevels,
+    startRecording,
+    stopRecording
+  } = useVoiceRecorder({
+    onTranscription: (text) => {
+      const newContent = card.content ? `${card.content} ${text}` : text;
+      onType(card.id, newContent);
+      onPersistContent(card.id, newContent);
+    }
+  });
 
   // Permission checks
   const isOwnCard = card.createdById === visitorId;
@@ -796,6 +815,14 @@ export function IdeaCard({
               )}
             </div>
           )}
+          {/* Centered Voice Visualizer - Outside of Footer Transform Context */}
+          <VoiceVisualizer
+            isRecording={isRecordingVoice}
+            audioLevels={audioLevels}
+            isDark={isPurpleDark || isDark}
+            containerClassName="absolute inset-0"
+          />
+
           {card.content && !isEditing && (
             <TooltipProvider delayDuration={400}>
               <Tooltip>
@@ -899,18 +926,19 @@ export function IdeaCard({
             {allowEdit && (
               <motion.div
                 initial={isMobile ? { opacity: 0.5, scale: 1 } : { opacity: 0, scale: 0.9 }}
-                animate={isMobile ? { opacity: 0.5, scale: 1 } : {}}
-                whileHover={{ opacity: 0.7, scale: 1.05 }}
+                animate={(isRecordingVoice || isMobile) ? { opacity: isRecordingVoice ? 1 : 0.5, scale: 1 } : {}}
+                whileHover={{ opacity: 0.8, scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                className="flex-shrink-0 ml-0.5 relative z-10"
+                className="flex-shrink-0 ml-0.5 z-10"
                 onMouseDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
               >
-                <VoiceRecorder
-                  onTranscription={handleTranscription}
+                <VoiceTrigger
+                  isRecording={isRecordingVoice}
+                  isTranscribing={isTranscribingVoice}
+                  onToggle={isRecordingVoice ? stopRecording : startRecording}
                   isDark={isPurpleDark || isDark}
-                  containerClassName="absolute inset-x-0 bottom-0 top-[-250%]"
                 />
               </motion.div>
             )}
