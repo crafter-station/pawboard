@@ -124,6 +124,7 @@ export function IdeaCard({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const { resolvedTheme } = useTheme();
+  const [isRecording, setIsRecording] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
   const startPos = useRef({ x: 0, y: 0 });
@@ -149,10 +150,14 @@ export function IdeaCard({
 
   useEffect(() => {
     setMounted(true);
-    setIsMobile(window.innerWidth < 640);
-    const handleResize = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    const checkMobile = () => {
+      const isMobileSize = window.innerWidth < 1024;
+      const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+      setIsMobile(isMobileSize || isTouch);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
   useEffect(() => {
@@ -353,6 +358,7 @@ export function IdeaCard({
   const handleTranscription = (text: string) => {
     const newContent = card.content ? `${card.content} ${text}` : text;
     onType(card.id, newContent);
+    onPersistContent(card.id, newContent);
   };
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -687,7 +693,7 @@ export function IdeaCard({
           </TooltipProvider>
         </div>
         <div
-          className="p-2.5 sm:p-3.5 relative transition-all duration-200"
+          className="p-2.5 sm:p-3.5 relative transition-all duration-200 min-h-[inherit] flex flex-col"
           style={
             isEditing
               ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" }
@@ -713,9 +719,6 @@ export function IdeaCard({
                   }`}
                 placeholder="Type your idea..."
               />
-              <div className="absolute bottom-0 right-0 p-1 opacity-0 group-hover/edit:opacity-100 transition-opacity">
-                <VoiceRecorder onTranscription={handleTranscription} isDark={isPurpleDark || isDark} />
-              </div>
             </div>
           ) : (
             <div
@@ -876,7 +879,10 @@ export function IdeaCard({
         <div
           className={`flex items-center justify-between px-2.5 sm:px-3.5 py-2 sm:py-2.5 border-t ${borderClass}`}
         >
-          <div className="flex items-center gap-1 sm:gap-1.5">
+          <motion.div
+            className="flex items-center gap-1 sm:gap-1.5"
+            whileHover="hover"
+          >
             <Image
               src={getAvatarForUser(card.createdById)}
               alt={`${creatorName}'s avatar`}
@@ -890,7 +896,25 @@ export function IdeaCard({
             >
               {creatorName}
             </span>
-          </div>
+            {allowEdit && (
+              <motion.div
+                initial={isMobile ? { opacity: 0.5, scale: 1 } : { opacity: 0, scale: 0.9 }}
+                animate={isMobile ? { opacity: 0.5, scale: 1 } : {}}
+                whileHover={{ opacity: 0.7, scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                className="flex-shrink-0 ml-0.5 relative z-10"
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                <VoiceRecorder
+                  onTranscription={handleTranscription}
+                  isDark={isPurpleDark || isDark}
+                  containerClassName="absolute inset-x-0 bottom-0 top-[-250%]"
+                />
+              </motion.div>
+            )}
+          </motion.div>
           <TooltipProvider delayDuration={400}>
             <div
               className="flex items-center gap-1 sm:gap-1.5"

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import Groq from "groq-sdk";
 
 export async function POST(req: NextRequest) {
     try {
         const formData = await req.formData();
-        const file = formData.get("file") as Blob;
+        const file = formData.get("file") as File;
 
         if (!file) {
             return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -14,28 +15,22 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "GROQ_API_KEY not configured" }, { status: 500 });
         }
 
-        const groqFormData = new FormData();
-        groqFormData.append("file", file, "audio.wav");
-        groqFormData.append("model", "whisper-large-v3");
-
-        const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${groqApiKey}`,
-            },
-            body: groqFormData,
+        const groq = new Groq({
+            apiKey: groqApiKey,
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Groq API error:", errorText);
-            return NextResponse.json({ error: "Transcription failed" }, { status: response.status });
-        }
+        const transcription = await groq.audio.transcriptions.create({
+            file: file,
+            model: "whisper-large-v3-turbo",
+            temperature: 0,
+            response_format: "verbose_json",
+        });
 
-        const result = await response.json();
-        return NextResponse.json({ text: result.text });
+        return NextResponse.json({ text: transcription.text });
     } catch (error) {
         console.error("Transcribe error:", error);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return NextResponse.json({
+            error: error instanceof Error ? error.message : "Internal server error"
+        }, { status: 500 });
     }
 }
