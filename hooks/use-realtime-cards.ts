@@ -50,6 +50,7 @@ type CardEvent =
   | { type: "card:add"; card: Card }
   | { type: "card:update"; card: Card }
   | { type: "card:move"; id: string; x: number; y: number }
+  | { type: "card:resize"; id: string; width: number; height: number }
   | { type: "card:delete"; id: string }
   | { type: "card:typing"; id: string; content: string }
   | { type: "card:color"; id: string; color: string }
@@ -118,11 +119,19 @@ export function useRealtimeCards(
 
   const broadcast = useCallback(
     (event: CardEvent) => {
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "card-event",
-        payload: { ...event, odilUserId: userId },
-      });
+      if (channelRef.current) {
+        console.log("[Cards] Broadcasting event:", event.type);
+        channelRef.current.send({
+          type: "broadcast",
+          event: "card-event",
+          payload: { ...event, odilUserId: userId },
+        });
+      } else {
+        console.log(
+          "[Cards] Channel not ready, skipping broadcast:",
+          event.type,
+        );
+      }
     },
     [userId],
   );
@@ -173,6 +182,28 @@ export function useRealtimeCards(
       throttledBroadcastMove(id, x, y);
     },
     [throttledBroadcastMove],
+  );
+
+  const broadcastResize = useCallback(
+    (id: string, width: number, height: number) => {
+      broadcast({ type: "card:resize", id, width, height });
+    },
+    [broadcast],
+  );
+
+  const throttledBroadcastResize = useThrottleCallback(
+    broadcastResize,
+    THROTTLE_MS,
+  );
+
+  const resizeCard = useCallback(
+    (id: string, width: number, height: number) => {
+      setCards((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, width, height } : c)),
+      );
+      throttledBroadcastResize(id, width, height);
+    },
+    [throttledBroadcastResize],
   );
 
   const typeCard = useCallback(
@@ -288,10 +319,20 @@ export function useRealtimeCards(
   useEffect(() => {
     if (!userId) return;
 
+    console.log(
+      "[Cards] Setting up channel for session:",
+      sessionId,
+      "userId:",
+      userId,
+    );
     const channel = supabase.channel(`cards:${sessionId}`);
 
     channel
       .on("presence", { event: "join" }, () => {
+        console.log(
+          "[Cards] Presence join event, syncing cards:",
+          cardsRef.current.length,
+        );
         if (cardsRef.current.length > 0) {
           channelRef.current?.send({
             type: "broadcast",
@@ -308,7 +349,16 @@ export function useRealtimeCards(
         "broadcast",
         { event: "card-event" },
         ({ payload }: { payload: CardEvent & { odilUserId: string } }) => {
-          if (payload.odilUserId === userId) return;
+          console.log(
+            "[Cards] Received event:",
+            payload.type,
+            "from:",
+            payload.odilUserId,
+          );
+          if (payload.odilUserId === userId) {
+            console.log("[Cards] Ignoring own event");
+            return;
+          }
 
           switch (payload.type) {
             case "card:add":
@@ -327,6 +377,15 @@ export function useRealtimeCards(
                 prev.map((c) =>
                   c.id === payload.id
                     ? { ...c, x: payload.x, y: payload.y }
+                    : c,
+                ),
+              );
+              break;
+            case "card:resize":
+              setCards((prev) =>
+                prev.map((c) =>
+                  c.id === payload.id
+                    ? { ...c, width: payload.width, height: payload.height }
                     : c,
                 ),
               );
@@ -415,12 +474,26 @@ export function useRealtimeCards(
         },
       )
       .subscribe(async (status) => {
+        console.log(
+          "[Cards] Channel status:",
+          status,
+          "for session:",
+          sessionId,
+        );
         if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
+          console.log(
+            "[Cards] Successfully subscribed, tracking userId:",
+            userId,
+          );
           await channel.track({ odilUserId: userId });
           channelRef.current = channel;
 
           // Broadcast that we joined with our username
           if (usernameRef.current) {
+            console.log(
+              "[Cards] Broadcasting user:join for:",
+              usernameRef.current,
+            );
             channel.send({
               type: "broadcast",
               event: "card-event",
@@ -436,6 +509,7 @@ export function useRealtimeCards(
           status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
           status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT
         ) {
+          console.log("[Cards] Channel error or timeout:", status);
           channelRef.current = null;
         }
       });
@@ -451,6 +525,7 @@ export function useRealtimeCards(
     addCard,
     updateCard,
     moveCard,
+    resizeCard,
     typeCard,
     changeColor,
     removeCard,

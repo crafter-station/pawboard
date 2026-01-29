@@ -67,6 +67,8 @@ export const cards = pgTable(
     color: text("color").notNull().default("#fef08a"),
     x: real("x").notNull().default(100),
     y: real("y").notNull().default(100),
+    width: integer("width").notNull().default(224),
+    height: integer("height").notNull().default(160),
     votes: integer("votes").notNull().default(0),
     votedBy: jsonb("voted_by").$type<string[]>().notNull().default([]),
     reactions: jsonb("reactions")

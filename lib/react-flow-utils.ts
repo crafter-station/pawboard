@@ -12,7 +12,6 @@ export interface IdeaCardNodeData extends Record<string, unknown> {
   creatorName: string;
   // UI state
   isEditing: boolean;
-  isExpanded: boolean;
   autoFocus: boolean;
 }
 
@@ -33,7 +32,6 @@ export function cardToNode(
   options?: {
     autoFocus?: boolean;
     isEditing?: boolean;
-    isExpanded?: boolean;
   },
 ): IdeaCardNode {
   return {
@@ -47,7 +45,6 @@ export function cardToNode(
       visitorId,
       creatorName,
       isEditing: options?.isEditing ?? false,
-      isExpanded: options?.isExpanded ?? false,
       autoFocus: options?.autoFocus ?? false,
     },
     draggable: true,
@@ -98,7 +95,7 @@ export function updateNodeData(
   const updatedNodes: IdeaCardNode[] = cards.map((card) => {
     const existingNode = nodeMap.get(card.id);
     if (existingNode) {
-      // Preserve UI state (isEditing, isExpanded) while updating card data
+      // Preserve UI state (isEditing) while updating card data
       return {
         ...existingNode,
         position: { x: card.x, y: card.y },
@@ -136,39 +133,42 @@ export function nodeToCard(node: IdeaCardNode): Card {
   };
 }
 
-// Card dimensions for calculations
-export const CARD_WIDTH = 224;
-export const CARD_HEIGHT = 160;
+// Default card dimensions for new cards
+export const DEFAULT_CARD_WIDTH = 224;
+export const DEFAULT_CARD_HEIGHT = 160;
+
+// Keep legacy exports for backwards compatibility
+export const CARD_WIDTH = DEFAULT_CARD_WIDTH;
+export const CARD_HEIGHT = DEFAULT_CARD_HEIGHT;
 export const CARD_WIDTH_MOBILE = 160;
 export const CARD_HEIGHT_MOBILE = 120;
 
 /**
- * Get card dimensions based on screen size
+ * Get default card dimensions based on screen size
  */
 export function getCardDimensions(isMobile: boolean) {
   return {
-    width: isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH,
-    height: isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT,
+    width: isMobile ? CARD_WIDTH_MOBILE : DEFAULT_CARD_WIDTH,
+    height: isMobile ? CARD_HEIGHT_MOBILE : DEFAULT_CARD_HEIGHT,
   };
 }
 
 /**
  * Calculate bounds for fitting all cards in view
+ * Uses each card's individual dimensions
  */
 export function calculateCardsBounds(
   cards: Card[],
-  isMobile: boolean,
+  _isMobile?: boolean,
 ): { minX: number; minY: number; maxX: number; maxY: number } | null {
   if (cards.length === 0) return null;
-
-  const { width, height } = getCardDimensions(isMobile);
 
   return cards.reduce(
     (acc, card) => ({
       minX: Math.min(acc.minX, card.x),
       minY: Math.min(acc.minY, card.y),
-      maxX: Math.max(acc.maxX, card.x + width),
-      maxY: Math.max(acc.maxY, card.y + height),
+      maxX: Math.max(acc.maxX, card.x + card.width),
+      maxY: Math.max(acc.maxY, card.y + card.height),
     }),
     { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
   );

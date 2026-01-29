@@ -267,3 +267,23 @@
 .react-flow__background {
   background-color: hsl(var(--background));
 }
+
+/* Card resize handles - Safari fix */
+/* Override React Flow's grab cursor on nodes when hovering resize handles */
+.react-flow__node.draggable:has(.resize-handle-e:hover),
+.react-flow__node.draggable:has(.resize-handle-s:hover),
+.react-flow__node.draggable:has(.resize-handle-se:hover) {
+  cursor: auto !important;
+}
+
+.resize-handle-e {
+  cursor: ew-resize !important;
+}
+
+.resize-handle-s {
+  cursor: ns-resize !important;
+}
+
+.resize-handle-se {
+  cursor: nwse-resize !important;
+}

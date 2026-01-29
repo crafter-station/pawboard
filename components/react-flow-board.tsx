@@ -43,6 +43,7 @@ import {
   deleteEmptyCards,
   deleteSession,
   joinSession,
+  resizeCard,
   toggleReaction,
   updateCard,
   updateSessionName,
@@ -89,6 +90,8 @@ import {
   CARD_WIDTH_MOBILE,
   calculateCardsBounds,
   cardsToNodes,
+  DEFAULT_CARD_HEIGHT,
+  DEFAULT_CARD_WIDTH,
   type IdeaCardNode as IdeaCardNodeType,
   updateNodeData,
 } from "@/lib/react-flow-utils";
@@ -137,6 +140,7 @@ function ReactFlowBoardInner({
     setViewport,
     getViewport,
     screenToFlowPosition,
+    flowToScreenPosition,
   } = useReactFlow();
 
   // State
@@ -156,6 +160,8 @@ function ReactFlowBoardInner({
   const [copiedCard, setCopiedCard] = useState<{
     content: string;
     color: string;
+    width: number;
+    height: number;
   } | null>(null);
   // Use ref for mouse position - it's a transient value that doesn't need to trigger re-renders
   const mousePositionRef = useRef<{ x: number; y: number } | null>(null);
@@ -283,6 +289,7 @@ function ReactFlowBoardInner({
     cards,
     addCard,
     moveCard,
+    resizeCard: realtimeResizeCard,
     typeCard,
     changeColor,
     removeCard,
@@ -412,6 +419,13 @@ function ReactFlowBoardInner({
           setNewCardId(null);
         }
       },
+      onResize: (id: string, width: number, height: number) => {
+        realtimeResizeCard(id, width, height);
+      },
+      onPersistResize: async (id: string, width: number, height: number) => {
+        if (!visitorId) return;
+        await resizeCard(id, width, height, sessionId, visitorId);
+      },
     });
   }, [
     visitorId,
@@ -422,6 +436,8 @@ function ReactFlowBoardInner({
     voteCard,
     reactCard,
     newCardId,
+    realtimeResizeCard,
+    sessionId,
   ]);
 
   // Handle node position changes from drag - let React Flow manage positions
@@ -589,6 +605,8 @@ function ReactFlowBoardInner({
       color: getRandomColor(),
       x,
       y,
+      width: DEFAULT_CARD_WIDTH,
+      height: DEFAULT_CARD_HEIGHT,
       votes: 0,
       votedBy: [],
       reactions: {},
@@ -678,6 +696,8 @@ function ReactFlowBoardInner({
         color: card.color,
         x,
         y,
+        width: card.width,
+        height: card.height,
         votes: 0,
         votedBy: [],
         reactions: {},
@@ -839,7 +859,12 @@ function ReactFlowBoardInner({
       }
 
       // Always save to memory as fallback
-      const clipboardData = { content: card.content, color: card.color };
+      const clipboardData = {
+        content: card.content,
+        color: card.color,
+        width: card.width,
+        height: card.height,
+      };
       setCopiedCard(clipboardData);
 
       // Persist to sessionStorage
@@ -869,7 +894,12 @@ function ReactFlowBoardInner({
       const clipboardText = await navigator.clipboard.readText();
       const parsed = JSON.parse(clipboardText);
       if (parsed.type === "pawboard-card") {
-        cardData = { content: parsed.content, color: parsed.color };
+        cardData = {
+          content: parsed.content,
+          color: parsed.color,
+          width: parsed.width || DEFAULT_CARD_WIDTH,
+          height: parsed.height || DEFAULT_CARD_HEIGHT,
+        };
       }
     } catch (error) {
       // Use memory fallback if clipboard read fails
@@ -903,6 +933,8 @@ function ReactFlowBoardInner({
       color: cardData.color,
       x,
       y,
+      width: cardData.width || DEFAULT_CARD_WIDTH,
+      height: cardData.height || DEFAULT_CARD_HEIGHT,
       votes: 0,
       votedBy: [],
       reactions: {},
@@ -1440,12 +1472,16 @@ function ReactFlowBoardInner({
             />
           )}
 
-          {/* Cursors - rendered in world space */}
-          <div className="react-flow__panel">
+          {/* Cursors - rendered in screen space */}
+          <div
+            className="absolute inset-0 pointer-events-none overflow-hidden"
+            style={{ zIndex: 1000 }}
+          >
             <RealtimeCursors
               roomName={`session:${sessionId}`}
               username={username}
               screenToWorld={screenToWorld}
+              worldToScreen={flowToScreenPosition}
             />
           </div>
 

@@ -14,12 +14,14 @@ interface RealtimeCursorsProps {
   roomName: string;
   username: string;
   screenToWorld: (screen: Point) => Point;
+  worldToScreen: (world: Point) => Point;
 }
 
 export const RealtimeCursors = ({
   roomName,
   username,
   screenToWorld,
+  worldToScreen,
 }: RealtimeCursorsProps) => {
   const { cursors } = useRealtimeCursors({
     roomName,
@@ -30,16 +32,19 @@ export const RealtimeCursors = ({
 
   return (
     <div className="pointer-events-none">
-      {Object.keys(cursors).map((id) => (
-        <Cursor
-          key={id}
-          x={cursors[id].position.x}
-          y={cursors[id].position.y}
-          color={cursors[id].color}
-          cursorImage={cursors[id].cursorImage}
-          name={cursors[id].user.name}
-        />
-      ))}
+      {Object.keys(cursors).map((id) => {
+        const screenPos = worldToScreen(cursors[id].position);
+        return (
+          <Cursor
+            key={id}
+            x={screenPos.x}
+            y={screenPos.y}
+            color={cursors[id].color}
+            cursorImage={cursors[id].cursorImage}
+            name={cursors[id].user.name}
+          />
+        );
+      })}
     </div>
   );
 };

@@ -667,6 +667,64 @@ export async function updateCard(
   }
 }
 
+export async function resizeCard(
+  id: string,
+  width: number,
+  height: number,
+  sessionId: string,
+  userId: string,
+): Promise<{ card: Card | null; error: string | null }> {
+  try {
+    // Get the card
+    const existingCard = await db.query.cards.findFirst({
+      where: eq(cards.id, id),
+    });
+
+    if (!existingCard) {
+      return { card: null, error: "Card not found" };
+    }
+
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, existingCard.sessionId),
+    });
+
+    if (!session) {
+      return { card: null, error: "Session not found" };
+    }
+
+    // Use move permission for resize
+    if (!canMoveCard(session, existingCard, userId)) {
+      return {
+        card: null,
+        error: "You don't have permission to resize this card",
+      };
+    }
+
+    // Clamp to constraints
+    const clampedWidth = Math.max(150, Math.min(600, Math.round(width)));
+    const clampedHeight = Math.max(100, Math.min(400, Math.round(height)));
+
+    const [card] = await db
+      .update(cards)
+      .set({
+        width: clampedWidth,
+        height: clampedHeight,
+        updatedAt: new Date(),
+      })
+      .where(eq(cards.id, id))
+      .returning();
+
+    after(async () => {
+      await updateActivityTimestamps(sessionId, userId);
+    });
+
+    return { card, error: null };
+  } catch (error) {
+    console.error("Database error in resizeCard:", error);
+    return { card: null, error: "Failed to resize card" };
+  }
+}
+
 export async function voteCard(
   id: string,
   visitorId: string,

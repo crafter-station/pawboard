@@ -15,8 +15,6 @@ import {
   CopyPlus,
   GripVertical,
   Loader2,
-  Maximize2,
-  Minimize2,
   Smile,
   Sparkles,
   Undo2,
@@ -25,7 +23,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import { useTheme } from "next-themes";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import {
   Popover,
@@ -60,6 +58,12 @@ import { cn, getAvatarForUser } from "@/lib/utils";
 
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
 
+// Resize constraints
+const MIN_WIDTH = 150;
+const MAX_WIDTH = 600;
+const MIN_HEIGHT = 100;
+const MAX_HEIGHT = 400;
+
 export interface IdeaCardNodeCallbacks {
   onType: (id: string, content: string) => void;
   onChangeColor: (id: string, color: string) => void;
@@ -71,6 +75,8 @@ export interface IdeaCardNodeCallbacks {
   onPersistDelete: (id: string) => void;
   onDuplicate?: (cardId: string) => void;
   onFocused?: (id: string) => void;
+  onResize?: (id: string, width: number, height: number) => void;
+  onPersistResize?: (id: string, width: number, height: number) => void;
 }
 
 // Store callbacks in a ref to avoid prop drilling through React Flow
@@ -92,12 +98,14 @@ function IdeaCardNodeComponent({
   const nodeData = data as IdeaCardNodeData;
 
   const [isEditing, setIsEditing] = useState(nodeData.isEditing);
-  const [isExpanded, setIsExpanded] = useState(nodeData.isExpanded);
   const [mounted, setMounted] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
   const [previousContent, setPreviousContent] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeHandle, setResizeHandle] = useState<string | null>(null);
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const { resolvedTheme } = useTheme();
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -163,13 +171,12 @@ function IdeaCardNodeComponent({
               data: {
                 ...(n.data as IdeaCardNodeData),
                 isEditing,
-                isExpanded,
               },
             }
           : n,
       ),
     );
-  }, [id, isEditing, isExpanded, setNodes]);
+  }, [id, isEditing, setNodes]);
 
   const isDark = mounted && resolvedTheme === "dark";
   const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
@@ -291,6 +298,64 @@ function IdeaCardNodeComponent({
     return "grab";
   };
 
+  // Resize handlers
+  const handleResizeStart = useCallback(
+    (e: React.PointerEvent, handle: string) => {
+      if (!allowMove) return; // Use move permission for resize
+      e.stopPropagation();
+      e.preventDefault();
+      setIsResizing(true);
+      setResizeHandle(handle);
+      resizeStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        width: card.width,
+        height: card.height,
+      };
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [allowMove, card.width, card.height],
+  );
+
+  const handleResizeMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isResizing || !resizeHandle) return;
+
+      const deltaX = e.clientX - resizeStartRef.current.x;
+      const deltaY = e.clientY - resizeStartRef.current.y;
+
+      let newWidth = resizeStartRef.current.width;
+      let newHeight = resizeStartRef.current.height;
+
+      if (resizeHandle.includes("e")) {
+        newWidth = Math.max(
+          MIN_WIDTH,
+          Math.min(MAX_WIDTH, resizeStartRef.current.width + deltaX),
+        );
+      }
+      if (resizeHandle.includes("s")) {
+        newHeight = Math.max(
+          MIN_HEIGHT,
+          Math.min(MAX_HEIGHT, resizeStartRef.current.height + deltaY),
+        );
+      }
+
+      globalCallbacks?.onResize?.(card.id, newWidth, newHeight);
+    },
+    [isResizing, resizeHandle, card.id],
+  );
+
+  const handleResizeEnd = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isResizing) return;
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      setIsResizing(false);
+      setResizeHandle(null);
+      globalCallbacks?.onPersistResize?.(card.id, card.width, card.height);
+    },
+    [isResizing, card.id, card.width, card.height],
+  );
+
   const isPurpleCard =
     card.color === LIGHT_COLORS[0] || card.color === DARK_COLORS[0];
   const isPurpleDark = isPurpleCard && isDark;
@@ -314,18 +379,26 @@ function IdeaCardNodeComponent({
     <div
       ref={cardRef}
       data-card
-      className={`group touch-none select-none transition-[width] duration-200 ${
-        isExpanded ? "w-72 sm:w-96" : "w-40 sm:w-56"
-      }`}
+      className="group touch-none select-none"
+      style={{
+        width: card.width,
+        height: card.height,
+        minWidth: MIN_WIDTH,
+        maxWidth: MAX_WIDTH,
+        minHeight: MIN_HEIGHT,
+        maxHeight: MAX_HEIGHT,
+      }}
     >
       {/* Hidden handles for potential future edge connections */}
       <Handle type="target" position={Position.Top} className="!hidden" />
       <Handle type="source" position={Position.Bottom} className="!hidden" />
 
       <div
-        className={`rounded-lg shadow-lg transition-shadow hover:shadow-xl relative overflow-hidden ${
-          selected ? "ring-2 ring-offset-2 ring-primary" : ""
-        }`}
+        className={cn(
+          "rounded-lg shadow-lg transition-shadow hover:shadow-xl relative overflow-hidden h-full flex flex-col",
+          selected && "ring-2 ring-offset-2 ring-primary",
+          isResizing && "ring-2 ring-primary",
+        )}
         style={{ backgroundColor: displayColor }}
       >
         {/* Cat silhouette background based on card creator's avatar */}
@@ -449,34 +522,6 @@ function IdeaCardNodeComponent({
                   <TooltipContent side="bottom">Refine with AI</TooltipContent>
                 </Tooltip>
               )}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <motion.button
-                    type="button"
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    whileTap={{ scale: 0.9 }}
-                    whileHover={{ scale: 1.1 }}
-                    className={`p-1 sm:p-1.5 rounded-md ${
-                      isMobile
-                        ? "opacity-100"
-                        : "opacity-0 group-hover:opacity-100"
-                    } ${hoverBgClass} transition-all cursor-pointer`}
-                  >
-                    {isExpanded ? (
-                      <Minimize2
-                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
-                      />
-                    ) : (
-                      <Maximize2
-                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
-                      />
-                    )}
-                  </motion.button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  {isExpanded ? "Collapse" : "Expand"}
-                </TooltipContent>
-              </Tooltip>
               {globalCallbacks?.onDuplicate && allowEdit && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -524,7 +569,7 @@ function IdeaCardNodeComponent({
         </div>
         <div
           className={cn(
-            "p-2.5 sm:p-3.5 relative min-h-[inherit] flex flex-col antialiased transition-[box-shadow] duration-200",
+            "p-2.5 sm:p-3.5 relative flex-1 min-h-0 flex flex-col antialiased transition-[box-shadow] duration-200",
             isEditing && "nodrag",
           )}
           style={
@@ -534,38 +579,22 @@ function IdeaCardNodeComponent({
           }
         >
           {isEditing ? (
-            <div className="relative group/edit h-full min-h-[inherit]">
+            <div className="relative group/edit flex-1 min-h-0">
               <Textarea
                 autoFocus
                 value={card.content}
                 onChange={handleContentChange}
                 onBlur={handleContentBlur}
                 onKeyDown={handleContentKeyDown}
-                className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none ${
-                  isExpanded
-                    ? "text-[13px] sm:text-[15px]"
-                    : "text-[11px] sm:text-[13px]"
-                } ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-[min-height,max-height] duration-200 w-full h-full ${
-                  isExpanded
-                    ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
-                    : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
-                }`}
+                className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none text-[11px] sm:text-[13px] ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto w-full h-full`}
                 placeholder="Type your idea..."
               />
             </div>
           ) : (
             <div
               onClick={() => allowEdit && setIsEditing(true)}
-              className={`overflow-y-auto leading-relaxed ${
-                isExpanded
-                  ? "text-[13px] sm:text-[15px]"
-                  : "text-[11px] sm:text-[13px]"
-              } ${textColorClass} ${
+              className={`overflow-y-auto leading-relaxed flex-1 min-h-0 text-[11px] sm:text-[13px] ${textColorClass} ${
                 allowEdit ? "cursor-text" : "cursor-default"
-              } transition-[min-height,max-height] duration-200 ${
-                isExpanded
-                  ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
-                  : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
               }`}
             >
               {card.content ? (
@@ -692,7 +721,7 @@ function IdeaCardNodeComponent({
         </div>
         {Object.keys(card.reactions).length > 0 && (
           <div
-            className={`flex flex-wrap gap-1 px-2.5 sm:px-3.5 py-1.5 border-t ${borderClass}`}
+            className={`flex flex-wrap gap-1 px-2.5 sm:px-3.5 py-1.5 border-t ${borderClass} mt-auto`}
           >
             {Object.entries(card.reactions).map(([emoji, userIds]) => {
               const userIdsList = userIds as string[];
@@ -722,7 +751,7 @@ function IdeaCardNodeComponent({
           </div>
         )}
         <div
-          className={`flex items-center justify-between px-2.5 sm:px-3.5 py-2 sm:py-2.5 border-t ${borderClass}`}
+          className={`flex items-center justify-between px-2.5 sm:px-3.5 py-2 sm:py-2.5 border-t ${borderClass} ${Object.keys(card.reactions).length === 0 ? "mt-auto" : ""}`}
           style={{
             cursor: getCursorStyle(),
           }}
@@ -885,6 +914,35 @@ function IdeaCardNodeComponent({
             </div>
           </TooltipProvider>
         </div>
+
+        {/* Resize handles - only show when user can move/resize */}
+        {allowMove && (
+          <>
+            {/* Right edge */}
+            <div
+              className="resize-handle-e absolute right-0 top-0 bottom-0 w-2 opacity-0 hover:opacity-50 hover:bg-primary/20 transition-opacity z-10 nodrag"
+              onPointerDown={(e) => handleResizeStart(e, "e")}
+              onPointerMove={handleResizeMove}
+              onPointerUp={handleResizeEnd}
+            />
+            {/* Bottom edge */}
+            <div
+              className="resize-handle-s absolute bottom-0 left-0 right-0 h-2 opacity-0 hover:opacity-50 hover:bg-primary/20 transition-opacity z-10 nodrag"
+              onPointerDown={(e) => handleResizeStart(e, "s")}
+              onPointerMove={handleResizeMove}
+              onPointerUp={handleResizeEnd}
+            />
+            {/* Bottom-right corner */}
+            <div
+              className="resize-handle-se absolute bottom-0 right-0 w-4 h-4 opacity-0 hover:opacity-100 transition-opacity z-20 flex items-center justify-center nodrag"
+              onPointerDown={(e) => handleResizeStart(e, "se")}
+              onPointerMove={handleResizeMove}
+              onPointerUp={handleResizeEnd}
+            >
+              <GripVertical className="w-3 h-3 rotate-[-45deg] text-muted-foreground" />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
