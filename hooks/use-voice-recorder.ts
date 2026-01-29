@@ -55,7 +55,7 @@ export function useVoiceRecorder({ onTranscription }: UseVoiceRecorderProps) {
       // We will handle the fallback typings cleaner.
       const AudioContextClass =
         window.AudioContext ||
-        // @ts-ignore - Vendor prefix support
+        // @ts-expect-error - Vendor prefix support
         window.webkitAudioContext;
 
       const audioContext = new AudioContextClass();
@@ -97,7 +97,10 @@ export function useVoiceRecorder({ onTranscription }: UseVoiceRecorderProps) {
           type: "audio/wav",
         });
         await handleTranscription(audioBlob);
-        stream.getTracks().forEach((track) => track.stop());
+        // Stop all tracks
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
 
         // Cleanup audio context
         if (audioContextRef.current) {
@@ -128,9 +131,18 @@ export function useVoiceRecorder({ onTranscription }: UseVoiceRecorderProps) {
 
   useEffect(() => {
     return () => {
-      if (animationFrameRef.current)
+      // Cleanup animation frame
+      if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
-      if (audioContextRef.current) audioContextRef.current.close();
+      }
+      // Cleanup audio context
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+      // Stop any active recording
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
     };
   }, []);
 
