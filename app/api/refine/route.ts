@@ -6,7 +6,6 @@ import { cards, sessions, type TiptapContent } from "@/db/schema";
 import { canRefine } from "@/lib/permissions";
 import {
   getClientIdentifier,
-  RATE_LIMITS,
   rateLimit,
   rateLimitResponse,
 } from "@/lib/rate-limit";
@@ -20,9 +19,9 @@ const groq = createGroq({
 export async function POST(req: Request) {
   // Rate limit check
   const clientId = getClientIdentifier(req);
-  const { success, reset } = rateLimit(clientId, RATE_LIMITS.ai);
+  const { success, reset, limit, remaining } = await rateLimit(clientId, "ai");
   if (!success) {
-    return rateLimitResponse(reset);
+    return rateLimitResponse(reset, limit, remaining);
   }
 
   try {

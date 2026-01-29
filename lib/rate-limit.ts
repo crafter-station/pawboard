@@ -1,83 +1,95 @@
 /**
- * Simple in-memory rate limiter for API routes.
+ * Distributed rate limiter using Upstash Redis.
  *
- * Note: This is suitable for single-instance deployments.
- * For production with multiple instances, use Upstash Ratelimit or similar.
+ * Works correctly on Vercel serverless and edge functions.
+ * Falls back to allowing all requests if Upstash is not configured.
  */
 
-interface RateLimitOptions {
-  /** Maximum number of requests allowed */
-  limit: number;
-  /** Time window in milliseconds */
-  windowMs: number;
-}
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+import { env } from "@/env";
 
-interface RateLimitEntry {
-  count: number;
-  resetTime: number;
-}
-
-const rateLimitStore = new Map<string, RateLimitEntry>();
-
-// Clean up expired entries every minute
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of rateLimitStore.entries()) {
-    if (entry.resetTime < now) {
-      rateLimitStore.delete(key);
-    }
+/**
+ * Create rate limiter instance.
+ * Returns null if Upstash credentials are not configured.
+ */
+function createRateLimiter(
+  limiter: ReturnType<typeof Ratelimit.slidingWindow>,
+  prefix: string,
+) {
+  if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN) {
+    return null;
   }
-}, 60_000);
+
+  const redis = new Redis({
+    url: env.UPSTASH_REDIS_REST_URL,
+    token: env.UPSTASH_REDIS_REST_TOKEN,
+  });
+
+  return new Ratelimit({
+    redis,
+    limiter,
+    prefix: `pawboard:ratelimit:${prefix}`,
+    analytics: true,
+  });
+}
+
+// Rate limiters for different endpoint types
+const rateLimiters = {
+  /** AI endpoints - expensive operations (10 requests per minute) */
+  ai: createRateLimiter(Ratelimit.slidingWindow(10, "1 m"), "ai"),
+  /** Standard API endpoints (60 requests per minute) */
+  standard: createRateLimiter(Ratelimit.slidingWindow(60, "1 m"), "standard"),
+  /** Strict rate limit for sensitive operations (5 requests per minute) */
+  strict: createRateLimiter(Ratelimit.slidingWindow(5, "1 m"), "strict"),
+};
+
+export type RateLimitType = keyof typeof rateLimiters;
 
 /**
  * Check if a request should be rate limited.
  *
  * @param identifier - Unique identifier for the client (e.g., IP address or user ID)
- * @param options - Rate limit configuration
- * @returns Object with success status and remaining requests
+ * @param type - Type of rate limit to apply
+ * @returns Object with success status and metadata
  */
-export function rateLimit(
+export async function rateLimit(
   identifier: string,
-  options: RateLimitOptions,
-): { success: boolean; remaining: number; reset: number } {
-  const now = Date.now();
-  const key = identifier;
+  type: RateLimitType = "standard",
+): Promise<{
+  success: boolean;
+  remaining: number;
+  reset: number;
+  limit: number;
+}> {
+  const limiter = rateLimiters[type];
 
-  let entry = rateLimitStore.get(key);
-
-  // Create new entry if none exists or window has expired
-  if (!entry || entry.resetTime < now) {
-    entry = {
-      count: 0,
-      resetTime: now + options.windowMs,
-    };
-  }
-
-  // Check if rate limit exceeded
-  if (entry.count >= options.limit) {
+  // If Upstash is not configured, allow all requests
+  if (!limiter) {
     return {
-      success: false,
-      remaining: 0,
-      reset: entry.resetTime,
+      success: true,
+      remaining: 999,
+      reset: Date.now() + 60_000,
+      limit: 999,
     };
   }
 
-  // Increment counter
-  entry.count++;
-  rateLimitStore.set(key, entry);
+  const result = await limiter.limit(identifier);
 
   return {
-    success: true,
-    remaining: options.limit - entry.count,
-    reset: entry.resetTime,
+    success: result.success,
+    remaining: result.remaining,
+    reset: result.reset,
+    limit: result.limit,
   };
 }
 
 /**
  * Get client identifier from request headers.
- * Uses X-Forwarded-For header or falls back to a default.
+ * Uses X-Forwarded-For header (set by Vercel) or falls back to a default.
  */
 export function getClientIdentifier(request: Request): string {
+  // Vercel sets x-forwarded-for with the client IP
   const forwarded = request.headers.get("x-forwarded-for");
   const ip = forwarded?.split(",")[0]?.trim() || "unknown";
   return ip;
@@ -86,7 +98,11 @@ export function getClientIdentifier(request: Request): string {
 /**
  * Create a rate limit response with appropriate headers.
  */
-export function rateLimitResponse(reset: number): Response {
+export function rateLimitResponse(
+  reset: number,
+  limit: number,
+  remaining: number,
+): Response {
   return new Response(
     JSON.stringify({
       error: "Too many requests. Please try again later.",
@@ -96,18 +112,17 @@ export function rateLimitResponse(reset: number): Response {
       headers: {
         "Content-Type": "application/json",
         "Retry-After": String(Math.ceil((reset - Date.now()) / 1000)),
+        "X-RateLimit-Limit": String(limit),
+        "X-RateLimit-Remaining": String(remaining),
         "X-RateLimit-Reset": String(reset),
       },
     },
   );
 }
 
-// Preset configurations for different endpoint types
+// Re-export rate limit types for convenience
 export const RATE_LIMITS = {
-  /** AI endpoints - expensive operations (10 requests per minute) */
-  ai: { limit: 10, windowMs: 60_000 },
-  /** Standard API endpoints (60 requests per minute) */
-  standard: { limit: 60, windowMs: 60_000 },
-  /** Strict rate limit for sensitive operations (5 requests per minute) */
-  strict: { limit: 5, windowMs: 60_000 },
+  ai: "ai",
+  standard: "standard",
+  strict: "strict",
 } as const;

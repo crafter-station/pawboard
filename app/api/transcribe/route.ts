@@ -2,7 +2,6 @@ import Groq from "groq-sdk";
 import { type NextRequest, NextResponse } from "next/server";
 import {
   getClientIdentifier,
-  RATE_LIMITS,
   rateLimit,
   rateLimitResponse,
 } from "@/lib/rate-limit";
@@ -22,9 +21,9 @@ const ALLOWED_AUDIO_TYPES = [
 export async function POST(req: NextRequest) {
   // Rate limit check
   const clientId = getClientIdentifier(req);
-  const { success, reset } = rateLimit(clientId, RATE_LIMITS.ai);
+  const { success, reset, limit, remaining } = await rateLimit(clientId, "ai");
   if (!success) {
-    return rateLimitResponse(reset);
+    return rateLimitResponse(reset, limit, remaining);
   }
 
   try {
