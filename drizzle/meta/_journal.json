@@ -57,6 +57,13 @@
       "when": 1768088290992,
       "tag": "0007_worthless_stardust",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1769663494746,
+      "tag": "0008_uneven_loki",
+      "breakpoints": true
     }
   ]
 }

@@ -58,7 +58,7 @@ const CURSOR_VARIANTS = [
 const getRandomVariant = () =>
   CURSOR_VARIANTS[Math.floor(Math.random() * CURSOR_VARIANTS.length)];
 
-const generateRandomNumber = () => Math.floor(Math.random() * 100);
+const generateRandomId = () => Math.random().toString(36).substring(2, 15);
 
 const EVENT_NAME = "realtime-cursor-move";
 
@@ -68,7 +68,7 @@ type CursorEventPayload = {
     y: number;
   };
   user: {
-    id: number;
+    id: string;
     name: string;
   };
   color: string;
@@ -88,7 +88,7 @@ export const useRealtimeCursors = ({
   screenToWorld: (screen: Point) => Point;
 }) => {
   const [variant] = useState(getRandomVariant);
-  const [userId] = useState(generateRandomNumber);
+  const [userId] = useState(generateRandomId);
   const [cursors, setCursors] = useState<Record<string, CursorEventPayload>>(
     {},
   );
@@ -119,11 +119,20 @@ export const useRealtimeCursors = ({
 
       cursorPayload.current = payload;
 
-      channelRef.current?.send({
-        type: "broadcast",
-        event: EVENT_NAME,
-        payload: payload,
-      });
+      if (channelRef.current) {
+        console.log("[Cursor] Sending cursor position", {
+          x: worldPos.x,
+          y: worldPos.y,
+          userId,
+        });
+        channelRef.current.send({
+          type: "broadcast",
+          event: EVENT_NAME,
+          payload: payload,
+        });
+      } else {
+        console.log("[Cursor] Channel not ready, skipping send");
+      }
     },
     [variant, userId, username, screenToWorld],
   );
@@ -131,6 +140,12 @@ export const useRealtimeCursors = ({
   const handleMouseMove = useThrottleCallback(callback, throttleMs);
 
   useEffect(() => {
+    console.log(
+      "[Cursor] Setting up channel for room:",
+      roomName,
+      "userId:",
+      userId,
+    );
     const channel = supabase.channel(roomName);
 
     channel
@@ -161,26 +176,34 @@ export const useRealtimeCursors = ({
         { event: EVENT_NAME },
         (data: { payload: CursorEventPayload }) => {
           const { user } = data.payload;
+          console.log(
+            "[Cursor] Received cursor event from:",
+            user.id,
+            user.name,
+          );
           // Don't render your own cursor
-          if (user.id === userId) return;
+          if (user.id === userId) {
+            console.log("[Cursor] Ignoring own cursor");
+            return;
+          }
 
-          setCursors((prev) => {
-            if (prev[userId]) {
-              delete prev[userId];
-            }
-
-            return {
-              ...prev,
-              [user.id]: data.payload,
-            };
-          });
+          setCursors((prev) => ({
+            ...prev,
+            [user.id]: data.payload,
+          }));
         },
       )
       .subscribe(async (status) => {
+        console.log("[Cursor] Channel status:", status, "for room:", roomName);
         if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
+          console.log(
+            "[Cursor] Successfully subscribed, tracking with key:",
+            userId,
+          );
           await channel.track({ key: userId });
           channelRef.current = channel;
         } else {
+          console.log("[Cursor] Channel error or not subscribed:", status);
           setCursors({});
           channelRef.current = null;
         }
