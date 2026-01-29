@@ -1,7 +1,6 @@
 import { tool } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { getUserRoleInSession } from "@/app/actions";
 import { db } from "@/db";
 import { cards, sessions } from "@/db/schema";
 import { canDeleteCard } from "@/lib/permissions";
@@ -15,7 +14,7 @@ const inputSchema = z.object({
     .describe("Array of card IDs to delete. Can be one or multiple."),
 });
 
-export const deleteCardsTool = ({ sessionId, userId }: ToolParams) =>
+export const deleteCardsTool = ({ sessionId, userId, userRole }: ToolParams) =>
   tool({
     description,
     inputSchema,
@@ -29,7 +28,6 @@ export const deleteCardsTool = ({ sessionId, userId }: ToolParams) =>
           return "Error: Session not found";
         }
 
-        const userRole = await getUserRoleInSession(userId, sessionId);
         const cardsToDelete = await db.query.cards.findMany({
           where: and(
             inArray(cards.id, cardIds),
@@ -43,7 +41,7 @@ export const deleteCardsTool = ({ sessionId, userId }: ToolParams) =>
 
         // Filter cards user has permission to delete
         const deletableCards = cardsToDelete.filter((card) =>
-          canDeleteCard(session, card, userId, userRole ?? "participant"),
+          canDeleteCard(session, card, userId, userRole),
         );
 
         if (deletableCards.length === 0) {

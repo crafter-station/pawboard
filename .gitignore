@@ -44,3 +44,6 @@ next-env.d.ts
 # supabase local (keep config.toml and seed.sql tracked)
 supabase/.temp/
 supabase/.branches/
+
+# opencode plans (local only)
+.opencode/plans/

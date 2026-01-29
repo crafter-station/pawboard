@@ -76,6 +76,7 @@ import {
 import { UserBadge } from "@/components/user-badge";
 import type { Card, Session, SessionRole, TiptapContent } from "@/db/schema";
 import { DEFAULT_TIPTAP_CONTENT } from "@/db/schema";
+import { useInvalidateCardEditors } from "@/hooks/use-card-editors";
 import { useCatSound } from "@/hooks/use-cat-sound";
 import { useFingerprint } from "@/hooks/use-fingerprint";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
@@ -133,6 +134,7 @@ function ReactFlowBoardInner({
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
   const playSound = useCatSound();
   const isChatOpen = useChatStore((state) => state.isOpen);
+  const invalidateCardEditors = useInvalidateCardEditors();
 
   // React Flow hooks
   const {
@@ -309,6 +311,14 @@ function ReactFlowBoardInner({
     [],
   );
 
+  // Handle incoming editors change events from realtime (invalidate cache)
+  const handleRemoteEditorsChange = useCallback(
+    (cardId: string) => {
+      invalidateCardEditors(cardId);
+    },
+    [invalidateCardEditors],
+  );
+
   const {
     cards,
     addCard,
@@ -321,6 +331,7 @@ function ReactFlowBoardInner({
     broadcastNameChange,
     broadcastSessionRename,
     broadcastSessionSettings,
+    broadcastEditorsChanged,
     applyClusterPositions,
     broadcastClusterPositions,
     batchMoveCards,
@@ -332,6 +343,7 @@ function ReactFlowBoardInner({
     handleRemoteNameChange,
     handleRemoteSessionRename,
     handleRemoteSessionSettingsChange,
+    handleRemoteEditorsChange,
   );
 
   // Sync cards to nodes - skip during drag to prevent flickering
@@ -421,7 +433,17 @@ function ReactFlowBoardInner({
       },
       onPersistContent: async (id: string, content: TiptapContent) => {
         if (!visitorId) return;
-        await updateCard(id, { content }, visitorId);
+        const { card: updatedCard } = await updateCard(
+          id,
+          { content },
+          visitorId,
+        );
+        if (updatedCard) {
+          // Invalidate local editors cache so the UI updates with new edit history
+          invalidateCardEditors(id);
+          // Broadcast to other clients so they also refetch editors
+          broadcastEditorsChanged(id);
+        }
       },
       onPersistColor: async (id: string, color: string) => {
         if (!visitorId) return;
@@ -461,6 +483,8 @@ function ReactFlowBoardInner({
     newCardId,
     realtimeResizeCard,
     sessionId,
+    invalidateCardEditors,
+    broadcastEditorsChanged,
   ]);
 
   // Handle node position changes from drag - let React Flow manage positions
@@ -588,7 +612,7 @@ function ReactFlowBoardInner({
     if (!username || !visitorId) return;
 
     // Check if session allows adding cards
-    if (!canAddCard(session)) return;
+    if (!canAddCard(session, userRole ?? "participant")) return;
 
     playSound();
 
@@ -655,6 +679,7 @@ function ReactFlowBoardInner({
     username,
     visitorId,
     session,
+    userRole,
     playSound,
     screenToFlowPosition,
     sessionId,
@@ -669,7 +694,7 @@ function ReactFlowBoardInner({
       if (!username || !visitorId) return;
 
       // Check if session allows adding cards
-      if (!canAddCard(session)) return;
+      if (!canAddCard(session, userRole ?? "participant")) return;
 
       playSound();
 
@@ -757,6 +782,7 @@ function ReactFlowBoardInner({
       username,
       visitorId,
       session,
+      userRole,
       playSound,
       sessionId,
       addCard,
@@ -821,8 +847,6 @@ function ReactFlowBoardInner({
 
   const handleUpdateSessionSettings = async (settings: {
     isLocked?: boolean;
-    movePermission?: Session["movePermission"];
-    deletePermission?: Session["deletePermission"];
   }) => {
     if (!visitorId) return { success: false, error: "Not logged in" };
 
@@ -839,8 +863,6 @@ function ReactFlowBoardInner({
       // Broadcast to other participants
       broadcastSessionSettings({
         isLocked: updatedSession.isLocked,
-        movePermission: updatedSession.movePermission,
-        deletePermission: updatedSession.deletePermission,
       });
       return { success: true };
     }
@@ -930,7 +952,7 @@ function ReactFlowBoardInner({
 
   const handlePasteCard = useCallback(async () => {
     if (!username || !visitorId) return;
-    if (!canAddCard(session)) return;
+    if (!canAddCard(session, userRole ?? "participant")) return;
 
     let cardData = copiedCard;
 
@@ -1012,6 +1034,7 @@ function ReactFlowBoardInner({
     username,
     visitorId,
     session,
+    userRole,
     playSound,
     screenToFlowPosition,
     sessionId,

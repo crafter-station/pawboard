@@ -99,7 +99,7 @@ const inputSchema = z.object({
     ),
 });
 
-export const createCardTool = ({ sessionId, userId }: ToolParams) =>
+export const createCardTool = ({ sessionId, userId, userRole }: ToolParams) =>
   tool({
     description,
     inputSchema,
@@ -113,7 +113,7 @@ export const createCardTool = ({ sessionId, userId }: ToolParams) =>
           return "Error: Session not found";
         }
 
-        if (!canAddCard(session)) {
+        if (!canAddCard(session, userRole)) {
           return "Error: Session is locked. Cannot add new cards.";
         }
 

@@ -11,10 +11,7 @@ const supabase = createClient();
 
 const THROTTLE_MS = 50;
 
-export type SessionSettings = Pick<
-  Session,
-  "isLocked" | "movePermission" | "deletePermission"
->;
+export type SessionSettings = Pick<Session, "isLocked">;
 
 type CardEvent =
   | { type: "card:add"; card: Card }
@@ -26,6 +23,7 @@ type CardEvent =
   | { type: "card:color"; id: string; color: string }
   | { type: "card:vote"; id: string; votes: number; votedBy: string[] }
   | { type: "card:react"; id: string; reactions: Record<string, string[]> }
+  | { type: "card:editors"; id: string }
   | { type: "cards:sync"; cards: Card[] }
   | {
       type: "cards:cluster";
@@ -44,6 +42,7 @@ export function useRealtimeCards(
   onUserJoinOrRename?: (visitorId: string, username: string) => void,
   onSessionRename?: (newName: string) => void,
   onSessionSettingsChange?: (settings: SessionSettings) => void,
+  onEditorsChanged?: (cardId: string) => void,
 ) {
   const [cards, setCards] = useState<Card[]>(initialCards);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -51,6 +50,7 @@ export function useRealtimeCards(
   const onUserJoinOrRenameRef = useRef(onUserJoinOrRename);
   const onSessionRenameRef = useRef(onSessionRename);
   const onSessionSettingsChangeRef = useRef(onSessionSettingsChange);
+  const onEditorsChangedRef = useRef(onEditorsChanged);
   const usernameRef = useRef(username);
 
   // Keep refs updated
@@ -65,6 +65,10 @@ export function useRealtimeCards(
   useEffect(() => {
     onSessionSettingsChangeRef.current = onSessionSettingsChange;
   }, [onSessionSettingsChange]);
+
+  useEffect(() => {
+    onEditorsChangedRef.current = onEditorsChanged;
+  }, [onEditorsChanged]);
 
   useEffect(() => {
     usernameRef.current = username;
@@ -240,6 +244,14 @@ export function useRealtimeCards(
     [broadcast],
   );
 
+  // Broadcast editors changed to other participants (so they refetch)
+  const broadcastEditorsChanged = useCallback(
+    (cardId: string) => {
+      broadcast({ type: "card:editors", id: cardId });
+    },
+    [broadcast],
+  );
+
   // Apply cluster positions to cards (updates local state)
   const applyClusterPositions = useCallback(
     (positions: Array<{ id: string; x: number; y: number }>) => {
@@ -374,6 +386,10 @@ export function useRealtimeCards(
                 ),
               );
               break;
+            case "card:editors":
+              // Notify parent component to invalidate editors cache for this card
+              onEditorsChangedRef.current?.(payload.id);
+              break;
             case "cards:sync":
               setCards((prev) => {
                 const newCards = payload.cards.filter(
@@ -468,6 +484,7 @@ export function useRealtimeCards(
     broadcastNameChange,
     broadcastSessionRename,
     broadcastSessionSettings,
+    broadcastEditorsChanged,
     applyClusterPositions,
     broadcastClusterPositions,
     batchMoveCards,

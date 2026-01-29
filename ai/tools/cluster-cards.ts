@@ -17,7 +17,11 @@ const inputSchema = z.object({
     ),
 });
 
-export const clusterCardsTool = ({ sessionId, userId }: ToolParams) =>
+export const clusterCardsTool = ({
+  sessionId,
+  userId,
+  userRole: _userRole,
+}: ToolParams) =>
   tool({
     description,
     inputSchema,
