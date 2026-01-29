@@ -15,10 +15,11 @@
  * 3. Updates the cards in the database
  */
 
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { cards } from "@/db/schema";
 import { generateEmbeddings } from "@/lib/embeddings";
+import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
 
 const BATCH_SIZE = 50; // Process 50 cards at a time to avoid rate limits
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -31,14 +32,14 @@ async function backfillEmbeddings() {
     console.log("");
   }
 
-  // Get all cards with content but no embedding
+  // Get all cards without embeddings
   const cardsToProcess = await db.query.cards.findMany({
-    where: and(ne(cards.content, ""), isNull(cards.embedding)),
+    where: isNull(cards.embedding),
   });
 
-  // Filter out cards with only whitespace
+  // Filter out cards with empty content
   const cardsWithContent = cardsToProcess.filter(
-    (card) => card.content && card.content.trim().length > 0,
+    (card) => !isContentEmpty(card.content),
   );
 
   if (cardsWithContent.length === 0) {
@@ -66,9 +67,10 @@ async function backfillEmbeddings() {
         // In dry run, just count and preview
         console.log(`  Would process ${batch.length} cards:`);
         for (const card of batch.slice(0, 3)) {
-          const preview = card.content.slice(0, 50).replace(/\n/g, " ");
+          const textContent = extractTextFromTiptap(card.content);
+          const preview = textContent.slice(0, 50).replace(/\n/g, " ");
           console.log(
-            `    - ${card.id}: "${preview}${card.content.length > 50 ? "..." : ""}"`,
+            `    - ${card.id}: "${preview}${textContent.length > 50 ? "..." : ""}"`,
           );
         }
         if (batch.length > 3) {
@@ -77,7 +79,7 @@ async function backfillEmbeddings() {
         processed += batch.length;
       } else {
         // Generate embeddings for the batch
-        const texts = batch.map((card) => card.content);
+        const texts = batch.map((card) => extractTextFromTiptap(card.content));
         const embeddings = await generateEmbeddings(texts);
 
         // Update each card with its embedding

@@ -8,6 +8,7 @@ import { DARK_COLORS, LIGHT_COLORS } from "@/lib/colors";
 import { generateCardId } from "@/lib/nanoid";
 import { canAddCard } from "@/lib/permissions";
 import { broadcastCardEvent } from "@/lib/supabase/broadcast";
+import { createTiptapContent } from "@/lib/tiptap-utils";
 import description from "./create-card.md";
 import type { ToolParams } from "./index";
 
@@ -136,7 +137,7 @@ export const createCardTool = ({ sessionId, userId }: ToolParams) =>
           .values({
             id: cardId,
             sessionId,
-            content,
+            content: createTiptapContent(content),
             color: cardColor,
             x: cardX,
             y: cardY,

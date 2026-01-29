@@ -14,23 +14,19 @@ import {
   Copy,
   CopyPlus,
   GripVertical,
-  Loader2,
   Smile,
-  Sparkles,
-  Undo2,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import { useTheme } from "next-themes";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import Markdown from "react-markdown";
+import { CardEditor } from "@/components/card-editor";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -38,6 +34,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { VoiceTrigger, VoiceVisualizer } from "@/components/voice-recorder";
+import type { TiptapContent } from "@/db/schema";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import {
   DARK_COLORS,
@@ -54,6 +51,11 @@ import {
   canVote,
 } from "@/lib/permissions";
 import type { IdeaCardNodeData } from "@/lib/react-flow-utils";
+import {
+  createTiptapContent,
+  extractTextFromTiptap,
+  isContentEmpty,
+} from "@/lib/tiptap-utils";
 import { cn, getAvatarForUser } from "@/lib/utils";
 
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
@@ -65,12 +67,12 @@ const MIN_HEIGHT = 100;
 const MAX_HEIGHT = 400;
 
 export interface IdeaCardNodeCallbacks {
-  onType: (id: string, content: string) => void;
+  onType: (id: string, content: TiptapContent) => void;
   onChangeColor: (id: string, color: string) => void;
   onDelete: (id: string) => void;
   onVote: (id: string) => void;
   onReact: (id: string, emoji: string) => void;
-  onPersistContent: (id: string, content: string) => void;
+  onPersistContent: (id: string, content: TiptapContent) => void;
   onPersistColor: (id: string, color: string) => void;
   onPersistDelete: (id: string) => void;
   onDuplicate?: (cardId: string) => void;
@@ -100,8 +102,6 @@ function IdeaCardNodeComponent({
   const [isEditing, setIsEditing] = useState(nodeData.isEditing);
   const [mounted, setMounted] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [isRefining, setIsRefining] = useState(false);
-  const [previousContent, setPreviousContent] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
@@ -118,7 +118,10 @@ function IdeaCardNodeComponent({
     stopRecording,
   } = useVoiceRecorder({
     onTranscription: (text) => {
-      const newContent = card.content ? `${card.content} ${text}` : text;
+      // Append transcribed text as a new paragraph to existing content
+      const existingText = extractTextFromTiptap(card.content);
+      const newText = existingText ? `${existingText}\n${text}` : text;
+      const newContent = createTiptapContent(newText);
       globalCallbacks?.onType(card.id, newContent);
       globalCallbacks?.onPersistContent(card.id, newContent);
     },
@@ -184,35 +187,13 @@ function IdeaCardNodeComponent({
   const displayColor = getDisplayColorUtil(card.color, isDark, mounted);
   const creatorAvatar = getAvatarForUser(card.createdById);
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    globalCallbacks?.onType(card.id, e.target.value);
+  const handleContentChange = (content: TiptapContent) => {
+    globalCallbacks?.onType(card.id, content);
   };
 
   const handleContentBlur = () => {
     setIsEditing(false);
     globalCallbacks?.onPersistContent(card.id, card.content);
-  };
-
-  const handleContentKeyDown = (
-    e: React.KeyboardEvent<HTMLTextAreaElement>,
-  ) => {
-    if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
-      e.preventDefault();
-      setIsEditing(false);
-      globalCallbacks?.onPersistContent(card.id, card.content);
-    }
-
-    // Cmd/Ctrl + . to toggle voice recording
-    if ((e.metaKey || e.ctrlKey) && e.key === ".") {
-      e.preventDefault();
-      if (!isTranscribingVoice) {
-        if (isRecordingVoice) {
-          stopRecording();
-        } else {
-          startRecording();
-        }
-      }
-    }
   };
 
   const handleColorChange = (color: string) => {
@@ -241,51 +222,13 @@ function IdeaCardNodeComponent({
     }
   };
 
-  const handleRefine = async () => {
-    if (!card.content.trim() || isRefining || !allowRefine) return;
-
-    const contentBeforeRefine = card.content;
-    setIsRefining(true);
-    try {
-      const res = await fetch("/api/refine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: card.content,
-          cardId: card.id,
-          userId: visitorId,
-        }),
-      });
-
-      if (res.ok) {
-        const { refined } = await res.json();
-        if (refined && refined.trim()) {
-          setPreviousContent(contentBeforeRefine);
-          globalCallbacks?.onType(card.id, refined);
-          globalCallbacks?.onPersistContent(card.id, refined);
-        }
-      }
-    } catch {
-    } finally {
-      setIsRefining(false);
-    }
-  };
-
-  const handleUndo = () => {
-    if (previousContent !== null) {
-      globalCallbacks?.onType(card.id, previousContent);
-      globalCallbacks?.onPersistContent(card.id, previousContent);
-      setPreviousContent(null);
-    }
-  };
-
-  const showRefineButton = allowRefine && card.content.trim().length > 10;
-  const showUndoButton = allowEdit && previousContent !== null;
+  const textContentForDisplay = extractTextFromTiptap(card.content);
 
   const handleCopy = async () => {
-    if (!card.content.trim()) return;
+    const textContent = extractTextFromTiptap(card.content);
+    if (!textContent.trim()) return;
     try {
-      await navigator.clipboard.writeText(card.content);
+      await navigator.clipboard.writeText(textContent);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch {
@@ -471,57 +414,7 @@ function IdeaCardNodeComponent({
                   </PopoverContent>
                 </Popover>
               )}
-              {showUndoButton && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <motion.button
-                      type="button"
-                      onClick={handleUndo}
-                      whileTap={{ scale: 0.9 }}
-                      whileHover={{ scale: 1.1 }}
-                      className={`p-1 sm:p-1.5 rounded-md ${
-                        isMobile
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
-                      } ${hoverBgClass} transition-all cursor-pointer`}
-                    >
-                      <Undo2
-                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} group-hover:${iconActiveClass}`}
-                      />
-                    </motion.button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Undo</TooltipContent>
-                </Tooltip>
-              )}
-              {showRefineButton && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <motion.button
-                      type="button"
-                      onClick={handleRefine}
-                      disabled={isRefining}
-                      whileTap={{ scale: 0.9 }}
-                      whileHover={{ scale: 1.1 }}
-                      className={`p-1 sm:p-1.5 rounded-md ${
-                        isMobile
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
-                      } ${hoverBgClass} transition-all cursor-pointer disabled:cursor-wait`}
-                    >
-                      {isRefining ? (
-                        <Loader2
-                          className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} animate-spin`}
-                        />
-                      ) : (
-                        <Sparkles
-                          className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
-                        />
-                      )}
-                    </motion.button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Refine with AI</TooltipContent>
-                </Tooltip>
-              )}
+
               {globalCallbacks?.onDuplicate && allowEdit && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -578,89 +471,39 @@ function IdeaCardNodeComponent({
               : undefined
           }
         >
-          {isEditing ? (
-            <div className="relative group/edit flex-1 min-h-0">
-              <Textarea
-                autoFocus
-                value={card.content}
+          <div
+            className={cn(
+              "flex-1 min-h-0 overflow-y-auto nowheel",
+              isEditing && "nodrag nopan",
+            )}
+            onClick={() => !isEditing && allowEdit && setIsEditing(true)}
+          >
+            {isContentEmpty(card.content) && !isEditing ? (
+              <span className={mutedTextClass}>
+                {allowEdit
+                  ? isMobile
+                    ? "Tap to edit..."
+                    : "Click to add idea..."
+                  : "No content yet"}
+              </span>
+            ) : (
+              <CardEditor
+                content={card.content}
                 onChange={handleContentChange}
                 onBlur={handleContentBlur}
-                onKeyDown={handleContentKeyDown}
-                className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none text-[11px] sm:text-[13px] ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto w-full h-full`}
+                editable={isEditing && allowEdit}
+                autoFocus={isEditing}
                 placeholder="Type your idea..."
+                className={cn(
+                  "text-[11px] sm:text-[13px] leading-relaxed h-full",
+                  textColorClass,
+                )}
+                cardId={card.id}
+                userId={visitorId}
+                allowRefine={allowRefine}
               />
-            </div>
-          ) : (
-            <div
-              onClick={() => allowEdit && setIsEditing(true)}
-              className={`overflow-y-auto leading-relaxed flex-1 min-h-0 text-[11px] sm:text-[13px] ${textColorClass} ${
-                allowEdit ? "cursor-text" : "cursor-default"
-              }`}
-            >
-              {card.content ? (
-                <Markdown
-                  components={{
-                    p: ({ children }) => (
-                      <p className="mb-2 last:mb-0 leading-relaxed">
-                        {children}
-                      </p>
-                    ),
-                    ul: ({ children }) => (
-                      <ul className="list-disc list-inside mb-2 last:mb-0 space-y-1">
-                        {children}
-                      </ul>
-                    ),
-                    ol: ({ children }) => (
-                      <ol className="list-decimal list-inside mb-2 last:mb-0 space-y-1">
-                        {children}
-                      </ol>
-                    ),
-                    li: ({ children }) => (
-                      <li className="leading-relaxed">{children}</li>
-                    ),
-                    strong: ({ children }) => (
-                      <strong className="font-semibold text-stone-900">
-                        {children}
-                      </strong>
-                    ),
-                    em: ({ children }) => (
-                      <em className="italic text-stone-700">{children}</em>
-                    ),
-                    code: ({ children }) => (
-                      <code className="px-1.5 py-0.5 rounded text-[10px] sm:text-xs bg-stone-900/8 text-stone-700 font-mono">
-                        {children}
-                      </code>
-                    ),
-                    h1: ({ children }) => (
-                      <h1 className="font-bold text-sm sm:text-base mb-1.5 text-stone-900">
-                        {children}
-                      </h1>
-                    ),
-                    h2: ({ children }) => (
-                      <h2 className="font-bold text-[13px] sm:text-sm mb-1.5 text-stone-900">
-                        {children}
-                      </h2>
-                    ),
-                    h3: ({ children }) => (
-                      <h3 className="font-semibold text-xs sm:text-[13px] mb-1 text-stone-800">
-                        {children}
-                      </h3>
-                    ),
-                  }}
-                >
-                  {card.content}
-                </Markdown>
-              ) : (
-                <span className={mutedTextClass}>
-                  {allowEdit
-                    ? isMobile
-                      ? "Tap to edit..."
-                      : "Click to add idea..."
-                    : "No content yet"}
-                </span>
-              )}
-            </div>
-          )}
+            )}
+          </div>
           {/* Centered Voice Visualizer - Outside of Footer Transform Context */}
           <VoiceVisualizer
             isRecording={isRecordingVoice}
@@ -669,7 +512,7 @@ function IdeaCardNodeComponent({
             containerClassName="absolute inset-0"
           />
 
-          {card.content && !isEditing && (
+          {!isContentEmpty(card.content) && !isEditing && (
             <TooltipProvider delayDuration={400}>
               <Tooltip>
                 <TooltipTrigger asChild>

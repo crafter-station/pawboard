@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { cards, sessions } from "@/db/schema";
 import { canEditCard } from "@/lib/permissions";
 import { broadcastCardEvent } from "@/lib/supabase/broadcast";
+import { createTiptapContent } from "@/lib/tiptap-utils";
 import description from "./edit-card.md";
 import type { ToolParams } from "./index";
 
@@ -43,9 +44,10 @@ export const editCardTool = ({ sessionId, userId }: ToolParams) =>
           return "Error: You don't have permission to edit this card";
         }
 
+        const tiptapContent = createTiptapContent(content);
         const [updatedCard] = await db
           .update(cards)
-          .set({ content, updatedAt: new Date() })
+          .set({ content: tiptapContent, updatedAt: new Date() })
           .where(eq(cards.id, cardId))
           .returning();
 

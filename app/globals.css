@@ -287,3 +287,99 @@
 .resize-handle-se {
   cursor: nwse-resize !important;
 }
+
+/* Tiptap Editor Styles - wrapped in @layer components to override Tailwind v4 preflight */
+@layer components {
+  .card-editor .ProseMirror {
+    outline: none;
+    min-height: 60px;
+    height: 100%;
+  }
+
+  .card-editor .ProseMirror p {
+    margin-bottom: 0.5rem;
+  }
+
+  .card-editor .ProseMirror p:last-child {
+    margin-bottom: 0;
+  }
+
+  .card-editor .ProseMirror ul {
+    list-style-type: disc;
+    padding-left: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .card-editor .ProseMirror ol {
+    list-style-type: decimal;
+    padding-left: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .card-editor .ProseMirror li {
+    margin-bottom: 0.25rem;
+  }
+
+  .card-editor .ProseMirror li p {
+    margin-bottom: 0;
+  }
+
+  .card-editor .ProseMirror strong {
+    font-weight: 700;
+  }
+
+  .card-editor .ProseMirror em {
+    font-style: italic;
+  }
+
+  .card-editor .ProseMirror u {
+    text-decoration: underline;
+  }
+
+  .card-editor .ProseMirror s {
+    text-decoration: line-through;
+  }
+
+  /* Task list (todos) */
+  .card-editor .ProseMirror ul[data-type="taskList"] {
+    list-style-type: none;
+    padding-left: 0;
+  }
+
+  .card-editor .ProseMirror ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .card-editor .ProseMirror ul[data-type="taskList"] li > label {
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+  }
+
+  .card-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+    width: 0.875rem;
+    height: 0.875rem;
+    accent-color: var(--primary);
+    cursor: pointer;
+  }
+
+  .card-editor .ProseMirror ul[data-type="taskList"] li > div {
+    flex: 1;
+  }
+
+  .card-editor .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+    text-decoration: line-through;
+    opacity: 0.6;
+  }
+
+  /* Placeholder */
+  .card-editor .ProseMirror p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    color: var(--muted-foreground);
+    pointer-events: none;
+    height: 0;
+  }
+}

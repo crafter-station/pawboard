@@ -120,18 +120,11 @@ export const useRealtimeCursors = ({
       cursorPayload.current = payload;
 
       if (channelRef.current) {
-        console.log("[Cursor] Sending cursor position", {
-          x: worldPos.x,
-          y: worldPos.y,
-          userId,
-        });
         channelRef.current.send({
           type: "broadcast",
           event: EVENT_NAME,
           payload: payload,
         });
-      } else {
-        console.log("[Cursor] Channel not ready, skipping send");
       }
     },
     [variant, userId, username, screenToWorld],
@@ -140,12 +133,6 @@ export const useRealtimeCursors = ({
   const handleMouseMove = useThrottleCallback(callback, throttleMs);
 
   useEffect(() => {
-    console.log(
-      "[Cursor] Setting up channel for room:",
-      roomName,
-      "userId:",
-      userId,
-    );
     const channel = supabase.channel(roomName);
 
     channel
@@ -176,14 +163,8 @@ export const useRealtimeCursors = ({
         { event: EVENT_NAME },
         (data: { payload: CursorEventPayload }) => {
           const { user } = data.payload;
-          console.log(
-            "[Cursor] Received cursor event from:",
-            user.id,
-            user.name,
-          );
           // Don't render your own cursor
           if (user.id === userId) {
-            console.log("[Cursor] Ignoring own cursor");
             return;
           }
 
@@ -194,16 +175,10 @@ export const useRealtimeCursors = ({
         },
       )
       .subscribe(async (status) => {
-        console.log("[Cursor] Channel status:", status, "for room:", roomName);
         if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
-          console.log(
-            "[Cursor] Successfully subscribed, tracking with key:",
-            userId,
-          );
           await channel.track({ key: userId });
           channelRef.current = channel;
         } else {
-          console.log("[Cursor] Channel error or not subscribed:", status);
           setCursors({});
           channelRef.current = null;
         }
