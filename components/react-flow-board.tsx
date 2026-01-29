@@ -177,6 +177,15 @@ function ReactFlowBoardInner({
   const hasInitializedViewRef = useRef(false);
   // Ref to store duplicate callback to avoid stale closures in useEffect
   const handleDuplicateCardRef = useRef<((card: Card) => void) | null>(null);
+  // Track component mount state for async operations
+  const mountedRef = useRef(true);
+
+  // Cleanup mounted ref on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Derived state
   const isSessionCreator = userRole === "creator";
@@ -790,8 +799,10 @@ function ReactFlowBoardInner({
       visitorId,
     );
     if (updatedSession && !error) {
-      // Update local state
-      setSession((prev) => ({ ...prev, name: updatedSession.name }));
+      // Update local state (check mounted to avoid memory leak)
+      if (mountedRef.current) {
+        setSession((prev) => ({ ...prev, name: updatedSession.name }));
+      }
       // Broadcast to other participants
       broadcastSessionRename(updatedSession.name);
       return { success: true };
@@ -812,8 +823,10 @@ function ReactFlowBoardInner({
       visitorId,
     );
     if (updatedSession && !error) {
-      // Update local state
-      setSession(updatedSession);
+      // Update local state (check mounted to avoid memory leak)
+      if (mountedRef.current) {
+        setSession(updatedSession);
+      }
       // Broadcast to other participants
       broadcastSessionSettings({
         isLocked: updatedSession.isLocked,

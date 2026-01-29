@@ -15,9 +15,18 @@ export function useVoiceRecorder({ onTranscription }: UseVoiceRecorderProps) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+
+  // Cleanup mounted ref on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const handleTranscription = useCallback(
     async (blob: Blob) => {
+      if (!mountedRef.current) return;
       setIsTranscribing(true);
       try {
         const formData = new FormData();
@@ -30,12 +39,14 @@ export function useVoiceRecorder({ onTranscription }: UseVoiceRecorderProps) {
 
         if (response.ok) {
           const { text } = await response.json();
-          if (text) onTranscription(text);
+          if (text && mountedRef.current) onTranscription(text);
         }
       } catch (err) {
         console.error("Error during transcription:", err);
       } finally {
-        setIsTranscribing(false);
+        if (mountedRef.current) {
+          setIsTranscribing(false);
+        }
       }
     },
     [onTranscription],
@@ -68,7 +79,7 @@ export function useVoiceRecorder({ onTranscription }: UseVoiceRecorderProps) {
       analyserRef.current = analyser;
 
       const updateVisualizer = () => {
-        if (!analyserRef.current) return;
+        if (!analyserRef.current || !mountedRef.current) return;
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
 
@@ -81,8 +92,10 @@ export function useVoiceRecorder({ onTranscription }: UseVoiceRecorderProps) {
 
         // Simple mirror
         const symmetrical = [...samples].reverse().concat(samples);
-        setAudioLevels(symmetrical);
-        animationFrameRef.current = requestAnimationFrame(updateVisualizer);
+        if (mountedRef.current) {
+          setAudioLevels(symmetrical);
+          animationFrameRef.current = requestAnimationFrame(updateVisualizer);
+        }
       };
       updateVisualizer();
 
@@ -111,14 +124,21 @@ export function useVoiceRecorder({ onTranscription }: UseVoiceRecorderProps) {
           cancelAnimationFrame(animationFrameRef.current);
           animationFrameRef.current = null;
         }
-        setAudioLevels(new Array(16).fill(0)); // Reset visualizer
+        // Reset visualizer (check mounted to avoid memory leak)
+        if (mountedRef.current) {
+          setAudioLevels(new Array(16).fill(0));
+        }
       };
 
       mediaRecorder.start();
-      setIsRecording(true);
+      if (mountedRef.current) {
+        setIsRecording(true);
+      }
     } catch (err) {
       console.error("Error accessing microphone:", err);
-      alert("Could not access microphone. Please check permissions.");
+      if (mountedRef.current) {
+        alert("Could not access microphone. Please check permissions.");
+      }
     }
   }, [handleTranscription]);
 
