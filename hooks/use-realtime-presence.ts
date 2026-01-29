@@ -1,6 +1,6 @@
 import {
   REALTIME_SUBSCRIBE_STATES,
-  RealtimeChannel,
+  type RealtimeChannel,
 } from "@supabase/supabase-js";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";

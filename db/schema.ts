@@ -70,7 +70,10 @@ export const sessionParticipants = pgTable(
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
     lastActiveAt: timestamp("last_active_at").defaultNow().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.sessionId] })],
+  (table) => [
+    primaryKey({ columns: [table.userId, table.sessionId] }),
+    index("participants_session_idx").on(table.sessionId),
+  ],
 );
 
 export const cards = pgTable(
@@ -107,6 +110,8 @@ export const cards = pgTable(
       "hnsw",
       table.embedding.op("vector_cosine_ops"),
     ),
+    // Index for fast session card lookups
+    index("cards_session_idx").on(table.sessionId),
   ],
 );
 

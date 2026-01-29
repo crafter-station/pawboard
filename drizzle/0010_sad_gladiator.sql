@@ -1,0 +1,2 @@
+CREATE INDEX IF NOT EXISTS "cards_session_idx" ON "cards" USING btree ("session_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "participants_session_idx" ON "session_participants" USING btree ("session_id");

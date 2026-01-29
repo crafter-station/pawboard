@@ -1,49 +1,15 @@
 import {
   REALTIME_SUBSCRIBE_STATES,
-  RealtimeChannel,
+  type RealtimeChannel,
 } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useThrottleCallback } from "@/hooks/use-throttle-callback";
 import { createClient } from "@/lib/supabase/client";
 
 interface Point {
   x: number;
   y: number;
 }
-
-/**
- * Throttle a callback to a certain delay, It will only call the callback if the delay has passed, with the arguments
- * from the last call
- */
-const useThrottleCallback = <Params extends unknown[], Return>(
-  callback: (...args: Params) => Return,
-  delay: number,
-) => {
-  const lastCall = useRef(0);
-  const timeout = useRef<NodeJS.Timeout | null>(null);
-
-  return useCallback(
-    (...args: Params) => {
-      const now = Date.now();
-      const remainingTime = delay - (now - lastCall.current);
-
-      if (remainingTime <= 0) {
-        if (timeout.current) {
-          clearTimeout(timeout.current);
-          timeout.current = null;
-        }
-        lastCall.current = now;
-        callback(...args);
-      } else if (!timeout.current) {
-        timeout.current = setTimeout(() => {
-          lastCall.current = Date.now();
-          timeout.current = null;
-          callback(...args);
-        }, remainingTime);
-      }
-    },
-    [callback, delay],
-  );
-};
 
 const supabase = createClient();
 
@@ -114,7 +80,7 @@ export const useRealtimeCursors = ({
         },
         color: variant.color,
         cursorImage: variant.image,
-        timestamp: new Date().getTime(),
+        timestamp: Date.now(),
       };
 
       cursorPayload.current = payload;
@@ -137,7 +103,7 @@ export const useRealtimeCursors = ({
 
     channel
       .on("presence", { event: "leave" }, ({ leftPresences }) => {
-        leftPresences.forEach(function (element) {
+        leftPresences.forEach((element) => {
           // Remove cursor when user leaves
           setCursors((prev) => {
             if (prev[element.key]) {

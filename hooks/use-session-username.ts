@@ -29,17 +29,28 @@ export function useSessionUsername({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const initializedRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  // Cleanup mounted ref on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Initialize: get or create user, join session
   useEffect(() => {
     if (!visitorId || initializedRef.current) return;
 
     const init = async () => {
+      if (!mountedRef.current) return;
       setIsLoading(true);
       setError(null);
 
       // Get or create user (will generate random username if new)
       const { user, error: userError } = await getOrCreateUser(visitorId);
+
+      if (!mountedRef.current) return;
 
       if (userError || !user) {
         setError(userError ?? "Failed to load user");
@@ -56,8 +67,10 @@ export function useSessionUsername({
         // Non-fatal - user can still use the board
       }
 
-      setIsLoading(false);
-      initializedRef.current = true;
+      if (mountedRef.current) {
+        setIsLoading(false);
+        initializedRef.current = true;
+      }
     };
 
     init();
@@ -82,7 +95,9 @@ export function useSessionUsername({
       }
 
       if (user) {
-        setUsername(user.username);
+        if (mountedRef.current) {
+          setUsername(user.username);
+        }
         return { success: true };
       }
 

@@ -218,7 +218,9 @@ function calculateSilhouetteScore(
   let totalScore = 0;
 
   for (const id of ids) {
+    // biome-ignore lint/style/noNonNullAssertion: id is from embeddings.keys()
     const embedding = embeddings.get(id)!;
+    // biome-ignore lint/style/noNonNullAssertion: id is from result.cardToCluster
     const myCluster = result.cardToCluster.get(id)!;
     const clusterMembers = result.clusters.get(myCluster) || [];
 
@@ -227,6 +229,7 @@ function calculateSilhouetteScore(
     const sameClusterMembers = clusterMembers.filter((mid) => mid !== id);
     if (sameClusterMembers.length > 0) {
       for (const memberId of sameClusterMembers) {
+        // biome-ignore lint/style/noNonNullAssertion: memberId is from embeddings
         a += euclideanDistance(embedding, embeddings.get(memberId)!);
       }
       a /= sameClusterMembers.length;
@@ -239,6 +242,7 @@ function calculateSilhouetteScore(
 
       let meanDist = 0;
       for (const memberId of members) {
+        // biome-ignore lint/style/noNonNullAssertion: memberId is from embeddings
         meanDist += euclideanDistance(embedding, embeddings.get(memberId)!);
       }
       meanDist /= members.length;
@@ -284,10 +288,12 @@ export function kMeansClustering(
   }
 
   if (n === 1) {
+    // biome-ignore lint/style/noNonNullAssertion: n === 1 guarantees one element
     const id = embeddings.keys().next().value!;
     return {
       clusters: new Map([[0, [id]]]),
       cardToCluster: new Map([[id, 0]]),
+      // biome-ignore lint/style/noNonNullAssertion: n === 1 guarantees one element
       centroids: [[...embeddings.values().next().value!]],
     };
   }
@@ -328,7 +334,7 @@ export function kMeansClustering(
     clusters.set(i, []);
   }
   for (const [id, clusterIndex] of assignments) {
-    clusters.get(clusterIndex)!.push(id);
+    clusters.get(clusterIndex)?.push(id);
   }
 
   // Remove empty clusters
@@ -432,6 +438,7 @@ export function calculateClusterPositions(
     const cardIds = clusterResult.clusters.get(clusterIndex) || [];
     if (cardIds.length === 0) continue;
 
+    // biome-ignore lint/style/noNonNullAssertion: clusterIndex comes from clusterDims keys
     const dims = clusterDims.get(clusterIndex)!;
 
     // Check if we need to start a new row

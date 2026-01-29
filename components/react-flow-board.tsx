@@ -33,6 +33,7 @@ import {
   Sparkles,
   Trash,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -138,9 +139,7 @@ function ReactFlowBoardInner({
     fitView,
     zoomIn,
     zoomOut,
-    getZoom,
     setViewport,
-    getViewport,
     screenToFlowPosition,
     flowToScreenPosition,
   } = useReactFlow();
@@ -176,6 +175,17 @@ function ReactFlowBoardInner({
   const [isReactFlowReady, setIsReactFlowReady] = useState(false);
 
   const hasInitializedViewRef = useRef(false);
+  // Ref to store duplicate callback to avoid stale closures in useEffect
+  const handleDuplicateCardRef = useRef<((card: Card) => void) | null>(null);
+  // Track component mount state for async operations
+  const mountedRef = useRef(true);
+
+  // Cleanup mounted ref on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Derived state
   const isSessionCreator = userRole === "creator";
@@ -203,9 +213,17 @@ function ReactFlowBoardInner({
     if (!visitorId) return;
 
     const doJoin = async () => {
-      const { role } = await joinSession(visitorId, sessionId);
-      if (role) {
-        setUserRole(role);
+      try {
+        const { role, error } = await joinSession(visitorId, sessionId);
+        if (error) {
+          console.error("Failed to join session:", error);
+          return;
+        }
+        if (role) {
+          setUserRole(role);
+        }
+      } catch (err) {
+        console.error("Error joining session:", err);
       }
     };
 
@@ -294,7 +312,6 @@ function ReactFlowBoardInner({
   const {
     cards,
     addCard,
-    moveCard,
     resizeCard: realtimeResizeCard,
     typeCard,
     changeColor,
@@ -416,8 +433,8 @@ function ReactFlowBoardInner({
       },
       onDuplicate: (cardId: string) => {
         const card = cards.find((c) => c.id === cardId);
-        if (card) {
-          handleDuplicateCard(card);
+        if (card && handleDuplicateCardRef.current) {
+          handleDuplicateCardRef.current(card);
         }
       },
       onFocused: (id: string) => {
@@ -739,16 +756,27 @@ function ReactFlowBoardInner({
     ],
   );
 
+  // Keep ref updated with latest callback
+  handleDuplicateCardRef.current = handleDuplicateCard;
+
   const handleShare = async () => {
-    await navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy to clipboard:", err);
+    }
   };
 
   const handleCopySessionId = async () => {
-    await navigator.clipboard.writeText(sessionId);
-    setSessionIdCopied(true);
-    setTimeout(() => setSessionIdCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setSessionIdCopied(true);
+      setTimeout(() => setSessionIdCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy session ID:", err);
+    }
   };
 
   const handleUpdateUsername = async (newUsername: string) => {
@@ -771,8 +799,10 @@ function ReactFlowBoardInner({
       visitorId,
     );
     if (updatedSession && !error) {
-      // Update local state
-      setSession((prev) => ({ ...prev, name: updatedSession.name }));
+      // Update local state (check mounted to avoid memory leak)
+      if (mountedRef.current) {
+        setSession((prev) => ({ ...prev, name: updatedSession.name }));
+      }
       // Broadcast to other participants
       broadcastSessionRename(updatedSession.name);
       return { success: true };
@@ -793,8 +823,10 @@ function ReactFlowBoardInner({
       visitorId,
     );
     if (updatedSession && !error) {
-      // Update local state
-      setSession(updatedSession);
+      // Update local state (check mounted to avoid memory leak)
+      if (mountedRef.current) {
+        setSession(updatedSession);
+      }
       // Broadcast to other participants
       broadcastSessionSettings({
         isLocked: updatedSession.isLocked,
@@ -849,46 +881,43 @@ function ReactFlowBoardInner({
     [applyClusterPositions, broadcastClusterPositions],
   );
 
-  const handleCopyCard = useCallback(
-    async (card: Card) => {
-      const cardData = {
-        type: "pawboard-card",
-        content: card.content,
-        color: card.color,
-      };
+  const handleCopyCard = useCallback(async (card: Card) => {
+    const cardData = {
+      type: "pawboard-card",
+      content: card.content,
+      color: card.color,
+    };
 
-      try {
-        // Save to system clipboard as JSON
-        await navigator.clipboard.writeText(JSON.stringify(cardData));
-      } catch (error) {
-        // Clipboard API may not be available or blocked
-        console.warn("Failed to write to clipboard:", error);
-      }
+    try {
+      // Save to system clipboard as JSON
+      await navigator.clipboard.writeText(JSON.stringify(cardData));
+    } catch (error) {
+      // Clipboard API may not be available or blocked
+      console.warn("Failed to write to clipboard:", error);
+    }
 
-      // Always save to memory as fallback
-      const clipboardData = {
-        content: card.content,
-        color: card.color,
-        width: card.width,
-        height: card.height,
-      };
-      setCopiedCard(clipboardData);
+    // Always save to memory as fallback
+    const clipboardData = {
+      content: card.content,
+      color: card.color,
+      width: card.width,
+      height: card.height,
+    };
+    setCopiedCard(clipboardData);
 
-      // Persist to sessionStorage
-      try {
-        sessionStorage.setItem(
-          "pawboard_clipboard",
-          JSON.stringify(clipboardData),
-        );
-      } catch (error) {
-        // sessionStorage may be full or blocked
-        console.warn("Failed to save to sessionStorage:", error);
-      }
+    // Persist to sessionStorage
+    try {
+      sessionStorage.setItem(
+        "pawboard_clipboard",
+        JSON.stringify(clipboardData),
+      );
+    } catch (error) {
+      // sessionStorage may be full or blocked
+      console.warn("Failed to save to sessionStorage:", error);
+    }
 
-      setSelectedCardIds(new Set([card.id]));
-    },
-    [setSelectedCardIds],
-  );
+    setSelectedCardIds(new Set([card.id]));
+  }, []);
 
   const handlePasteCard = useCallback(async () => {
     if (!username || !visitorId) return;
@@ -1503,13 +1532,15 @@ function ReactFlowBoardInner({
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
               <div className="text-center">
                 <div className="w-16 h-16 mx-auto mb-4 opacity-20">
-                  <img
+                  <Image
                     src={
                       visitorId
                         ? getAvatarForUser(visitorId)
                         : "/cat-purple.svg"
                     }
                     alt=""
+                    width={64}
+                    height={64}
                     className="w-full h-full"
                   />
                 </div>

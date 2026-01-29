@@ -222,8 +222,6 @@ function IdeaCardNodeComponent({
     }
   };
 
-  const textContentForDisplay = extractTextFromTiptap(card.content);
-
   const handleCopy = async () => {
     const textContent = extractTextFromTiptap(card.content);
     if (!textContent.trim()) return;
@@ -306,7 +304,6 @@ function IdeaCardNodeComponent({
   const mutedTextClass = isPurpleDark ? "text-white/70" : "text-stone-600";
   const borderClass = isPurpleDark ? "border-white/20" : "border-stone-900/10";
   const iconClass = isPurpleDark ? "text-white/80" : "text-stone-500";
-  const iconActiveClass = isPurpleDark ? "text-white" : "text-stone-700";
   const hoverBgClass = isPurpleDark
     ? "hover:bg-white/15"
     : "hover:bg-stone-900/8";
@@ -471,10 +468,13 @@ function IdeaCardNodeComponent({
               : undefined
           }
         >
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: Complex card content container with conditional interactivity */}
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: Keyboard nav handled by CardEditor */}
           <div
             className={cn(
               "flex-1 min-h-0 overflow-y-auto nowheel",
               isEditing && "nodrag nopan",
+              !isEditing && allowEdit && "cursor-pointer",
             )}
             onClick={() => !isEditing && allowEdit && setIsEditing(true)}
           >

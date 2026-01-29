@@ -1,6 +1,6 @@
 "use client";
 
-import { createRef, ReactNode, useRef } from "react";
+import { createRef, type ReactNode, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 interface ImageMouseTrailProps {
@@ -85,14 +85,17 @@ export function ImageMouseTrail({
       onMouseMove={handleOnMove}
       onTouchMove={(e) => handleOnMove(e.touches[0])}
       ref={containerRef}
+      aria-label="Interactive mouse trail area"
       className={cn(
         "grid place-content-center h-screen w-full relative overflow-visible",
         className,
       )}
     >
       {items.map((item, index) => (
+        // biome-ignore lint/performance/noImgElement: Dynamic trail images with refs need native img element
         <img
-          key={index}
+          // biome-ignore lint/suspicious/noArrayIndexKey: Static list with intentional duplicates, refs tied to indices
+          key={`${item}-${index}`}
           className={cn(
             "object-contain absolute -translate-y-1/2 -translate-x-1/2 pointer-events-none will-change-transform",
             "scale-0 opacity-0 rotate-0",

@@ -4,19 +4,35 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cards, sessions, type TiptapContent } from "@/db/schema";
 import { canRefine } from "@/lib/permissions";
+import {
+  getClientIdentifier,
+  rateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 import { extractTextFromTiptap } from "@/lib/tiptap-utils";
+import { refineRequestSchema, validateRequest } from "@/lib/validations";
 
 const groq = createGroq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
 export async function POST(req: Request) {
-  try {
-    const { selectedText, fullContent, cardId, userId } = await req.json();
+  // Rate limit check
+  const clientId = getClientIdentifier(req);
+  const { success, reset, limit, remaining } = await rateLimit(clientId, "ai");
+  if (!success) {
+    return rateLimitResponse(reset, limit, remaining);
+  }
 
-    if (!selectedText?.trim()) {
-      return Response.json({ error: "No text provided" }, { status: 400 });
-    }
+  try {
+    // Validate request body
+    const { data, error: validationError } = await validateRequest(
+      req,
+      refineRequestSchema,
+    );
+    if (validationError) return validationError;
+
+    const { selectedText, fullContent, cardId, userId } = data;
 
     // If cardId and userId are provided, validate permissions
     if (cardId && userId) {
@@ -106,7 +122,7 @@ Return ONLY the JSON object, nothing else:`;
       if (refined.type !== "doc" || !Array.isArray(refined.content)) {
         throw new Error("Invalid Tiptap structure");
       }
-    } catch (parseError) {
+    } catch {
       console.error("Failed to parse AI response as JSON:", text);
       // Fallback: wrap the text in a simple paragraph structure
       refined = {

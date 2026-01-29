@@ -71,6 +71,13 @@
       "when": 1769668208433,
       "tag": "0009_lowly_dreadnoughts",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1769674419458,
+      "tag": "0010_sad_gladiator",
+      "breakpoints": true
     }
   ]
 }

@@ -8,14 +8,14 @@ import {
 import { tools } from "@/ai/tools";
 import { getSessionCards } from "@/db/queries";
 import type { Card } from "@/db/schema";
+import {
+  getClientIdentifier,
+  rateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
 import { extractTextFromTiptap } from "@/lib/tiptap-utils";
+import { chatRequestSchema, validateRequest } from "@/lib/validations";
 import prompt from "./prompt.md";
-
-interface RequestBody {
-  messages: UIMessage[];
-  sessionId: string;
-  userId: string;
-}
 
 function buildCanvasContext(cards: Card[]): string {
   if (cards.length === 0) {
@@ -54,22 +54,32 @@ ${cardList}
 }
 
 export async function POST(req: Request) {
-  try {
-    const { messages, sessionId, userId } = (await req.json()) as RequestBody;
+  // Rate limit check
+  const clientId = getClientIdentifier(req);
+  const { success, reset, limit, remaining } = await rateLimit(clientId, "ai");
+  if (!success) {
+    return rateLimitResponse(reset, limit, remaining);
+  }
 
-    if (!sessionId || !userId) {
-      return Response.json(
-        { error: "sessionId and userId are required" },
-        { status: 400 },
-      );
-    }
+  try {
+    // Validate request body
+    const { data, error: validationError } = await validateRequest(
+      req,
+      chatRequestSchema,
+    );
+    if (validationError) return validationError;
+
+    const { messages, sessionId, userId } = data;
+
+    // Type assertion - messages validated to be array
+    const typedMessages = messages as unknown as UIMessage[];
 
     // Fetch current cards to provide canvas context
     const currentCards = await getSessionCards(sessionId);
     const canvasContext = buildCanvasContext(currentCards);
 
     // Convert UI messages to model messages format
-    const modelMessages = await convertToModelMessages(messages);
+    const modelMessages = await convertToModelMessages(typedMessages);
 
     const result = streamText({
       model: gateway("gpt-4o-mini"),

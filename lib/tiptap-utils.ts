@@ -62,7 +62,7 @@ export function extractTextFromTiptap(content: TiptapContent): string {
         node.type === "bulletList" ||
         node.type === "taskList"
       ) {
-        return text + "\n";
+        return `${text}\n`;
       }
       return text;
     })

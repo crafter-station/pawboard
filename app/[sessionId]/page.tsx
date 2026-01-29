@@ -4,6 +4,7 @@ import {
   getSessionCards,
   getSessionParticipants,
 } from "@/app/actions";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { ReactFlowBoard as Board } from "@/components/react-flow-board";
 
 interface Props {
@@ -50,11 +51,40 @@ export default async function SessionPage({ params }: Props) {
   ]);
 
   return (
-    <Board
-      sessionId={sessionId}
-      initialSession={session}
-      initialCards={initialCards}
-      initialParticipants={initialParticipants}
-    />
+    <ErrorBoundary
+      fallback={
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <div className="text-center space-y-4 max-w-md">
+            <h2 className="text-2xl font-bold text-foreground">
+              Something went wrong
+            </h2>
+            <p className="text-muted-foreground">
+              The board encountered an error. Please try refreshing the page.
+            </p>
+            <div className="flex gap-3 justify-center pt-4">
+              <Link
+                href={`/${sessionId}`}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+              >
+                Refresh
+              </Link>
+              <Link
+                href="/"
+                className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors"
+              >
+                Go Home
+              </Link>
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <Board
+        sessionId={sessionId}
+        initialSession={session}
+        initialCards={initialCards}
+        initialParticipants={initialParticipants}
+      />
+    </ErrorBoundary>
   );
 }

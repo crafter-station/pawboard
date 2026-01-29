@@ -346,6 +346,7 @@ export function MessageAttachment({
     >
       {isImage ? (
         <>
+          {/* biome-ignore lint/performance/noImgElement: Dynamic blob URLs cannot be optimized by Next.js Image */}
           <img
             alt={filename || "attachment"}
             className="size-full object-cover"

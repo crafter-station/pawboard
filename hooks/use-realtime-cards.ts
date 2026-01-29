@@ -1,45 +1,15 @@
 import {
   REALTIME_SUBSCRIBE_STATES,
-  RealtimeChannel,
+  type RealtimeChannel,
 } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Card, Session, TiptapContent } from "@/db/schema";
+import { useThrottleCallback } from "@/hooks/use-throttle-callback";
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
 const THROTTLE_MS = 50;
-
-function useThrottleCallback<Params extends unknown[], Return>(
-  callback: (...args: Params) => Return,
-  delay: number,
-) {
-  const lastCall = useRef(0);
-  const timeout = useRef<NodeJS.Timeout | null>(null);
-
-  return useCallback(
-    (...args: Params) => {
-      const now = Date.now();
-      const remainingTime = delay - (now - lastCall.current);
-
-      if (remainingTime <= 0) {
-        if (timeout.current) {
-          clearTimeout(timeout.current);
-          timeout.current = null;
-        }
-        lastCall.current = now;
-        callback(...args);
-      } else if (!timeout.current) {
-        timeout.current = setTimeout(() => {
-          lastCall.current = Date.now();
-          timeout.current = null;
-          callback(...args);
-        }, remainingTime);
-      }
-    },
-    [callback, delay],
-  );
-}
 
 export type SessionSettings = Pick<
   Session,
