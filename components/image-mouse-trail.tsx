@@ -92,9 +92,10 @@ export function ImageMouseTrail({
       )}
     >
       {items.map((item, index) => (
-        // biome-ignore lint/performance/noImgElement: Dynamic trail images with refs need native img element
         <img
+          // biome-ignore lint/suspicious/noArrayIndexKey: Static list with intentional duplicates, refs tied to indices
           key={`${item}-${index}`}
+          // biome-ignore lint/performance/noImgElement: Dynamic trail images with refs need native img element
           className={cn(
             "object-contain absolute -translate-y-1/2 -translate-x-1/2 pointer-events-none will-change-transform",
             "scale-0 opacity-0 rotate-0",
