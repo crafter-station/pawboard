@@ -1,25 +1,22 @@
 "use client";
 
-import { Lock, Move, Settings, Trash, Trash2, Unlock } from "lucide-react";
+import { Lock, Settings, Trash2, Unlock } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import type { DeletePermission, MovePermission, Session } from "@/db/schema";
+import type { Session } from "@/db/schema";
 
 interface SessionSettingsDialogProps {
   session: Session;
   onUpdateSettings: (settings: {
     isLocked?: boolean;
-    movePermission?: MovePermission;
-    deletePermission?: DeletePermission;
   }) => Promise<{ success: boolean; error?: string }>;
   onDeleteSession: () => Promise<{ success: boolean; error?: string }>;
   trigger?: React.ReactNode;
@@ -33,55 +30,18 @@ export function SessionSettingsDialog({
 }: SessionSettingsDialogProps) {
   const [open, setOpen] = useState(false);
   const [isLocked, setIsLocked] = useState(session.isLocked);
-  const [movePermission, setMovePermission] = useState<MovePermission>(
-    session.movePermission,
-  );
-  const [deletePermission, setDeletePermission] = useState<DeletePermission>(
-    session.deletePermission,
-  );
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
-  const hasChanges =
-    isLocked !== session.isLocked ||
-    movePermission !== session.movePermission ||
-    deletePermission !== session.deletePermission;
 
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
     if (newOpen) {
       // Reset to current session values
       setIsLocked(session.isLocked);
-      setMovePermission(session.movePermission);
-      setDeletePermission(session.deletePermission);
       setError(null);
       setShowDeleteConfirm(false);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!hasChanges) {
-      setOpen(false);
-      return;
-    }
-
-    setIsSaving(true);
-    setError(null);
-
-    const result = await onUpdateSettings({
-      isLocked,
-      movePermission,
-      deletePermission,
-    });
-
-    setIsSaving(false);
-
-    if (result.success) {
-      setOpen(false);
-    } else {
-      setError(result.error ?? "Failed to save settings");
     }
   };
 
@@ -133,7 +93,7 @@ export function SessionSettingsDialog({
             Session Settings
           </DialogTitle>
           <DialogDescription>
-            Configure permissions and lock status for this session.
+            Lock the session or delete it permanently.
           </DialogDescription>
         </DialogHeader>
 
@@ -152,8 +112,8 @@ export function SessionSettingsDialog({
                 </span>
                 <p className="text-xs text-muted-foreground">
                   {isLocked
-                    ? "Session is frozen. No one can add, edit, move, or vote on cards."
-                    : "Session is active. Participants can interact with cards."}
+                    ? "Session is frozen. Only you can interact with cards."
+                    : "Session is active. Everyone can collaborate freely."}
                 </p>
               </div>
               <Button
@@ -163,67 +123,6 @@ export function SessionSettingsDialog({
                 disabled={isSaving}
               >
                 {isLocked ? "Unlock" : "Lock"}
-              </Button>
-            </div>
-          </div>
-
-          {/* Move Permission */}
-          <div className="space-y-2">
-            <span className="text-sm font-medium flex items-center gap-2">
-              <Move className="h-4 w-4" />
-              Who can move cards?
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant={movePermission === "creator" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setMovePermission("creator")}
-                disabled={isSaving}
-                className="flex-1"
-              >
-                Only card creator
-              </Button>
-              <Button
-                variant={movePermission === "everyone" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setMovePermission("everyone")}
-                disabled={isSaving}
-                className="flex-1"
-              >
-                Everyone
-              </Button>
-            </div>
-          </div>
-
-          {/* Delete Permission */}
-          <div className="space-y-2">
-            <span className="text-sm font-medium flex items-center gap-2">
-              <Trash className="h-4 w-4" />
-              Who can delete cards?
-            </span>
-            <p className="text-xs text-muted-foreground">
-              You can always delete any card as the session creator.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant={deletePermission === "creator" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setDeletePermission("creator")}
-                disabled={isSaving}
-                className="flex-1"
-              >
-                Only card creator
-              </Button>
-              <Button
-                variant={
-                  deletePermission === "everyone" ? "default" : "outline"
-                }
-                size="sm"
-                onClick={() => setDeletePermission("everyone")}
-                disabled={isSaving}
-                className="flex-1"
-              >
-                Everyone
               </Button>
             </div>
           </div>
@@ -273,19 +172,6 @@ export function SessionSettingsDialog({
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setOpen(false)}
-            disabled={isSaving}
-          >
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={isSaving || !hasChanges}>
-            {isSaving ? "Saving..." : "Save Changes"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

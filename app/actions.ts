@@ -6,9 +6,8 @@ import { after } from "next/server";
 import { db } from "@/db";
 import {
   type Card,
+  cardEditHistory,
   cards,
-  type DeletePermission,
-  type MovePermission,
   type NewCard,
   type Session,
   type SessionRole,
@@ -166,8 +165,6 @@ export async function updateSessionName(
 
 export interface SessionSettings {
   isLocked: boolean;
-  movePermission: MovePermission;
-  deletePermission: DeletePermission;
 }
 
 export async function updateSessionSettings(
@@ -535,6 +532,71 @@ export async function getSessionCards(sessionId: string) {
   }
 }
 
+export type CardEditHistoryWithUser = {
+  id: string;
+  cardId: string;
+  userId: string;
+  editedAt: Date;
+  user: {
+    id: string;
+    username: string;
+  };
+};
+
+export async function getCardEditHistory(
+  cardId: string,
+): Promise<{ history: CardEditHistoryWithUser[]; error: string | null }> {
+  try {
+    const history = await db.query.cardEditHistory.findMany({
+      where: eq(cardEditHistory.cardId, cardId),
+      with: {
+        user: true,
+      },
+      orderBy: (history, { desc }) => [desc(history.editedAt)],
+    });
+
+    return { history, error: null };
+  } catch (error) {
+    console.error("Database error in getCardEditHistory:", error);
+    return { history: [], error: "Failed to get card edit history" };
+  }
+}
+
+export async function getCardEditors(cardId: string): Promise<{
+  editors: Array<{ userId: string; username: string }>;
+  error: string | null;
+}> {
+  try {
+    // Get distinct editors ordered by most recent edit
+    const history = await db.query.cardEditHistory.findMany({
+      where: eq(cardEditHistory.cardId, cardId),
+      with: {
+        user: true,
+      },
+      orderBy: (history, { desc }) => [desc(history.editedAt)],
+    });
+
+    // Get unique editors while preserving order (most recent first)
+    const seen = new Set<string>();
+    const editors: Array<{ userId: string; username: string }> = [];
+
+    for (const entry of history) {
+      if (!seen.has(entry.userId)) {
+        seen.add(entry.userId);
+        editors.push({
+          userId: entry.userId,
+          username: entry.user.username,
+        });
+      }
+    }
+
+    return { editors, error: null };
+  } catch (error) {
+    console.error("Database error in getCardEditors:", error);
+    return { editors: [], error: "Failed to get card editors" };
+  }
+}
+
 export async function createCard(
   data: NewCard,
   userId: string,
@@ -549,7 +611,10 @@ export async function createCard(
       return { card: null, error: "Session not found" };
     }
 
-    if (!canAddCard(session)) {
+    // Get user's role
+    const userRole = await getUserRoleInSession(userId, data.sessionId);
+
+    if (!canAddCard(session, userRole ?? "participant")) {
       return { card: null, error: "Session is locked. Cannot add new cards." };
     }
 
@@ -589,9 +654,14 @@ export async function updateCard(
       return { card: null, error: "Session not found" };
     }
 
+    // Get user's role
+    const userRole = await getUserRoleInSession(userId, existingCard.sessionId);
+
     // Check permissions based on what's being updated
     if (data.content !== undefined) {
-      if (!canEditCard(session, existingCard, userId)) {
+      if (
+        !canEditCard(session, existingCard, userId, userRole ?? "participant")
+      ) {
         return {
           card: null,
           error: "You don't have permission to edit this card",
@@ -600,7 +670,9 @@ export async function updateCard(
     }
 
     if (data.x !== undefined || data.y !== undefined) {
-      if (!canMoveCard(session, existingCard, userId)) {
+      if (
+        !canMoveCard(session, existingCard, userId, userRole ?? "participant")
+      ) {
         return {
           card: null,
           error: "You don't have permission to move this card",
@@ -609,7 +681,14 @@ export async function updateCard(
     }
 
     if (data.color !== undefined) {
-      if (!canChangeColor(session, existingCard, userId)) {
+      if (
+        !canChangeColor(
+          session,
+          existingCard,
+          userId,
+          userRole ?? "participant",
+        )
+      ) {
         return {
           card: null,
           error: "You don't have permission to change this card's color",
@@ -627,6 +706,7 @@ export async function updateCard(
     await updateActivityTimestamps(existingCard.sessionId, userId);
 
     // If content was updated AND actually changed, generate embedding in background
+    // and record edit history
     const contentChanged =
       data.content !== undefined &&
       JSON.stringify(data.content) !== JSON.stringify(existingCard.content);
@@ -649,6 +729,29 @@ export async function updateCard(
             : null) ||
           "http://localhost:3000";
       const secret = process.env.INTERNAL_API_SECRET;
+
+      // Record/update edit history - one entry per user per card
+      const existingEdit = await db.query.cardEditHistory.findFirst({
+        where: and(
+          eq(cardEditHistory.cardId, cardId),
+          eq(cardEditHistory.userId, userId),
+        ),
+      });
+
+      if (existingEdit) {
+        // Update existing entry's timestamp
+        await db
+          .update(cardEditHistory)
+          .set({ editedAt: new Date() })
+          .where(eq(cardEditHistory.id, existingEdit.id));
+      } else {
+        // Create new entry
+        await db.insert(cardEditHistory).values({
+          id: crypto.randomUUID(),
+          cardId,
+          userId,
+        });
+      }
 
       after(async () => {
         try {
@@ -706,8 +809,13 @@ export async function resizeCard(
       return { card: null, error: "Session not found" };
     }
 
+    // Get user's role
+    const userRole = await getUserRoleInSession(userId, existingCard.sessionId);
+
     // Use move permission for resize
-    if (!canMoveCard(session, existingCard, userId)) {
+    if (
+      !canMoveCard(session, existingCard, userId, userRole ?? "participant")
+    ) {
       return {
         card: null,
         error: "You don't have permission to resize this card",
@@ -766,7 +874,10 @@ export async function voteCard(
       return { card: null, action: "denied", error: "Session not found" };
     }
 
-    if (!canVote(session, existing, visitorId)) {
+    // Get user's role
+    const userRole = await getUserRoleInSession(visitorId, existing.sessionId);
+
+    if (!canVote(session, existing, visitorId, userRole ?? "participant")) {
       if (existing.createdById === visitorId) {
         return { card: existing, action: "denied", error: null }; // Can't vote on own card
       }
@@ -833,7 +944,10 @@ export async function toggleReaction(
       return { card: null, action: "denied", error: "Session not found" };
     }
 
-    if (!canReact(session, existing, userId)) {
+    // Get user's role
+    const userRole = await getUserRoleInSession(userId, existing.sessionId);
+
+    if (!canReact(session, existing, userId, userRole ?? "participant")) {
       if (existing.createdById === userId) {
         return { card: existing, action: "denied", error: null };
       }

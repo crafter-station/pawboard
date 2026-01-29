@@ -30,7 +30,7 @@ const inputSchema = z.object({
     ),
 });
 
-export const changeColorTool = ({ sessionId, userId }: ToolParams) =>
+export const changeColorTool = ({ sessionId, userId, userRole }: ToolParams) =>
   tool({
     description,
     inputSchema,
@@ -60,7 +60,7 @@ export const changeColorTool = ({ sessionId, userId }: ToolParams) =>
 
         // Filter cards user has permission to change
         const changeableCards = cardsToChange.filter((card) =>
-          canChangeColor(session, card, userId),
+          canChangeColor(session, card, userId, userRole),
         );
 
         if (changeableCards.length === 0) {

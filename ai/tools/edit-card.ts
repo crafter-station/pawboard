@@ -14,7 +14,7 @@ const inputSchema = z.object({
   content: z.string().describe("The new content for the card"),
 });
 
-export const editCardTool = ({ sessionId, userId }: ToolParams) =>
+export const editCardTool = ({ sessionId, userId, userRole }: ToolParams) =>
   tool({
     description,
     inputSchema,
@@ -40,7 +40,7 @@ export const editCardTool = ({ sessionId, userId }: ToolParams) =>
           return "Error: Session not found";
         }
 
-        if (!canEditCard(session, card, userId)) {
+        if (!canEditCard(session, card, userId, userRole)) {
           return "Error: You don't have permission to edit this card";
         }
 

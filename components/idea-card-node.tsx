@@ -13,6 +13,7 @@ import {
   ChevronUp,
   Copy,
   CopyPlus,
+  Crown,
   GripVertical,
   Smile,
   X,
@@ -21,6 +22,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import { useTheme } from "next-themes";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { CardEditHistoryDialog } from "@/components/card-edit-history-dialog";
 import { CardEditor } from "@/components/card-editor";
 import {
   Popover,
@@ -35,6 +37,7 @@ import {
 } from "@/components/ui/tooltip";
 import { VoiceTrigger, VoiceVisualizer } from "@/components/voice-recorder";
 import type { TiptapContent } from "@/db/schema";
+import { useCardEditors } from "@/hooks/use-card-editors";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import {
   DARK_COLORS,
@@ -106,6 +109,7 @@ function IdeaCardNodeComponent({
   const [isResizing, setIsResizing] = useState(false);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const originalContentRef = useRef<TiptapContent | null>(null);
   const { resolvedTheme } = useTheme();
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -130,18 +134,14 @@ function IdeaCardNodeComponent({
   // Permission checks
   const isOwnCard = card.createdById === visitorId;
   const hasVoted = card.votedBy?.includes(visitorId) || false;
-  const allowMove = canMoveCard(session, card, visitorId);
-  const allowEdit = canEditCard(session, card, visitorId);
-  const allowDelete = canDeleteCard(
-    session,
-    card,
-    visitorId,
-    userRole ?? "participant",
-  );
-  const allowChangeColor = canChangeColor(session, card, visitorId);
-  const allowRefine = canRefine(session, card, visitorId);
-  const allowVote = canVote(session, card, visitorId);
-  const allowReact = canReact(session, card, visitorId);
+  const role = userRole ?? "participant";
+  const allowMove = canMoveCard(session, card, visitorId, role);
+  const allowEdit = canEditCard(session, card, visitorId, role);
+  const allowDelete = canDeleteCard(session, card, visitorId, role);
+  const allowChangeColor = canChangeColor(session, card, visitorId, role);
+  const allowRefine = canRefine(session, card, visitorId, role);
+  const allowVote = canVote(session, card, visitorId, role);
+  const allowReact = canReact(session, card, visitorId, role);
 
   useEffect(() => {
     setMounted(true);
@@ -163,6 +163,17 @@ function IdeaCardNodeComponent({
       globalCallbacks?.onFocused?.(id);
     }
   }, [autoFocus, allowEdit, id]);
+
+  // Capture original content when entering edit mode
+  useEffect(() => {
+    if (isEditing && !originalContentRef.current) {
+      originalContentRef.current = card.content;
+    }
+  }, [isEditing, card.content]);
+
+  // Fetch card editors using TanStack Query
+  const { data: editorsData } = useCardEditors(card.id);
+  const editors = editorsData?.editors ?? [];
 
   // Update node data when local state changes
   useEffect(() => {
@@ -193,7 +204,12 @@ function IdeaCardNodeComponent({
 
   const handleContentBlur = () => {
     setIsEditing(false);
-    globalCallbacks?.onPersistContent(card.id, card.content);
+    // Only persist if content actually changed
+    const original = originalContentRef.current;
+    if (original && JSON.stringify(card.content) !== JSON.stringify(original)) {
+      globalCallbacks?.onPersistContent(card.id, card.content);
+    }
+    originalContentRef.current = null;
   };
 
   const handleColorChange = (color: string) => {
@@ -599,23 +615,76 @@ function IdeaCardNodeComponent({
             cursor: getCursorStyle(),
           }}
         >
-          <motion.div
-            className="flex items-center gap-1 sm:gap-1.5"
-            whileHover="hover"
-          >
-            <Image
-              src={getAvatarForUser(card.createdById)}
-              alt={`${creatorName}'s avatar`}
-              width={16}
-              height={16}
-              className="w-4 h-4 sm:w-5 sm:h-5"
-              draggable={false}
+          <div className="flex items-center gap-1 sm:gap-1.5">
+            <CardEditHistoryDialog
+              cardId={card.id}
+              creatorId={card.createdById}
+              trigger={
+                <button
+                  type="button"
+                  className={`flex items-center gap-0.5 ${hoverBgClass} rounded p-0.5 transition-colors cursor-pointer nodrag`}
+                >
+                  {/* Show editors or creator if no editors yet */}
+                  {editors.length > 0 ? (
+                    <>
+                      {editors.slice(0, 3).map((editor, index) => {
+                        const isCreator = editor.userId === card.createdById;
+                        return (
+                          <div
+                            key={editor.userId}
+                            className="relative"
+                            style={{ marginLeft: index > 0 ? -4 : 0 }}
+                          >
+                            <Image
+                              src={getAvatarForUser(editor.userId)}
+                              alt={`${editor.username}'s avatar`}
+                              width={16}
+                              height={16}
+                              className="w-4 h-4 sm:w-5 sm:h-5 rounded-sm"
+                              draggable={false}
+                            />
+                            {isCreator && (
+                              <Crown
+                                className={`absolute -top-1 -right-1 w-2 h-2 sm:w-2.5 sm:h-2.5 ${
+                                  isPurpleDark
+                                    ? "text-amber-300"
+                                    : "text-amber-500"
+                                }`}
+                                fill="currentColor"
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                      {editors.length > 3 && (
+                        <span
+                          className={`text-[9px] sm:text-[10px] ${mutedTextClass} ml-0.5`}
+                        >
+                          +{editors.length - 3}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <div className="relative">
+                      <Image
+                        src={getAvatarForUser(card.createdById)}
+                        alt={`${creatorName}'s avatar`}
+                        width={16}
+                        height={16}
+                        className="w-4 h-4 sm:w-5 sm:h-5 rounded-sm"
+                        draggable={false}
+                      />
+                      <Crown
+                        className={`absolute -top-1 -right-1 w-2 h-2 sm:w-2.5 sm:h-2.5 ${
+                          isPurpleDark ? "text-amber-300" : "text-amber-500"
+                        }`}
+                        fill="currentColor"
+                      />
+                    </div>
+                  )}
+                </button>
+              }
             />
-            <span
-              className={`text-[10px] sm:text-[11px] ${mutedTextClass} truncate max-w-13.75 sm:max-w-20 font-medium`}
-            >
-              {creatorName}
-            </span>
             {allowEdit && (
               <TooltipProvider delayDuration={400}>
                 <Tooltip>
@@ -652,7 +721,7 @@ function IdeaCardNodeComponent({
                 </Tooltip>
               </TooltipProvider>
             )}
-          </motion.div>
+          </div>
           <TooltipProvider delayDuration={400}>
             <div className="flex items-center gap-1 sm:gap-1.5 nodrag">
               {allowReact && (

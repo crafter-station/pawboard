@@ -1,8 +1,13 @@
 import { createGroq } from "@ai-sdk/groq";
 import { generateText } from "ai";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { cards, sessions, type TiptapContent } from "@/db/schema";
+import {
+  cards,
+  sessionParticipants,
+  sessions,
+  type TiptapContent,
+} from "@/db/schema";
 import { canRefine } from "@/lib/permissions";
 import {
   getClientIdentifier,
@@ -52,7 +57,17 @@ export async function POST(req: Request) {
         return Response.json({ error: "Session not found" }, { status: 404 });
       }
 
-      if (!canRefine(session, card, userId)) {
+      // Get user role in session
+      const participant = await db.query.sessionParticipants.findFirst({
+        where: and(
+          eq(sessionParticipants.userId, userId),
+          eq(sessionParticipants.sessionId, card.sessionId),
+        ),
+      });
+      const userRole =
+        (participant?.role as "creator" | "participant") ?? "participant";
+
+      if (!canRefine(session, card, userId, userRole)) {
         return Response.json(
           { error: "You don't have permission to refine this card" },
           { status: 403 },

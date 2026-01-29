@@ -5,9 +5,12 @@ import {
   streamText,
   type UIMessage,
 } from "ai";
+import { and, eq } from "drizzle-orm";
 import { tools } from "@/ai/tools";
+import { db } from "@/db";
 import { getSessionCards } from "@/db/queries";
-import type { Card } from "@/db/schema";
+import type { Card, SessionRole } from "@/db/schema";
+import { sessionParticipants } from "@/db/schema";
 import {
   getClientIdentifier,
   rateLimit,
@@ -74,6 +77,16 @@ export async function POST(req: Request) {
     // Type assertion - messages validated to be array
     const typedMessages = messages as unknown as UIMessage[];
 
+    // Get user role in session
+    const participant = await db.query.sessionParticipants.findFirst({
+      where: and(
+        eq(sessionParticipants.userId, userId),
+        eq(sessionParticipants.sessionId, sessionId),
+      ),
+    });
+    const userRole: SessionRole =
+      (participant?.role as SessionRole) ?? "participant";
+
     // Fetch current cards to provide canvas context
     const currentCards = await getSessionCards(sessionId);
     const canvasContext = buildCanvasContext(currentCards);
@@ -85,7 +98,7 @@ export async function POST(req: Request) {
       model: gateway("gpt-4o-mini"),
       system: prompt + canvasContext,
       messages: modelMessages,
-      tools: tools({ sessionId, userId }),
+      tools: tools({ sessionId, userId, userRole }),
       stopWhen: stepCountIs(3),
     });
 

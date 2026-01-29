@@ -18,7 +18,11 @@ const inputSchema = z.object({
     .describe("Maximum number of results (default 5)"),
 });
 
-export const findSimilarTool = ({ sessionId }: ToolParams) =>
+export const findSimilarTool = ({
+  sessionId,
+  userId: _userId,
+  userRole: _userRole,
+}: ToolParams) =>
   tool({
     description,
     inputSchema,

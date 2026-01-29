@@ -12,10 +12,6 @@ import {
   vector,
 } from "drizzle-orm/pg-core";
 
-// Permission types
-export type MovePermission = "creator" | "everyone";
-export type DeletePermission = "creator" | "everyone";
-
 // Tiptap rich text content type
 export type TiptapContent = {
   type: "doc";
@@ -45,14 +41,6 @@ export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   isLocked: boolean("is_locked").notNull().default(false),
-  movePermission: text("move_permission")
-    .$type<MovePermission>()
-    .notNull()
-    .default("creator"),
-  deletePermission: text("delete_permission")
-    .$type<DeletePermission>()
-    .notNull()
-    .default("creator"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
 });
@@ -115,11 +103,27 @@ export const cards = pgTable(
   ],
 );
 
+export const cardEditHistory = pgTable(
+  "card_edit_history",
+  {
+    id: text("id").primaryKey(),
+    cardId: text("card_id")
+      .notNull()
+      .references(() => cards.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    editedAt: timestamp("edited_at").defaultNow().notNull(),
+  },
+  (table) => [index("card_edit_history_card_idx").on(table.cardId)],
+);
+
 // Relations
 
 export const usersRelations = relations(users, ({ many }) => ({
   participations: many(sessionParticipants),
   cards: many(cards),
+  cardEdits: many(cardEditHistory),
 }));
 
 export const sessionsRelations = relations(sessions, ({ many }) => ({
@@ -141,7 +145,7 @@ export const sessionParticipantsRelations = relations(
   }),
 );
 
-export const cardsRelations = relations(cards, ({ one }) => ({
+export const cardsRelations = relations(cards, ({ one, many }) => ({
   session: one(sessions, {
     fields: [cards.sessionId],
     references: [sessions.id],
@@ -150,7 +154,22 @@ export const cardsRelations = relations(cards, ({ one }) => ({
     fields: [cards.createdById],
     references: [users.id],
   }),
+  editHistory: many(cardEditHistory),
 }));
+
+export const cardEditHistoryRelations = relations(
+  cardEditHistory,
+  ({ one }) => ({
+    card: one(cards, {
+      fields: [cardEditHistory.cardId],
+      references: [cards.id],
+    }),
+    user: one(users, {
+      fields: [cardEditHistory.userId],
+      references: [users.id],
+    }),
+  }),
+);
 
 // Types
 
@@ -163,3 +182,5 @@ export type Card = typeof cards.$inferSelect;
 export type NewCard = typeof cards.$inferInsert;
 export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type NewSessionParticipant = typeof sessionParticipants.$inferInsert;
+export type CardEditHistoryEntry = typeof cardEditHistory.$inferSelect;
+export type NewCardEditHistoryEntry = typeof cardEditHistory.$inferInsert;

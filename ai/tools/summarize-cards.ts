@@ -20,7 +20,11 @@ const inputSchema = z.object({
     ),
 });
 
-export const summarizeCardsTool = ({ sessionId }: ToolParams) =>
+export const summarizeCardsTool = ({
+  sessionId,
+  userId: _userId,
+  userRole: _userRole,
+}: ToolParams) =>
   tool({
     description,
     inputSchema,

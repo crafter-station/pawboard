@@ -88,7 +88,7 @@ const inputSchema = z.object({
     ),
 });
 
-export const moveCardsTool = ({ sessionId, userId }: ToolParams) =>
+export const moveCardsTool = ({ sessionId, userId, userRole }: ToolParams) =>
   tool({
     description,
     inputSchema,
@@ -115,7 +115,7 @@ export const moveCardsTool = ({ sessionId, userId }: ToolParams) =>
 
         // Filter cards user has permission to move
         const movableCards = cardsToMove.filter((card) =>
-          canMoveCard(session, card, userId),
+          canMoveCard(session, card, userId, userRole),
         );
 
         if (movableCards.length === 0) {
