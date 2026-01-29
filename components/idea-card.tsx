@@ -448,6 +448,12 @@ export function IdeaCard({
     }
   };
 
+  const getCursorStyle = () => {
+    if (!allowMove) return "default";
+    if (isDragging) return "grabbing";
+    return "grab";
+  };
+
   const isPurpleCard =
     card.color === LIGHT_COLORS[0] || card.color === DARK_COLORS[0];
   const isPurpleDark = isPurpleCard && isDark;
@@ -483,7 +489,6 @@ export function IdeaCard({
         stiffness: 350,
       }}
       style={{
-        cursor: allowMove ? (isDragging ? "grabbing" : "grab") : "default",
         zIndex: isDragging ? 1000 : isExpanded ? 100 : 1,
         pointerEvents: isSpacePressed ? "none" : "auto",
       }}
@@ -508,6 +513,9 @@ export function IdeaCard({
         />
         <div
           className={`flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 border-b ${borderClass}`}
+          style={{
+            cursor: getCursorStyle(),
+          }}
         >
           <GripVertical
             className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${
@@ -881,6 +889,9 @@ export function IdeaCard({
         )}
         <div
           className={`flex items-center justify-between px-2.5 sm:px-3.5 py-2 sm:py-2.5 border-t ${borderClass}`}
+          style={{
+            cursor: getCursorStyle(),
+          }}
         >
           <div className="flex items-center gap-1 sm:gap-1.5">
             <Image
