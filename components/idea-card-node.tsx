@@ -2,6 +2,13 @@
 
 import NumberFlow from "@number-flow/react";
 import {
+  Handle,
+  type Node,
+  type NodeProps,
+  Position,
+  useReactFlow,
+} from "@xyflow/react";
+import {
   Check,
   ChevronUp,
   Copy,
@@ -18,9 +25,8 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import { useTheme } from "next-themes";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
-
 import {
   Popover,
   PopoverContent,
@@ -34,7 +40,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { VoiceTrigger, VoiceVisualizer } from "@/components/voice-recorder";
-import type { Card, Session, SessionRole } from "@/db/schema";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import {
   DARK_COLORS,
@@ -50,88 +55,51 @@ import {
   canRefine,
   canVote,
 } from "@/lib/permissions";
-import { getAvatarForUser } from "@/lib/utils";
+import type { IdeaCardNodeData } from "@/lib/react-flow-utils";
+import { cn, getAvatarForUser } from "@/lib/utils";
 
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
 
-interface Point {
-  x: number;
-  y: number;
-}
-
-interface IdeaCardProps {
-  card: Card;
-  session: Session;
-  userRole: SessionRole | null;
-  creatorName: string;
-  visitorId: string;
-  autoFocus?: boolean;
-  onFocused?: () => void;
-  isSelected?: boolean;
-  onSelect?: () => void;
-  onDuplicate?: (card: Card) => void;
-  onMove: (id: string, x: number, y: number) => void;
+export interface IdeaCardNodeCallbacks {
   onType: (id: string, content: string) => void;
   onChangeColor: (id: string, color: string) => void;
   onDelete: (id: string) => void;
   onVote: (id: string) => void;
   onReact: (id: string, emoji: string) => void;
   onPersistContent: (id: string, content: string) => void;
-  onPersistMove: (id: string, x: number, y: number) => void;
   onPersistColor: (id: string, color: string) => void;
   onPersistDelete: (id: string) => void;
-  screenToWorld: (screen: Point) => Point;
-  zoom: number;
-  isSpacePressed?: boolean;
-  selectedCardIds?: Set<string>;
-  onMoveSelectedCards?: (deltaX: number, deltaY: number) => void;
-  onPersistMultiMove?: () => void;
+  onDuplicate?: (cardId: string) => void;
+  onFocused?: (id: string) => void;
 }
 
-export function IdeaCard({
-  card,
-  session,
-  userRole,
-  creatorName,
-  visitorId,
-  autoFocus,
-  onFocused,
-  isSelected = false,
-  onSelect,
-  onDuplicate,
-  onMove,
-  onType,
-  onChangeColor,
-  onDelete,
-  onVote,
-  onReact,
-  onPersistContent,
-  onPersistMove,
-  onPersistColor,
-  onPersistDelete,
-  screenToWorld,
-  zoom: _zoom,
-  isSpacePressed = false,
-  selectedCardIds,
-  onMoveSelectedCards,
-  onPersistMultiMove,
-}: IdeaCardProps) {
-  void _zoom; // Reserved for future use (cursor scaling, etc.)
-  const [isDragging, setIsDragging] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+// Store callbacks in a ref to avoid prop drilling through React Flow
+let globalCallbacks: IdeaCardNodeCallbacks | null = null;
+
+export function setIdeaCardNodeCallbacks(callbacks: IdeaCardNodeCallbacks) {
+  globalCallbacks = callbacks;
+}
+
+function IdeaCardNodeComponent({
+  id,
+  data,
+  selected,
+}: NodeProps<Node<IdeaCardNodeData>>) {
+  const { card, session, userRole, visitorId, creatorName, autoFocus } =
+    data as IdeaCardNodeData;
+
+  const { setNodes } = useReactFlow();
+  const nodeData = data as IdeaCardNodeData;
+
+  const [isEditing, setIsEditing] = useState(nodeData.isEditing);
+  const [isExpanded, setIsExpanded] = useState(nodeData.isExpanded);
   const [mounted, setMounted] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
   const [previousContent, setPreviousContent] = useState<string | null>(null);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const { resolvedTheme } = useTheme();
   const cardRef = useRef<HTMLDivElement>(null);
-  const dragOffset = useRef({ x: 0, y: 0 });
-  const startPos = useRef({ x: 0, y: 0 });
-  const dragStartScreenPos = useRef<{ x: number; y: number } | null>(null);
-  const hasDraggedRef = useRef(false);
-  const lastWorldPosRef = useRef<{ x: number; y: number } | null>(null);
 
   /* Voice Recorder Hook */
   const {
@@ -143,8 +111,8 @@ export function IdeaCard({
   } = useVoiceRecorder({
     onTranscription: (text) => {
       const newContent = card.content ? `${card.content} ${text}` : text;
-      onType(card.id, newContent);
-      onPersistContent(card.id, newContent);
+      globalCallbacks?.onType(card.id, newContent);
+      globalCallbacks?.onPersistContent(card.id, newContent);
     },
   });
 
@@ -181,9 +149,27 @@ export function IdeaCard({
   useEffect(() => {
     if (autoFocus && allowEdit) {
       setIsEditing(true);
-      onFocused?.();
+      globalCallbacks?.onFocused?.(id);
     }
-  }, [autoFocus, allowEdit, onFocused]);
+  }, [autoFocus, allowEdit, id]);
+
+  // Update node data when local state changes
+  useEffect(() => {
+    setNodes((nodes: Node[]) =>
+      nodes.map((n: Node) =>
+        n.id === id
+          ? {
+              ...n,
+              data: {
+                ...(n.data as IdeaCardNodeData),
+                isEditing,
+                isExpanded,
+              },
+            }
+          : n,
+      ),
+    );
+  }, [id, isEditing, isExpanded, setNodes]);
 
   const isDark = mounted && resolvedTheme === "dark";
   const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
@@ -191,201 +177,13 @@ export function IdeaCard({
   const displayColor = getDisplayColorUtil(card.color, isDark, mounted);
   const creatorAvatar = getAvatarForUser(card.createdById);
 
-  const handleDragStart = (clientX: number, clientY: number) => {
-    if (!allowMove) return;
-    setIsDragging(true);
-    hasDraggedRef.current = false;
-    dragStartScreenPos.current = { x: clientX, y: clientY };
-    startPos.current = { x: card.x, y: card.y };
-    // Calculate the offset in world coordinates
-    // The click position in world space minus the card's world position
-    const clickWorld = screenToWorld({ x: clientX, y: clientY });
-    dragOffset.current = {
-      x: clickWorld.x - card.x,
-      y: clickWorld.y - card.y,
-    };
-    // Initialize last world position for multi-card dragging
-    lastWorldPosRef.current = clickWorld;
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Don't start drag on middle mouse button (used for panning)
-    // or when space is pressed (space+click is for canvas panning)
-    if (e.button === 1 || isSpacePressed) return;
-
-    // Check if clicking on interactive elements
-    const target = e.target as HTMLElement;
-    const isInteractiveElement =
-      target.closest("button") ||
-      target.closest("textarea") ||
-      target.closest("[role='button']") ||
-      target.closest(".popover-content");
-
-    // Only select if not clicking on interactive elements
-    // AND the card is not already selected (to preserve multi-selection)
-    if (!isInteractiveElement && onSelect && !isSelected) {
-      onSelect();
-    }
-
-    // Start drag tracking (but won't actually move until threshold is met)
-    handleDragStart(e.clientX, e.clientY);
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    // Only handle single-finger touch (two-finger is for panning/zooming)
-    if (e.touches.length === 1) {
-      const touch = e.touches[0];
-      handleDragStart(touch.clientX, touch.clientY);
-    }
-  };
-
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const DRAG_THRESHOLD = 5; // pixels
-
-    const handleMouseMove = (e: MouseEvent) => {
-      // Check if we've moved enough to consider it a drag
-      if (!hasDraggedRef.current && dragStartScreenPos.current) {
-        const dx = Math.abs(e.clientX - dragStartScreenPos.current.x);
-        const dy = Math.abs(e.clientY - dragStartScreenPos.current.y);
-        if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) {
-          // Haven't moved enough yet, don't update position
-          return;
-        }
-        // Threshold exceeded, now it's a real drag
-        hasDraggedRef.current = true;
-      }
-
-      // Convert screen position to world position
-      const worldPos = screenToWorld({ x: e.clientX, y: e.clientY });
-
-      // Check if this card is part of a multi-selection
-      if (
-        isSelected &&
-        selectedCardIds &&
-        selectedCardIds.size > 1 &&
-        onMoveSelectedCards
-      ) {
-        // Multi-card drag: calculate delta from last position
-        if (lastWorldPosRef.current) {
-          const deltaX = worldPos.x - lastWorldPosRef.current.x;
-          const deltaY = worldPos.y - lastWorldPosRef.current.y;
-          onMoveSelectedCards(deltaX, deltaY);
-        }
-        lastWorldPosRef.current = worldPos;
-      } else {
-        // Single card drag: apply offset
-        const x = worldPos.x - dragOffset.current.x;
-        const y = worldPos.y - dragOffset.current.y;
-        onMove(card.id, x, y);
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-
-        // Check drag threshold for touch
-        if (!hasDraggedRef.current && dragStartScreenPos.current) {
-          const dx = Math.abs(touch.clientX - dragStartScreenPos.current.x);
-          const dy = Math.abs(touch.clientY - dragStartScreenPos.current.y);
-          if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) {
-            return;
-          }
-          hasDraggedRef.current = true;
-        }
-
-        // Convert screen position to world position
-        const worldPos = screenToWorld({ x: touch.clientX, y: touch.clientY });
-
-        // Check if this card is part of a multi-selection
-        if (
-          isSelected &&
-          selectedCardIds &&
-          selectedCardIds.size > 1 &&
-          onMoveSelectedCards
-        ) {
-          // Multi-card drag: calculate delta from last position
-          if (lastWorldPosRef.current) {
-            const deltaX = worldPos.x - lastWorldPosRef.current.x;
-            const deltaY = worldPos.y - lastWorldPosRef.current.y;
-            onMoveSelectedCards(deltaX, deltaY);
-          }
-          lastWorldPosRef.current = worldPos;
-        } else {
-          // Single card drag: apply offset
-          const x = worldPos.x - dragOffset.current.x;
-          const y = worldPos.y - dragOffset.current.y;
-          onMove(card.id, x, y);
-        }
-      }
-    };
-
-    const handleEnd = () => {
-      setIsDragging(false);
-      dragStartScreenPos.current = null;
-      lastWorldPosRef.current = null;
-
-      // Only persist if we actually dragged (moved the card)
-      if (
-        hasDraggedRef.current &&
-        (card.x !== startPos.current.x || card.y !== startPos.current.y)
-      ) {
-        // Check if this was a multi-card drag
-        if (
-          isSelected &&
-          selectedCardIds &&
-          selectedCardIds.size > 1 &&
-          onPersistMultiMove
-        ) {
-          onPersistMultiMove();
-        } else {
-          onPersistMove(card.id, card.x, card.y);
-        }
-      }
-
-      hasDraggedRef.current = false;
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleEnd);
-    window.addEventListener("touchmove", handleTouchMove, { passive: false });
-    window.addEventListener("touchend", handleEnd);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleEnd);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("touchend", handleEnd);
-    };
-  }, [
-    isDragging,
-    card.id,
-    card.x,
-    card.y,
-    onMove,
-    onPersistMove,
-    screenToWorld,
-    isSelected,
-    selectedCardIds,
-    onMoveSelectedCards,
-    onPersistMultiMove,
-  ]);
-
-  const handleTranscription = (text: string) => {
-    const newContent = card.content ? `${card.content} ${text}` : text;
-    onType(card.id, newContent);
-    onPersistContent(card.id, newContent);
-  };
-
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onType(card.id, e.target.value);
+    globalCallbacks?.onType(card.id, e.target.value);
   };
 
   const handleContentBlur = () => {
     setIsEditing(false);
-    onPersistContent(card.id, card.content);
+    globalCallbacks?.onPersistContent(card.id, card.content);
   };
 
   const handleContentKeyDown = (
@@ -394,7 +192,7 @@ export function IdeaCard({
     if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
       setIsEditing(false);
-      onPersistContent(card.id, card.content);
+      globalCallbacks?.onPersistContent(card.id, card.content);
     }
 
     // Cmd/Ctrl + . to toggle voice recording
@@ -411,30 +209,28 @@ export function IdeaCard({
   };
 
   const handleColorChange = (color: string) => {
-    onChangeColor(card.id, color);
-    onPersistColor(card.id, color);
+    globalCallbacks?.onChangeColor(card.id, color);
+    globalCallbacks?.onPersistColor(card.id, color);
   };
 
   const handleDelete = () => {
-    onDelete(card.id);
-    onPersistDelete(card.id);
+    globalCallbacks?.onDelete(card.id);
+    globalCallbacks?.onPersistDelete(card.id);
   };
 
   const handleDuplicate = () => {
-    if (onDuplicate) {
-      onDuplicate(card);
-    }
+    globalCallbacks?.onDuplicate?.(card.id);
   };
 
   const handleVote = () => {
     if (allowVote) {
-      onVote(card.id);
+      globalCallbacks?.onVote(card.id);
     }
   };
 
   const handleReact = (emoji: string) => {
     if (allowReact) {
-      onReact(card.id, emoji);
+      globalCallbacks?.onReact(card.id, emoji);
     }
   };
 
@@ -458,8 +254,8 @@ export function IdeaCard({
         const { refined } = await res.json();
         if (refined && refined.trim()) {
           setPreviousContent(contentBeforeRefine);
-          onType(card.id, refined);
-          onPersistContent(card.id, refined);
+          globalCallbacks?.onType(card.id, refined);
+          globalCallbacks?.onPersistContent(card.id, refined);
         }
       }
     } catch {
@@ -470,8 +266,8 @@ export function IdeaCard({
 
   const handleUndo = () => {
     if (previousContent !== null) {
-      onType(card.id, previousContent);
-      onPersistContent(card.id, previousContent);
+      globalCallbacks?.onType(card.id, previousContent);
+      globalCallbacks?.onPersistContent(card.id, previousContent);
       setPreviousContent(null);
     }
   };
@@ -492,7 +288,6 @@ export function IdeaCard({
 
   const getCursorStyle = () => {
     if (!allowMove) return "default";
-    if (isDragging) return "grabbing";
     return "grab";
   };
 
@@ -516,30 +311,20 @@ export function IdeaCard({
       : "bg-transparent group-hover:bg-stone-900/5";
 
   return (
-    <motion.div
+    <div
       ref={cardRef}
       data-card
-      className={`absolute group touch-none select-none transition-[width] duration-200 ${
+      className={`group touch-none select-none transition-[width] duration-200 ${
         isExpanded ? "w-72 sm:w-96" : "w-40 sm:w-56"
       }`}
-      initial={{ x: card.x, y: card.y }}
-      animate={{ x: card.x, y: card.y }}
-      transition={{
-        type: "spring",
-        damping: 30,
-        mass: 0.8,
-        stiffness: 350,
-      }}
-      style={{
-        zIndex: isDragging ? 1000 : isExpanded ? 100 : 1,
-        pointerEvents: isSpacePressed ? "none" : "auto",
-      }}
-      onMouseDown={handleMouseDown}
-      onTouchStart={handleTouchStart}
     >
+      {/* Hidden handles for potential future edge connections */}
+      <Handle type="target" position={Position.Top} className="!hidden" />
+      <Handle type="source" position={Position.Bottom} className="!hidden" />
+
       <div
         className={`rounded-lg shadow-lg transition-shadow hover:shadow-xl relative overflow-hidden ${
-          isSelected ? "ring-2 ring-offset-2 ring-primary" : ""
+          selected ? "ring-2 ring-offset-2 ring-primary" : ""
         }`}
         style={{ backgroundColor: displayColor }}
       >
@@ -566,9 +351,7 @@ export function IdeaCard({
           />
           <TooltipProvider delayDuration={400}>
             <div
-              className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded-md ${actionsBgClass} transition-all duration-200`}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
+              className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded-md ${actionsBgClass} transition-all duration-200 nodrag`}
             >
               {allowChangeColor && (
                 <Popover>
@@ -594,7 +377,6 @@ export function IdeaCard({
                     className="w-auto p-2 z-1001"
                     align="end"
                     sideOffset={5}
-                    onMouseDown={(e) => e.stopPropagation()}
                   >
                     <div className="flex gap-1.5 sm:gap-2">
                       {colors.map((color) => (
@@ -695,7 +477,7 @@ export function IdeaCard({
                   {isExpanded ? "Collapse" : "Expand"}
                 </TooltipContent>
               </Tooltip>
-              {onDuplicate && allowEdit && (
+              {globalCallbacks?.onDuplicate && allowEdit && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <motion.button
@@ -741,14 +523,15 @@ export function IdeaCard({
           </TooltipProvider>
         </div>
         <div
-          className="p-2.5 sm:p-3.5 relative min-h-[inherit] flex flex-col antialiased transition-[box-shadow] duration-200"
+          className={cn(
+            "p-2.5 sm:p-3.5 relative min-h-[inherit] flex flex-col antialiased transition-[box-shadow] duration-200",
+            isEditing && "nodrag",
+          )}
           style={
             isEditing
               ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" }
               : undefined
           }
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
         >
           {isEditing ? (
             <div className="relative group/edit h-full min-h-[inherit]">
@@ -910,11 +693,10 @@ export function IdeaCard({
         {Object.keys(card.reactions).length > 0 && (
           <div
             className={`flex flex-wrap gap-1 px-2.5 sm:px-3.5 py-1.5 border-t ${borderClass}`}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
           >
             {Object.entries(card.reactions).map(([emoji, userIds]) => {
-              const hasReacted = userIds.includes(visitorId);
+              const userIdsList = userIds as string[];
+              const hasReacted = userIdsList.includes(visitorId);
               return (
                 <motion.button
                   key={emoji}
@@ -932,7 +714,7 @@ export function IdeaCard({
                 >
                   <span>{emoji}</span>
                   <span className={`font-medium ${mutedTextClass}`}>
-                    {userIds.length}
+                    {userIdsList.length}
                   </span>
                 </motion.button>
               );
@@ -979,9 +761,7 @@ export function IdeaCard({
                         stiffness: 400,
                         damping: 25,
                       }}
-                      className="flex-shrink-0 ml-0.5 z-10"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onTouchStart={(e) => e.stopPropagation()}
+                      className="flex-shrink-0 ml-0.5 z-10 nodrag"
                     >
                       <VoiceTrigger
                         isRecording={isRecordingVoice}
@@ -1002,11 +782,7 @@ export function IdeaCard({
             )}
           </motion.div>
           <TooltipProvider delayDuration={400}>
-            <div
-              className="flex items-center gap-1 sm:gap-1.5"
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-            >
+            <div className="flex items-center gap-1 sm:gap-1.5 nodrag">
               {allowReact && (
                 <Popover>
                   <Tooltip>
@@ -1034,7 +810,6 @@ export function IdeaCard({
                     className="w-auto p-1.5 z-1001"
                     align="end"
                     sideOffset={5}
-                    onMouseDown={(e) => e.stopPropagation()}
                   >
                     <div className="flex gap-1">
                       {REACTION_EMOJIS.map((emoji) => {
@@ -1111,6 +886,8 @@ export function IdeaCard({
           </TooltipProvider>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
+
+export const IdeaCardNode = memo(IdeaCardNodeComponent);

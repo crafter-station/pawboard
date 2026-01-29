@@ -1,6 +1,23 @@
 "use client";
 
 import {
+  applyNodeChanges,
+  Background,
+  BackgroundVariant,
+  MiniMap,
+  type Node,
+  type NodeChange,
+  type NodeTypes,
+  type OnNodesChange,
+  type OnSelectionChangeFunc,
+  ReactFlow,
+  ReactFlowProvider,
+  SelectionMode,
+  useReactFlow,
+  type Viewport,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import {
   Check,
   Command,
   Copy,
@@ -19,7 +36,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createCard,
   deleteCard,
@@ -39,8 +56,10 @@ import { ClusterCardsDialog } from "@/components/cluster-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
-import { IdeaCard } from "@/components/idea-card";
-import { Minimap } from "@/components/minimap";
+import {
+  IdeaCardNode,
+  setIdeaCardNodeCallbacks,
+} from "@/components/idea-card-node";
 import { ParticipantsDialog } from "@/components/participants-dialog";
 import { RealtimeCursors } from "@/components/realtime-cursors";
 import { SessionSettingsDialog } from "@/components/session-settings-dialog";
@@ -54,10 +73,8 @@ import {
 } from "@/components/ui/drawer";
 import { UserBadge } from "@/components/user-badge";
 import type { Card, Session, SessionRole } from "@/db/schema";
-import { useCanvasGestures } from "@/hooks/use-canvas-gestures";
 import { useCatSound } from "@/hooks/use-cat-sound";
 import { useFingerprint } from "@/hooks/use-fingerprint";
-import { useMarqueeSelection } from "@/hooks/use-marquee-selection";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
 import { useRealtimeCards } from "@/hooks/use-realtime-cards";
 import { useRealtimePresence } from "@/hooks/use-realtime-presence";
@@ -65,6 +82,16 @@ import { useSessionUsername } from "@/hooks/use-session-username";
 import { DARK_COLORS, LIGHT_COLORS } from "@/lib/colors";
 import { generateCardId } from "@/lib/nanoid";
 import { canAddCard } from "@/lib/permissions";
+import {
+  CARD_HEIGHT,
+  CARD_HEIGHT_MOBILE,
+  CARD_WIDTH,
+  CARD_WIDTH_MOBILE,
+  calculateCardsBounds,
+  cardsToNodes,
+  type IdeaCardNode as IdeaCardNodeType,
+  updateNodeData,
+} from "@/lib/react-flow-utils";
 import { cn, getAvatarForUser } from "@/lib/utils";
 import { useChatStore } from "@/stores/chat-store";
 
@@ -73,26 +100,47 @@ export interface Participant {
   username: string;
 }
 
-interface BoardProps {
+interface ReactFlowBoardProps {
   sessionId: string;
   initialSession: Session;
   initialCards: Card[];
   initialParticipants: Participant[];
 }
 
-// Card dimensions for calculations
-const CARD_WIDTH = 224;
-const CARD_HEIGHT = 160;
-const CARD_WIDTH_MOBILE = 160;
-const CARD_HEIGHT_MOBILE = 120;
+// Register node types
+const nodeTypes: NodeTypes = {
+  ideaCard: IdeaCardNode,
+};
 
-export function Board({
+// Minimum zoom and maximum zoom
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 2;
+
+function ReactFlowBoardInner({
   sessionId,
   initialSession,
   initialCards,
   initialParticipants,
-}: BoardProps) {
+}: ReactFlowBoardProps) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
+  const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
+  const playSound = useCatSound();
+  const isChatOpen = useChatStore((state) => state.isOpen);
+
+  // React Flow hooks
+  const {
+    fitView,
+    zoomIn,
+    zoomOut,
+    getZoom,
+    setViewport,
+    getViewport,
+    screenToFlowPosition,
+  } = useReactFlow();
+
+  // State
+  const [nodes, setNodes] = useState<IdeaCardNodeType[]>([]);
   const [copied, setCopied] = useState(false);
   const [sessionIdCopied, setSessionIdCopied] = useState(false);
   const [newCardId, setNewCardId] = useState<string | null>(null);
@@ -109,20 +157,23 @@ export function Board({
     content: string;
     color: string;
   } | null>(null);
-  const [mousePosition, setMousePosition] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-  const hasInitializedViewRef = useRef(false);
-  const { resolvedTheme } = useTheme();
-  const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
+  // Use ref for mouse position - it's a transient value that doesn't need to trigger re-renders
+  const mousePositionRef = useRef<{ x: number; y: number } | null>(null);
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [zoom, setZoom] = useState(1);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
-  const playSound = useCatSound();
-  const isChatOpen = useChatStore((state) => state.isOpen);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isReactFlowReady, setIsReactFlowReady] = useState(false);
+
+  const hasInitializedViewRef = useRef(false);
 
   // Derived state
   const isSessionCreator = userRole === "creator";
   const isLocked = session.isLocked;
+  // Derive isMobile from viewportSize - avoids recalculating in multiple places
+  const isMobile = viewportSize.width > 0 && viewportSize.width < 640;
 
   const {
     username,
@@ -153,16 +204,14 @@ export function Board({
     doJoin();
   }, [visitorId, sessionId]);
 
-  // Update participants map when current user's username changes
-  useEffect(() => {
-    if (visitorId && username) {
-      setParticipants((prev) => {
-        const next = new Map(prev);
-        next.set(visitorId, username);
-        return next;
-      });
-    }
-  }, [visitorId, username]);
+  // Derive participants map with current user included
+  // This is better than using useEffect to sync state
+  const participantsWithCurrentUser = useMemo(() => {
+    if (!visitorId || !username) return participants;
+    const updated = new Map(participants);
+    updated.set(visitorId, username);
+    return updated;
+  }, [participants, visitorId, username]);
 
   // Update viewport size
   useEffect(() => {
@@ -175,19 +224,12 @@ export function Board({
     return () => window.removeEventListener("resize", updateViewportSize);
   }, []);
 
-  // Track mouse position for intelligent paste (throttled to 50ms)
+  // Track mouse position for intelligent paste (using ref - no re-renders needed)
   useEffect(() => {
-    let lastUpdate = 0;
-    const THROTTLE_MS = 50;
-
     const handleMouseMove = (e: MouseEvent) => {
-      const now = Date.now();
-      if (now - lastUpdate >= THROTTLE_MS) {
-        lastUpdate = now;
-        setMousePosition({ x: e.clientX, y: e.clientY });
-      }
+      mousePositionRef.current = { x: e.clientX, y: e.clientY };
     };
-    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
@@ -204,48 +246,12 @@ export function Board({
     }
   }, []);
 
-  // Helper to get username for a user ID
+  // Helper to get username for a user ID - derive from participantsWithCurrentUser
   const getUsernameForId = useCallback(
     (userId: string): string => {
-      return participants.get(userId) ?? "Unknown";
+      return participantsWithCurrentUser.get(userId) ?? "Unknown";
     },
-    [participants],
-  );
-
-  const {
-    pan,
-    zoom,
-    isPanning,
-    isSpacePressed,
-    canvasRef,
-    screenToWorld,
-    worldToScreen,
-    zoomTo,
-    resetView,
-    fitToBounds,
-    centerOn,
-    handlers: canvasHandlers,
-  } = useCanvasGestures();
-
-  // Handle minimap navigation
-  const handleMinimapNavigate = useCallback(
-    (worldPoint: { x: number; y: number }) => {
-      centerOn(worldPoint, zoom); // Keep current zoom level
-    },
-    [centerOn, zoom],
-  );
-
-  // Handle minimap zoom
-  const handleMinimapZoom = useCallback(
-    (worldPoint: { x: number; y: number }, deltaY: number) => {
-      // deltaY > 0 = zoom out, deltaY < 0 = zoom in
-      const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.max(0.25, Math.min(2, zoom * zoomFactor));
-      // Convert world point to screen coordinates for zoom center
-      const screenPoint = worldToScreen(worldPoint);
-      zoomTo(newZoom, screenPoint);
-    },
-    [zoom, zoomTo, worldToScreen],
+    [participantsWithCurrentUser],
   );
 
   // Handle incoming name change events from realtime
@@ -287,6 +293,7 @@ export function Board({
     broadcastSessionSettings,
     applyClusterPositions,
     broadcastClusterPositions,
+    batchMoveCards,
   } = useRealtimeCards(
     sessionId,
     initialCards,
@@ -297,74 +304,223 @@ export function Board({
     handleRemoteSessionSettingsChange,
   );
 
-  // Marquee selection for multiple cards
-  const {
-    isSelecting,
-    selectionRect,
-    selectedCardIds,
-    startSelection,
-    clearSelection,
-    setSelectedCardIds,
-  } = useMarqueeSelection({
+  // Sync cards to nodes - skip during drag to prevent flickering
+  useEffect(() => {
+    if (!visitorId || isDragging) return;
+
+    setNodes((currentNodes) => {
+      if (currentNodes.length === 0 && cards.length > 0) {
+        // Initial load
+        return cardsToNodes(
+          cards,
+          session,
+          userRole,
+          visitorId,
+          getUsernameForId,
+          newCardId,
+        );
+      }
+      // Update existing nodes
+      return updateNodeData(
+        currentNodes,
+        cards,
+        session,
+        userRole,
+        visitorId,
+        getUsernameForId,
+      );
+    });
+  }, [
     cards,
-    screenToWorld,
-    cardWidth: CARD_WIDTH,
-    cardHeight: CARD_HEIGHT,
-    isSpacePressed,
-  });
+    session,
+    userRole,
+    visitorId,
+    getUsernameForId,
+    newCardId,
+    isDragging,
+  ]);
+
+  // Set up node callbacks
+  useEffect(() => {
+    setIdeaCardNodeCallbacks({
+      onType: typeCard,
+      onChangeColor: changeColor,
+      onDelete: removeCard,
+      onVote: async (id: string) => {
+        if (!visitorId) return;
+
+        const card = cards.find((c) => c.id === id);
+        if (!card) return;
+
+        if (card.createdById === visitorId) return;
+
+        const hasVoted = card.votedBy?.includes(visitorId) || false;
+        const newVotes = hasVoted ? card.votes - 1 : card.votes + 1;
+        const newVotedBy = hasVoted
+          ? (card.votedBy || []).filter((v) => v !== visitorId)
+          : [...(card.votedBy || []), visitorId];
+
+        voteCard(id, newVotes, newVotedBy);
+        await voteCardAction(id, visitorId);
+      },
+      onReact: async (id: string, emoji: string) => {
+        if (!visitorId) return;
+
+        const card = cards.find((c) => c.id === id);
+        if (!card) return;
+
+        if (card.createdById === visitorId) return;
+
+        const currentReactions = card.reactions || {};
+        const usersForEmoji = currentReactions[emoji] || [];
+        const hasReacted = usersForEmoji.includes(visitorId);
+
+        const newUsersForEmoji = hasReacted
+          ? usersForEmoji.filter((u) => u !== visitorId)
+          : [...usersForEmoji, visitorId];
+
+        const newReactions = { ...currentReactions };
+        if (newUsersForEmoji.length === 0) {
+          delete newReactions[emoji];
+        } else {
+          newReactions[emoji] = newUsersForEmoji;
+        }
+
+        reactCard(id, newReactions);
+        await toggleReaction(id, emoji, visitorId);
+      },
+      onPersistContent: async (id: string, content: string) => {
+        if (!visitorId) return;
+        await updateCard(id, { content }, visitorId);
+      },
+      onPersistColor: async (id: string, color: string) => {
+        if (!visitorId) return;
+        await updateCard(id, { color }, visitorId);
+      },
+      onPersistDelete: async (id: string) => {
+        if (!visitorId) return;
+        await deleteCard(id, visitorId);
+      },
+      onDuplicate: (cardId: string) => {
+        const card = cards.find((c) => c.id === cardId);
+        if (card) {
+          handleDuplicateCard(card);
+        }
+      },
+      onFocused: (id: string) => {
+        if (id === newCardId) {
+          setNewCardId(null);
+        }
+      },
+    });
+  }, [
+    visitorId,
+    cards,
+    typeCard,
+    changeColor,
+    removeCard,
+    voteCard,
+    reactCard,
+    newCardId,
+  ]);
+
+  // Handle node position changes from drag - let React Flow manage positions
+  const handleNodesChange: OnNodesChange<IdeaCardNodeType> = useCallback(
+    (changes: NodeChange<IdeaCardNodeType>[]) => {
+      // Apply changes directly to nodes - don't update cards state during drag
+      // This prevents the flickering caused by state sync fighting with React Flow
+      setNodes((nds) => applyNodeChanges(changes, nds) as IdeaCardNodeType[]);
+    },
+    [],
+  );
+
+  // Handle drag start - prevent cards sync during drag
+  const handleNodeDragStart = useCallback(() => {
+    setIsDragging(true);
+  }, []);
+
+  // Handle drag end - sync to cards state and persist to database
+  const handleNodeDragStop = useCallback(
+    async (_event: React.MouseEvent, _node: Node, draggedNodes: Node[]) => {
+      if (!visitorId) {
+        setIsDragging(false);
+        return;
+      }
+
+      const positions = draggedNodes.map((n) => ({
+        id: n.id,
+        x: n.position.x,
+        y: n.position.y,
+      }));
+
+      // Update cards state + broadcast in ONE operation (no individual moveCard calls)
+      batchMoveCards(positions);
+
+      // Re-enable cards sync AFTER state is updated
+      setIsDragging(false);
+
+      // Persist to database
+      await Promise.all(
+        positions.map((pos) =>
+          updateCard(pos.id, { x: pos.x, y: pos.y }, visitorId),
+        ),
+      );
+    },
+    [visitorId, batchMoveCards],
+  );
+
+  // Handle selection changes
+  const handleSelectionChange: OnSelectionChangeFunc = useCallback(
+    ({ nodes: selectedNodes }: { nodes: Node[] }) => {
+      setSelectedCardIds(new Set(selectedNodes.map((n: Node) => n.id)));
+    },
+    [],
+  );
+
+  // Track viewport changes for zoom display
+  const handleMoveEnd = useCallback(
+    (_event: MouseEvent | TouchEvent | null, viewport: Viewport) => {
+      setZoom(viewport.zoom);
+    },
+    [],
+  );
 
   // Fit all cards in view
   const fitAllCards = useCallback(() => {
     if (cards.length === 0) {
-      resetView();
+      setViewport({ x: 0, y: 0, zoom: 1 });
       return;
     }
 
-    const isMobile = window.innerWidth < 640;
-    const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
-    const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
-
-    const bounds = cards.reduce(
-      (acc, card) => ({
-        minX: Math.min(acc.minX, card.x),
-        minY: Math.min(acc.minY, card.y),
-        maxX: Math.max(acc.maxX, card.x + cardWidth),
-        maxY: Math.max(acc.maxY, card.y + cardHeight),
-      }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-    );
-
-    fitToBounds(bounds);
-  }, [cards, fitToBounds, resetView]);
+    fitView({ padding: 0.2 });
+  }, [cards.length, fitView, setViewport]);
 
   // Initialize view centered on cards on first load
   useEffect(() => {
     if (hasInitializedViewRef.current) return;
+    if (!isReactFlowReady) return; // Wait for React Flow to be ready
+    if (nodes.length === 0) return; // Wait for nodes to be synced
+
     hasInitializedViewRef.current = true;
 
-    if (initialCards.length === 0) {
-      return;
-    }
-
     const isMobile = window.innerWidth < 640;
-    const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
-    const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
-
-    const bounds = initialCards.reduce(
-      (acc, card) => ({
-        minX: Math.min(acc.minX, card.x),
-        minY: Math.min(acc.minY, card.y),
-        maxX: Math.max(acc.maxX, card.x + cardWidth),
-        maxY: Math.max(acc.maxY, card.y + cardHeight),
-      }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-    );
+    const bounds = calculateCardsBounds(cards, isMobile);
+    if (!bounds) return;
 
     // Center on cards at 100% zoom
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
-    centerOn({ x: centerX, y: centerY }, 1);
-  }, [initialCards, centerOn]);
+
+    // Calculate viewport offset to center on cards
+    const viewportCenterX = window.innerWidth / 2;
+    const viewportCenterY = window.innerHeight / 2;
+
+    setViewport({
+      x: viewportCenterX - centerX,
+      y: viewportCenterY - centerY,
+      zoom: 1,
+    });
+  }, [cards, nodes.length, isReactFlowReady, setViewport]);
 
   // Keyboard shortcut for fit all (key "1")
   useEffect(() => {
@@ -409,18 +565,18 @@ export function Board({
       x = -cardWidth / 2;
       y = -cardHeight / 2;
     } else {
-      const screenCenter = {
+      // Get center of current viewport in flow coordinates
+      const flowCenter = screenToFlowPosition({
         x: window.innerWidth / 2,
         y: window.innerHeight / 2,
-      };
-      const worldCenter = screenToWorld(screenCenter);
+      });
       const offsetRange = 100;
       x =
-        worldCenter.x -
+        flowCenter.x -
         cardWidth / 2 +
         (Math.random() * offsetRange * 2 - offsetRange);
       y =
-        worldCenter.y -
+        flowCenter.y -
         cardHeight / 2 +
         (Math.random() * offsetRange * 2 - offsetRange);
     }
@@ -442,7 +598,12 @@ export function Board({
     };
 
     if (isFirstCard) {
-      centerOn({ x: 0, y: 0 }, 1);
+      // Center viewport on the new card
+      setViewport({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+        zoom: 1,
+      });
     }
 
     setNewCardId(cardId);
@@ -453,111 +614,103 @@ export function Board({
     visitorId,
     session,
     playSound,
-    screenToWorld,
+    screenToFlowPosition,
     sessionId,
     getRandomColor,
     addCard,
     cards.length,
-    centerOn,
+    setViewport,
   ]);
 
-  const handlePersistContent = async (id: string, content: string) => {
-    if (!visitorId) return;
-    await updateCard(id, { content }, visitorId);
-  };
+  const handleDuplicateCard = useCallback(
+    async (card: Card) => {
+      if (!username || !visitorId) return;
 
-  const handlePersistMove = async (id: string, x: number, y: number) => {
-    if (!visitorId) return;
-    await updateCard(id, { x, y }, visitorId);
-  };
+      // Check if session allows adding cards
+      if (!canAddCard(session)) return;
 
-  const handleMoveSelectedCards = useCallback(
-    (deltaX: number, deltaY: number) => {
-      // Update position for all selected cards
-      for (const cardId of selectedCardIds) {
-        const card = cards.find((c) => c.id === cardId);
-        if (card) {
-          moveCard(cardId, card.x + deltaX, card.y + deltaY);
+      playSound();
+
+      const isMobile = window.innerWidth < 640;
+      const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
+      const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
+
+      // Try different offsets to find a free position
+      const offsets = [
+        { x: 30, y: 30 },
+        { x: -30, y: 30 },
+        { x: 30, y: -30 },
+        { x: -30, y: -30 },
+        { x: 60, y: 0 },
+        { x: -60, y: 0 },
+        { x: 0, y: 60 },
+        { x: 0, y: -60 },
+      ];
+
+      let x = card.x + 30;
+      let y = card.y + 30;
+
+      // Find a position without collision
+      for (const offset of offsets) {
+        const testX = card.x + offset.x;
+        const testY = card.y + offset.y;
+
+        // Check if any card is too close (simple collision detection)
+        const hasCollision = cards.some((c) => {
+          if (c.id === card.id) return false;
+          const dx = Math.abs(c.x - testX);
+          const dy = Math.abs(c.y - testY);
+          return dx < cardWidth * 0.8 && dy < cardHeight * 0.8;
+        });
+
+        if (!hasCollision) {
+          x = testX;
+          y = testY;
+          break;
         }
       }
+
+      const cardId = generateCardId();
+      const newCard: Card = {
+        id: cardId,
+        sessionId,
+        content: card.content,
+        color: card.color,
+        x,
+        y,
+        votes: 0,
+        votedBy: [],
+        reactions: {},
+        embedding: null,
+        createdById: visitorId,
+        updatedAt: new Date(),
+      };
+
+      setNewCardId(cardId);
+      addCard(newCard);
+
+      try {
+        const result = await createCard(newCard, visitorId);
+        if (result.error) {
+          console.error("Failed to duplicate card:", result.error);
+          removeCard(cardId);
+        }
+      } catch (error) {
+        console.error("Error duplicating card:", error);
+        removeCard(cardId);
+      }
     },
-    [selectedCardIds, cards, moveCard],
+    [
+      username,
+      visitorId,
+      session,
+      playSound,
+      sessionId,
+      addCard,
+      cards,
+      removeCard,
+    ],
   );
-
-  const handlePersistMultiMove = useCallback(async () => {
-    if (!visitorId) return;
-
-    // Get positions of all selected cards
-    const positions = Array.from(selectedCardIds)
-      .map((id) => cards.find((c) => c.id === id))
-      .filter((card): card is Card => card !== undefined)
-      .map((card) => ({ id: card.id, x: card.x, y: card.y }));
-
-    // Persist each card position to database
-    await Promise.all(
-      positions.map((pos) =>
-        updateCard(pos.id, { x: pos.x, y: pos.y }, visitorId),
-      ),
-    );
-
-    // Broadcast cluster update to other users
-    broadcastClusterPositions(positions);
-  }, [selectedCardIds, cards, visitorId, broadcastClusterPositions]);
-
-  const handlePersistColor = async (id: string, color: string) => {
-    if (!visitorId) return;
-    await updateCard(id, { color }, visitorId);
-  };
-
-  const handlePersistDelete = async (id: string) => {
-    if (!visitorId) return;
-    await deleteCard(id, visitorId);
-  };
-
-  const handleVote = async (id: string) => {
-    if (!visitorId) return;
-
-    const card = cards.find((c) => c.id === id);
-    if (!card) return;
-
-    if (card.createdById === visitorId) return;
-
-    const hasVoted = card.votedBy?.includes(visitorId) || false;
-    const newVotes = hasVoted ? card.votes - 1 : card.votes + 1;
-    const newVotedBy = hasVoted
-      ? (card.votedBy || []).filter((v) => v !== visitorId)
-      : [...(card.votedBy || []), visitorId];
-
-    voteCard(id, newVotes, newVotedBy);
-    await voteCardAction(id, visitorId);
-  };
-
-  const handleReact = async (id: string, emoji: string) => {
-    if (!visitorId) return;
-
-    const card = cards.find((c) => c.id === id);
-    if (!card) return;
-
-    if (card.createdById === visitorId) return;
-
-    const currentReactions = card.reactions || {};
-    const usersForEmoji = currentReactions[emoji] || [];
-    const hasReacted = usersForEmoji.includes(visitorId);
-
-    const newUsersForEmoji = hasReacted
-      ? usersForEmoji.filter((u) => u !== visitorId)
-      : [...usersForEmoji, visitorId];
-
-    const newReactions = { ...currentReactions };
-    if (newUsersForEmoji.length === 0) {
-      delete newReactions[emoji];
-    } else {
-      newReactions[emoji] = newUsersForEmoji;
-    }
-
-    reactCard(id, newReactions);
-    await toggleReaction(id, emoji, visitorId);
-  };
 
   const handleShare = async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -732,9 +885,9 @@ export function Board({
     const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
 
     // Position at mouse cursor if available, otherwise at screen center
-    const pastePosition = mousePosition
-      ? screenToWorld(mousePosition)
-      : screenToWorld({
+    const pastePosition = mousePositionRef.current
+      ? screenToFlowPosition(mousePositionRef.current)
+      : screenToFlowPosition({
           x: window.innerWidth / 2,
           y: window.innerHeight / 2,
         });
@@ -778,102 +931,11 @@ export function Board({
     visitorId,
     session,
     playSound,
-    screenToWorld,
+    screenToFlowPosition,
     sessionId,
     addCard,
-    mousePosition,
     removeCard,
   ]);
-
-  const handleDuplicateCard = useCallback(
-    async (card: Card) => {
-      if (!username || !visitorId) return;
-
-      // Check if session allows adding cards
-      if (!canAddCard(session)) return;
-
-      playSound();
-
-      const isMobile = window.innerWidth < 640;
-      const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
-      const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
-
-      // Try different offsets to find a free position
-      const offsets = [
-        { x: 30, y: 30 },
-        { x: -30, y: 30 },
-        { x: 30, y: -30 },
-        { x: -30, y: -30 },
-        { x: 60, y: 0 },
-        { x: -60, y: 0 },
-        { x: 0, y: 60 },
-        { x: 0, y: -60 },
-      ];
-
-      let x = card.x + 30;
-      let y = card.y + 30;
-
-      // Find a position without collision
-      for (const offset of offsets) {
-        const testX = card.x + offset.x;
-        const testY = card.y + offset.y;
-
-        // Check if any card is too close (simple collision detection)
-        const hasCollision = cards.some((c) => {
-          if (c.id === card.id) return false;
-          const dx = Math.abs(c.x - testX);
-          const dy = Math.abs(c.y - testY);
-          return dx < cardWidth * 0.8 && dy < cardHeight * 0.8;
-        });
-
-        if (!hasCollision) {
-          x = testX;
-          y = testY;
-          break;
-        }
-      }
-
-      const cardId = generateCardId();
-      const newCard: Card = {
-        id: cardId,
-        sessionId,
-        content: card.content,
-        color: card.color,
-        x,
-        y,
-        votes: 0,
-        votedBy: [],
-        reactions: {},
-        embedding: null,
-        createdById: visitorId,
-        updatedAt: new Date(),
-      };
-
-      setNewCardId(cardId);
-      addCard(newCard);
-
-      try {
-        const result = await createCard(newCard, visitorId);
-        if (result.error) {
-          console.error("Failed to duplicate card:", result.error);
-          removeCard(cardId);
-        }
-      } catch (error) {
-        console.error("Error duplicating card:", error);
-        removeCard(cardId);
-      }
-    },
-    [
-      username,
-      visitorId,
-      session,
-      playSound,
-      sessionId,
-      addCard,
-      cards,
-      removeCard,
-    ],
-  );
 
   // Keyboard shortcuts for new card (key "N"), copy (Ctrl+C), and paste (Ctrl+V)
   useEffect(() => {
@@ -930,6 +992,20 @@ export function Board({
     copiedCard,
     handlePasteCard,
   ]);
+
+  // Minimap node color function
+  const minimapNodeColor = useCallback((node: Node) => {
+    const data = node.data as { card?: Card };
+    return data.card?.color || "#fef08a";
+  }, []);
+
+  // screenToWorld function for cursor rendering
+  const screenToWorld = useCallback(
+    (screen: { x: number; y: number }) => {
+      return screenToFlowPosition(screen);
+    },
+    [screenToFlowPosition],
+  );
 
   if (!username || isFingerprintLoading || isUsernameLoading || !visitorId) {
     return (
@@ -1273,32 +1349,12 @@ export function Board({
           )}
         >
           <ParticipantsDialog
-            participants={participants}
+            participants={participantsWithCurrentUser}
             currentUserId={visitorId}
             onlineUsers={onlineUsers}
           />
           <AddCardButton onClick={handleAddCard} disabled={isLocked} />
         </div>
-
-        {/* Minimap (Desktop Only) */}
-        {viewportSize.width >= 640 && (
-          <div
-            className={cn(
-              "fixed top-20 right-4 z-50 transition-[right] duration-300",
-              isChatOpen && "right-[396px]",
-            )}
-          >
-            <Minimap
-              cards={cards}
-              pan={pan}
-              zoom={zoom}
-              viewportWidth={viewportSize.width}
-              viewportHeight={viewportSize.height}
-              onNavigate={handleMinimapNavigate}
-              onZoom={handleMinimapZoom}
-            />
-          </div>
-        )}
 
         {/* Fixed UI - Bottom Left: Zoom Controls */}
         <div className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-50">
@@ -1306,7 +1362,7 @@ export function Board({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => zoomTo(zoom / 1.2)}
+              onClick={() => zoomOut()}
               className="h-7 w-7 sm:h-8 sm:w-8"
               title="Zoom out (⌘-)"
             >
@@ -1318,7 +1374,7 @@ export function Board({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => zoomTo(zoom * 1.2)}
+              onClick={() => zoomIn()}
               className="h-7 w-7 sm:h-8 sm:w-8"
               title="Zoom in (⌘+)"
             >
@@ -1337,90 +1393,55 @@ export function Board({
           </div>
         </div>
 
-        {/* Viewport with gesture handlers */}
-        <div
-          ref={canvasRef}
-          role="application"
-          aria-label="Idea board canvas - use mouse wheel to pan, Shift+scroll to pan horizontally, Ctrl+scroll to zoom, hold Space+drag to pan"
-          className="relative w-full h-screen overflow-hidden"
-          style={{
-            cursor: isPanning
-              ? "grabbing"
-              : isSpacePressed
-                ? "grab"
-                : "default",
-          }}
-          onMouseDown={(e) => {
-            // Start potential marquee selection if clicking on empty canvas
-            const target = e.target as HTMLElement;
-            if (
-              !target.closest("[data-card]") &&
-              !target.closest("button") &&
-              !isSpacePressed &&
-              e.button === 0
-            ) {
-              startSelection(e.clientX, e.clientY);
-            }
-            canvasHandlers.onMouseDown(e);
-          }}
-          onTouchStart={canvasHandlers.onTouchStart}
-          onTouchMove={canvasHandlers.onTouchMove}
-          onTouchEnd={canvasHandlers.onTouchEnd}
+        {/* React Flow Canvas */}
+        <ReactFlow
+          nodes={nodes}
+          nodeTypes={nodeTypes}
+          onNodesChange={handleNodesChange}
+          onNodeDragStart={handleNodeDragStart}
+          onNodeDragStop={handleNodeDragStop}
+          onSelectionChange={handleSelectionChange}
+          onMoveEnd={handleMoveEnd}
+          onInit={() => setIsReactFlowReady(true)}
+          panOnScroll
+          selectionOnDrag={!isMobile}
+          panOnDrag={isMobile ? true : [1, 2]}
+          selectionMode={SelectionMode.Partial}
+          selectNodesOnDrag={!isMobile}
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
+          defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+          fitViewOptions={{ padding: 0.2 }}
+          className="bg-background"
+          proOptions={{ hideAttribution: true }}
         >
-          {/* Transformable canvas */}
-          <div
-            className="absolute origin-top-left transition-transform duration-300 ease-out"
-            style={{
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            }}
-          >
-            {/* Cards */}
-            {cards.map((card) => (
-              <IdeaCard
-                key={card.id}
-                card={card}
-                session={session}
-                userRole={userRole}
-                creatorName={getUsernameForId(card.createdById)}
-                visitorId={visitorId}
-                autoFocus={card.id === newCardId}
-                onFocused={() => setNewCardId(null)}
-                isSelected={selectedCardIds.has(card.id)}
-                onSelect={() => setSelectedCardIds(new Set([card.id]))}
-                onDuplicate={handleDuplicateCard}
-                onMove={moveCard}
-                onType={typeCard}
-                onChangeColor={changeColor}
-                onDelete={removeCard}
-                onVote={handleVote}
-                onReact={handleReact}
-                onPersistContent={handlePersistContent}
-                onPersistMove={handlePersistMove}
-                onPersistColor={handlePersistColor}
-                onPersistDelete={handlePersistDelete}
-                screenToWorld={screenToWorld}
-                zoom={zoom}
-                isSpacePressed={isSpacePressed}
-                selectedCardIds={selectedCardIds}
-                onMoveSelectedCards={handleMoveSelectedCards}
-                onPersistMultiMove={handlePersistMultiMove}
-              />
-            ))}
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={1}
+            color="hsl(var(--muted-foreground) / 0.2)"
+          />
 
-            {/* Marquee selection rectangle */}
-            {isSelecting && selectionRect && (
-              <div
-                className="absolute border-2 border-dashed border-primary bg-primary/10 pointer-events-none z-50"
-                style={{
-                  left: selectionRect.x,
-                  top: selectionRect.y,
-                  width: selectionRect.width,
-                  height: selectionRect.height,
-                }}
-              />
-            )}
+          {/* Minimap (Desktop Only) */}
+          {viewportSize.width >= 640 && (
+            <MiniMap
+              nodeColor={minimapNodeColor}
+              nodeStrokeWidth={3}
+              pannable
+              zoomable
+              className={cn(
+                "!absolute !top-20 !right-4 !bottom-auto !left-auto transition-[right] duration-300 !bg-card/80 backdrop-blur-sm !border !border-border !rounded-lg",
+                isChatOpen && "!right-[396px]",
+              )}
+              style={{
+                width: 160,
+                height: 120,
+              }}
+            />
+          )}
 
-            {/* Cursors - rendered in world space */}
+          {/* Cursors - rendered in world space */}
+          <div className="react-flow__panel">
             <RealtimeCursors
               roomName={`session:${sessionId}`}
               username={username}
@@ -1430,7 +1451,7 @@ export function Board({
 
           {/* Empty state - stays centered in viewport */}
           {cards.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
               <div className="text-center">
                 <div className="w-16 h-16 mx-auto mb-4 opacity-20">
                   <img
@@ -1467,11 +1488,19 @@ export function Board({
               </div>
             </div>
           )}
-        </div>
+        </ReactFlow>
       </div>
 
       {/* AI Chat Panel - pushes content when open */}
       <ChatPanel sessionId={sessionId} userId={visitorId} />
     </div>
+  );
+}
+
+export function ReactFlowBoard(props: ReactFlowBoardProps) {
+  return (
+    <ReactFlowProvider>
+      <ReactFlowBoardInner {...props} />
+    </ReactFlowProvider>
   );
 }

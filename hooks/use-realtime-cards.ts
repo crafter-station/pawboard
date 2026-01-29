@@ -269,6 +269,22 @@ export function useRealtimeCards(
     [broadcast],
   );
 
+  // Batch move cards - updates local state and broadcasts in one operation
+  const batchMoveCards = useCallback(
+    (positions: Array<{ id: string; x: number; y: number }>) => {
+      // Update local state in one batch
+      applyClusterPositions(positions);
+
+      // Broadcast once (cluster for multi, single for one)
+      if (positions.length > 1) {
+        broadcastClusterPositions(positions);
+      } else if (positions.length === 1) {
+        broadcast({ type: "card:move", ...positions[0] });
+      }
+    },
+    [applyClusterPositions, broadcastClusterPositions, broadcast],
+  );
+
   useEffect(() => {
     if (!userId) return;
 
@@ -445,5 +461,6 @@ export function useRealtimeCards(
     broadcastSessionSettings,
     applyClusterPositions,
     broadcastClusterPositions,
+    batchMoveCards,
   };
 }
