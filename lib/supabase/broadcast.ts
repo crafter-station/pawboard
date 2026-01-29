@@ -1,16 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Card } from "@/db/schema";
-import { getClientEnv } from "@/lib/env";
+import { env } from "@/lib/env";
 
 // Use a dedicated client for server-side broadcasts
-const {
-  NEXT_PUBLIC_SUPABASE_URL,
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY,
-} = getClientEnv();
-
 const supabase = createClient(
-  NEXT_PUBLIC_SUPABASE_URL,
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY,
+  env.NEXT_PUBLIC_SUPABASE_URL,
+  env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY,
 );
 
 // AI broadcasts use a special userId so all clients (including the requester) process the event
