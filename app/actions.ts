@@ -4,17 +4,19 @@ import { and, eq, inArray } from "drizzle-orm";
 import { headers } from "next/headers";
 import { after } from "next/server";
 import { db } from "@/db";
-import type {
-  Card,
-  DeletePermission,
-  MovePermission,
-  NewCard,
-  Session,
-  SessionRole,
-  TiptapContent,
-  User,
+import {
+  type Card,
+  cards,
+  type DeletePermission,
+  type MovePermission,
+  type NewCard,
+  type Session,
+  type SessionRole,
+  sessionParticipants,
+  sessions,
+  type User,
+  users,
 } from "@/db/schema";
-import { cards, sessionParticipants, sessions, users } from "@/db/schema";
 import { generateSessionName, generateUsername } from "@/lib/names";
 import {
   canAddCard,
@@ -31,22 +33,22 @@ import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
 async function updateActivityTimestamps(sessionId: string, userId: string) {
   const now = new Date();
   try {
-    // Update session lastActivityAt
-    await db
-      .update(sessions)
-      .set({ lastActivityAt: now })
-      .where(eq(sessions.id, sessionId));
-
-    // Update user's lastActiveAt in this session
-    await db
-      .update(sessionParticipants)
-      .set({ lastActiveAt: now })
-      .where(
-        and(
-          eq(sessionParticipants.sessionId, sessionId),
-          eq(sessionParticipants.userId, userId),
+    // Run both updates in parallel (no dependency between them)
+    await Promise.all([
+      db
+        .update(sessions)
+        .set({ lastActivityAt: now })
+        .where(eq(sessions.id, sessionId)),
+      db
+        .update(sessionParticipants)
+        .set({ lastActiveAt: now })
+        .where(
+          and(
+            eq(sessionParticipants.sessionId, sessionId),
+            eq(sessionParticipants.userId, userId),
+          ),
         ),
-      );
+    ]);
   } catch (error) {
     console.error("Error updating activity timestamps:", error);
     // Don't throw - this shouldn't break the main operation
@@ -100,7 +102,8 @@ function validateSessionName(name: string): {
   }
 
   // Basic sanitization - no special control characters (ASCII 0-31 and 127)
-  const controlCharsRegex = new RegExp("[\\x00-\\x1F\\x7F]");
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: needed for sanitization
+  const controlCharsRegex = /[\x00-\x1F\x7F]/;
   if (controlCharsRegex.test(trimmed)) {
     return { valid: false, error: "Session name contains invalid characters" };
   }
@@ -333,7 +336,8 @@ function validateUsername(username: string): {
   }
 
   // Basic sanitization - no special control characters (ASCII 0-31 and 127)
-  const controlCharsRegex = new RegExp("[\\x00-\\x1F\\x7F]");
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: needed for sanitization
+  const controlCharsRegex = /[\x00-\x1F\x7F]/;
   if (controlCharsRegex.test(trimmed)) {
     return { valid: false, error: "Name contains invalid characters" };
   }
@@ -418,44 +422,41 @@ export async function getUserSessions(userId: string): Promise<{
   error: string | null;
 }> {
   try {
-    // Get all sessions where user is a participant
+    // Get all sessions where user is a participant with session data
     const participations = await db.query.sessionParticipants.findMany({
       where: eq(sessionParticipants.userId, userId),
       with: {
-        session: true,
+        session: {
+          with: {
+            participants: {
+              where: eq(sessionParticipants.role, "creator"),
+              with: {
+                user: true,
+              },
+            },
+            cards: {
+              columns: {
+                id: true,
+              },
+            },
+          },
+        },
       },
     });
 
-    // For each session, get the creator name and card count
-    const sessionsData = await Promise.all(
-      participations.map(async (participation) => {
-        // Get the creator of this session
-        const creator = await db.query.sessionParticipants.findFirst({
-          where: and(
-            eq(sessionParticipants.sessionId, participation.sessionId),
-            eq(sessionParticipants.role, "creator"),
-          ),
-          with: {
-            user: true,
-          },
-        });
-
-        // Get card count for this session
-        const sessionCards = await db.query.cards.findMany({
-          where: eq(cards.sessionId, participation.sessionId),
-        });
-
-        return {
-          id: participation.session.id,
-          name: participation.session.name,
-          role: participation.role as SessionRole,
-          creatorName: creator?.user.username ?? "Unknown",
-          lastActivityAt: participation.session.lastActivityAt,
-          lastActiveAt: participation.lastActiveAt,
-          cardCount: sessionCards.length,
-        };
-      }),
-    );
+    // Transform the data - no additional queries needed
+    const sessionsData = participations.map((participation) => {
+      const creator = participation.session.participants[0];
+      return {
+        id: participation.session.id,
+        name: participation.session.name,
+        role: participation.role as SessionRole,
+        creatorName: creator?.user.username ?? "Unknown",
+        lastActivityAt: participation.session.lastActivityAt,
+        lastActiveAt: participation.lastActiveAt,
+        cardCount: participation.session.cards.length,
+      };
+    });
 
     // Sort by lastActiveAt (most recent first)
     sessionsData.sort(
@@ -473,34 +474,41 @@ export async function getSessionParticipants(
   sessionId: string,
 ): Promise<{ visitorId: string; username: string }[]> {
   try {
-    // Get participants who explicitly joined the session
-    const participants = await db.query.sessionParticipants.findMany({
-      where: eq(sessionParticipants.sessionId, sessionId),
-      with: {
-        user: true,
-      },
-    });
+    // Get participants and card creators in parallel
+    const [participants, cardCreators] = await Promise.all([
+      // Get participants who explicitly joined the session
+      db.query.sessionParticipants.findMany({
+        where: eq(sessionParticipants.sessionId, sessionId),
+        with: {
+          user: true,
+        },
+      }),
+      // Get distinct card creators for this session
+      db
+        .selectDistinct({
+          createdById: cards.createdById,
+        })
+        .from(cards)
+        .where(eq(cards.sessionId, sessionId)),
+    ]);
 
-    // Get all card creators for this session (they may not be in session_participants)
-    const sessionCards = await db.query.cards.findMany({
-      where: eq(cards.sessionId, sessionId),
-      with: {
-        creator: true,
-      },
-    });
-
-    // Combine both into a map to deduplicate
+    // Build map from participants
     const userMap = new Map<string, string>();
-
-    // Add participants
     for (const p of participants) {
       userMap.set(p.userId, p.user.username);
     }
 
-    // Add card creators
-    for (const card of sessionCards) {
-      if (card.creator && !userMap.has(card.createdById)) {
-        userMap.set(card.createdById, card.creator.username);
+    // Get any card creators not already in the map
+    const missingCreatorIds = cardCreators
+      .map((c) => c.createdById)
+      .filter((id) => !userMap.has(id));
+
+    if (missingCreatorIds.length > 0) {
+      const missingUsers = await db.query.users.findMany({
+        where: inArray(users.id, missingCreatorIds),
+      });
+      for (const user of missingUsers) {
+        userMap.set(user.id, user.username);
       }
     }
 
@@ -563,18 +571,19 @@ export async function updateCard(
   userId: string,
 ): Promise<{ card: Card | null; error: string | null }> {
   try {
-    // Get the card and its session
+    // Get the card with its session in one query (avoid waterfall)
     const existingCard = await db.query.cards.findFirst({
       where: eq(cards.id, id),
+      with: {
+        session: true,
+      },
     });
 
     if (!existingCard) {
       return { card: null, error: "Card not found" };
     }
 
-    const session = await db.query.sessions.findFirst({
-      where: eq(sessions.id, existingCard.sessionId),
-    });
+    const session = existingCard.session;
 
     if (!session) {
       return { card: null, error: "Session not found" };
@@ -679,18 +688,19 @@ export async function resizeCard(
   userId: string,
 ): Promise<{ card: Card | null; error: string | null }> {
   try {
-    // Get the card
+    // Get the card with its session in one query (avoid waterfall)
     const existingCard = await db.query.cards.findFirst({
       where: eq(cards.id, id),
+      with: {
+        session: true,
+      },
     });
 
     if (!existingCard) {
       return { card: null, error: "Card not found" };
     }
 
-    const session = await db.query.sessions.findFirst({
-      where: eq(sessions.id, existingCard.sessionId),
-    });
+    const session = existingCard.session;
 
     if (!session) {
       return { card: null, error: "Session not found" };
@@ -738,18 +748,19 @@ export async function voteCard(
   error: string | null;
 }> {
   try {
+    // Get card with session in one query (avoid waterfall)
     const existing = await db.query.cards.findFirst({
       where: eq(cards.id, id),
+      with: {
+        session: true,
+      },
     });
 
     if (!existing) {
       return { card: null, action: "denied", error: "Card not found" };
     }
 
-    // Get session to check if locked
-    const session = await db.query.sessions.findFirst({
-      where: eq(sessions.id, existing.sessionId),
-    });
+    const session = existing.session;
 
     if (!session) {
       return { card: null, action: "denied", error: "Session not found" };
@@ -806,17 +817,17 @@ export async function toggleReaction(
   error: string | null;
 }> {
   try {
+    // Fetch card with session in single query to avoid waterfall
     const existing = await db.query.cards.findFirst({
       where: eq(cards.id, cardId),
+      with: { session: true },
     });
 
     if (!existing) {
       return { card: null, action: "denied", error: "Card not found" };
     }
 
-    const session = await db.query.sessions.findFirst({
-      where: eq(sessions.id, existing.sessionId),
-    });
+    const { session } = existing;
 
     if (!session) {
       return { card: null, action: "denied", error: "Session not found" };
@@ -872,18 +883,17 @@ export async function deleteCard(
   visitorId: string,
 ): Promise<{ success: boolean; error: string | null }> {
   try {
+    // Fetch card with session in single query to avoid waterfall
     const existing = await db.query.cards.findFirst({
       where: eq(cards.id, id),
+      with: { session: true },
     });
 
     if (!existing) {
       return { success: false, error: "Card not found" };
     }
 
-    // Get session to check permissions
-    const session = await db.query.sessions.findFirst({
-      where: eq(sessions.id, existing.sessionId),
-    });
+    const { session } = existing;
 
     if (!session) {
       return { success: false, error: "Session not found" };
@@ -991,7 +1001,6 @@ export async function deleteEmptyCards(
 
 // Clustering Actions
 
-import { isNotNull } from "drizzle-orm";
 import { type CardPosition, clusterAndPosition } from "@/lib/clustering";
 
 export async function clusterCards(
