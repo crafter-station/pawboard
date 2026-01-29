@@ -76,6 +76,7 @@
     "tokenlens": "^1.3.1",
     "use-stick-to-bottom": "^1.1.1",
     "vaul": "^1.1.2",
+    "zod": "^4.3.6",
     "zustand": "^5.0.9"
   },
   "devDependencies": {

@@ -142,14 +142,14 @@ export function SessionSettingsDialog({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <label className="text-sm font-medium flex items-center gap-2">
+                <span className="text-sm font-medium flex items-center gap-2">
                   {isLocked ? (
                     <Lock className="h-4 w-4 text-destructive" />
                   ) : (
                     <Unlock className="h-4 w-4 text-green-600" />
                   )}
                   Session Lock
-                </label>
+                </span>
                 <p className="text-xs text-muted-foreground">
                   {isLocked
                     ? "Session is frozen. No one can add, edit, move, or vote on cards."
@@ -169,10 +169,10 @@ export function SessionSettingsDialog({
 
           {/* Move Permission */}
           <div className="space-y-2">
-            <label className="text-sm font-medium flex items-center gap-2">
+            <span className="text-sm font-medium flex items-center gap-2">
               <Move className="h-4 w-4" />
               Who can move cards?
-            </label>
+            </span>
             <div className="flex gap-2">
               <Button
                 variant={movePermission === "creator" ? "default" : "outline"}
@@ -197,10 +197,10 @@ export function SessionSettingsDialog({
 
           {/* Delete Permission */}
           <div className="space-y-2">
-            <label className="text-sm font-medium flex items-center gap-2">
+            <span className="text-sm font-medium flex items-center gap-2">
               <Trash className="h-4 w-4" />
               Who can delete cards?
-            </label>
+            </span>
             <p className="text-xs text-muted-foreground">
               You can always delete any card as the session creator.
             </p>
@@ -230,10 +230,10 @@ export function SessionSettingsDialog({
 
           {/* Danger Zone - Delete Session */}
           <div className="border-t pt-4 space-y-2">
-            <label className="text-sm font-medium text-destructive flex items-center gap-2">
+            <span className="text-sm font-medium text-destructive flex items-center gap-2">
               <Trash2 className="h-4 w-4" />
               Danger Zone
-            </label>
+            </span>
             {!showDeleteConfirm ? (
               <Button
                 variant="outline"

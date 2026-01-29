@@ -37,6 +37,7 @@ export function VoiceVisualizer({
           <div className="flex items-center gap-1 sm:gap-1.5 h-12 sm:h-20">
             {audioLevels.map((level, i) => (
               <motion.div
+                // biome-ignore lint/suspicious/noArrayIndexKey: Fixed-position audio bars, index is stable
                 key={i}
                 animate={{
                   height: Math.max(4, level * 80),

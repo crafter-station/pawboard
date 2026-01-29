@@ -88,7 +88,6 @@ export function updateNodeData(
   visitorId: string,
   getCreatorName: (userId: string) => string,
 ): IdeaCardNode[] {
-  const cardMap = new Map(cards.map((c) => [c.id, c]));
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
   // Update existing nodes and add new ones

@@ -1,6 +1,7 @@
 "use client";
 
 import { Users } from "lucide-react";
+import Image from "next/image";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -86,9 +87,11 @@ export function ParticipantsDialog({
                       }`}
                     >
                       <div className="relative">
-                        <img
+                        <Image
                           src={avatar}
                           alt=""
+                          width={32}
+                          height={32}
                           className="w-8 h-8"
                           draggable={false}
                         />

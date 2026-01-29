@@ -30,7 +30,7 @@ const cursorImages = [
   "/paw-cursor-purple.png",
 ];
 
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 
 interface CatConfig {
   id: string;
@@ -48,8 +48,15 @@ const getResponsivePositions = () => {
   const isMobile = vw < 640;
   const catSize = isMobile ? 70 : 160;
 
-  let positions;
-  let startPositions;
+  type CatPositions = {
+    blue: { x: number; y: number };
+    purple: { x: number; y: number };
+    yellow: { x: number; y: number };
+    green: { x: number; y: number };
+  };
+
+  let positions: CatPositions;
+  let startPositions: CatPositions;
 
   if (isMobile) {
     // Position cats in corners on mobile to avoid hero overlap
@@ -358,6 +365,8 @@ export default function Home() {
 
       <div
         ref={catBlueRef}
+        role="img"
+        aria-label="Draggable blue cat decoration"
         onMouseDown={(e) => handleMouseDown(e, "blue")}
         className={`fixed z-[60] select-none ${
           animationPhase === "complete"
@@ -380,6 +389,8 @@ export default function Home() {
       </div>
       <div
         ref={catPurpleRef}
+        role="img"
+        aria-label="Draggable purple cat decoration"
         onMouseDown={(e) => handleMouseDown(e, "purple")}
         className={`fixed z-[60] select-none ${
           animationPhase === "complete"
@@ -402,6 +413,8 @@ export default function Home() {
       </div>
       <div
         ref={catYellowRef}
+        role="img"
+        aria-label="Draggable yellow cat decoration"
         onMouseDown={(e) => handleMouseDown(e, "yellow")}
         className={`fixed z-[60] select-none ${
           animationPhase === "complete"
@@ -424,6 +437,8 @@ export default function Home() {
       </div>
       <div
         ref={catGreenRef}
+        role="img"
+        aria-label="Draggable green cat decoration"
         onMouseDown={(e) => handleMouseDown(e, "green")}
         className={`fixed z-[60] select-none ${
           animationPhase === "complete"

@@ -3,6 +3,7 @@ import { generateText, tool } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
+import type { Card } from "@/db/schema";
 import { cards } from "@/db/schema";
 import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
 import type { ToolParams } from "./index";
@@ -25,7 +26,7 @@ export const summarizeCardsTool = ({ sessionId }: ToolParams) =>
     inputSchema,
     execute: async ({ cardIds }) => {
       try {
-        let cardsToSummarize;
+        let cardsToSummarize: Card[];
 
         if (cardIds && cardIds.length > 0) {
           cardsToSummarize = await db.query.cards.findMany({

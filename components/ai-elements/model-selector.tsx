@@ -170,6 +170,7 @@ export const ModelSelectorLogo = ({
   className,
   ...props
 }: ModelSelectorLogoProps) => (
+  // biome-ignore lint/performance/noImgElement: External CDN URLs cannot be optimized by Next.js Image
   <img
     {...props}
     alt={`${provider} logo`}

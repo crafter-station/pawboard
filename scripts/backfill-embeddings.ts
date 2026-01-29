@@ -15,7 +15,7 @@
  * 3. Updates the cards in the database
  */
 
-import { and, eq, isNull } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { cards } from "@/db/schema";
 import { generateEmbeddings } from "@/lib/embeddings";

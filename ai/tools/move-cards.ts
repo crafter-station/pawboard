@@ -60,7 +60,6 @@ function calculatePositions(
       });
     }
 
-    case "grid":
     default: {
       const cols = Math.ceil(Math.sqrt(count));
       return cardList.map((card, i) => {
