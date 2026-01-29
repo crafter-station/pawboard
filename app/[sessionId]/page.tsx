@@ -4,7 +4,7 @@ import {
   getSessionCards,
   getSessionParticipants,
 } from "@/app/actions";
-import { Board } from "@/components/board";
+import { ReactFlowBoard as Board } from "@/components/react-flow-board";
 
 interface Props {
   params: Promise<{ sessionId: string }>;

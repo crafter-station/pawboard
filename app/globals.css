@@ -219,3 +219,51 @@
     animation: none !important;
   }
 }
+
+/* React Flow customizations */
+.react-flow__node-ideaCard {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.react-flow__node-ideaCard.selected {
+  /* Selection ring is handled by the IdeaCard component itself */
+}
+
+/* Smooth position transitions for realtime updates */
+.react-flow__node {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Disable transition during drag for immediate feedback */
+.react-flow__node.dragging {
+  transition: none;
+}
+
+/* Hide default selection box styling */
+.react-flow__nodesselection-rect {
+  background: hsl(var(--primary) / 0.1);
+  border: 2px dashed hsl(var(--primary));
+}
+
+/* Minimap styling */
+.react-flow__minimap {
+  background: hsl(var(--card) / 0.8);
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+
+.react-flow__minimap-mask {
+  fill: hsl(var(--muted-foreground) / 0.1);
+}
+
+/* Controls styling */
+.react-flow__controls {
+  display: none; /* We use custom zoom controls */
+}
+
+/* Background dots */
+.react-flow__background {
+  background-color: hsl(var(--background));
+}
