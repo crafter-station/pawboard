@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { useTheme } from "next-themes";
 import NumberFlow from "@number-flow/react";
 import {
   Check,
@@ -16,10 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import Image from "next/image";
-import { useTheme } from "next-themes";
-import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
+
 import {
   Popover,
   PopoverContent,
@@ -32,7 +33,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { Card, Session, SessionRole } from "@/db/schema";
+import { VoiceTrigger, VoiceVisualizer } from "@/components/voice-recorder";
+
+import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
+
 import {
   DARK_COLORS,
   getDisplayColor as getDisplayColorUtil,
@@ -48,6 +52,8 @@ import {
   canVote,
 } from "@/lib/permissions";
 import { getAvatarForUser } from "@/lib/utils";
+
+import type { Card, Session, SessionRole } from "@/db/schema";
 
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
 
@@ -130,6 +136,21 @@ export function IdeaCard({
   const hasDraggedRef = useRef(false);
   const lastWorldPosRef = useRef<{ x: number; y: number } | null>(null);
 
+  /* Voice Recorder Hook */
+  const {
+    isRecording: isRecordingVoice,
+    isTranscribing: isTranscribingVoice,
+    audioLevels,
+    startRecording,
+    stopRecording
+  } = useVoiceRecorder({
+    onTranscription: (text) => {
+      const newContent = card.content ? `${card.content} ${text}` : text;
+      onType(card.id, newContent);
+      onPersistContent(card.id, newContent);
+    }
+  });
+
   // Permission checks
   const isOwnCard = card.createdById === visitorId;
   const hasVoted = card.votedBy?.includes(visitorId) || false;
@@ -148,10 +169,14 @@ export function IdeaCard({
 
   useEffect(() => {
     setMounted(true);
-    setIsMobile(window.innerWidth < 640);
-    const handleResize = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    const checkMobile = () => {
+      const isMobileSize = window.innerWidth < 1024;
+      const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+      setIsMobile(isMobileSize || isTouch);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
   useEffect(() => {
@@ -349,6 +374,12 @@ export function IdeaCard({
     onPersistMultiMove,
   ]);
 
+  const handleTranscription = (text: string) => {
+    const newContent = card.content ? `${card.content} ${text}` : text;
+    onType(card.id, newContent);
+    onPersistContent(card.id, newContent);
+  };
+
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onType(card.id, e.target.value);
   };
@@ -477,9 +508,8 @@ export function IdeaCard({
     <motion.div
       ref={cardRef}
       data-card
-      className={`absolute group touch-none select-none transition-[width] duration-200 ${
-        isExpanded ? "w-72 sm:w-96" : "w-40 sm:w-56"
-      }`}
+      className={`absolute group touch-none select-none transition-[width] duration-200 ${isExpanded ? "w-72 sm:w-96" : "w-40 sm:w-56"
+        }`}
       initial={{ x: card.x, y: card.y }}
       animate={{ x: card.x, y: card.y }}
       transition={{
@@ -496,9 +526,8 @@ export function IdeaCard({
       onTouchStart={handleTouchStart}
     >
       <div
-        className={`rounded-lg shadow-lg transition-shadow hover:shadow-xl relative overflow-hidden ${
-          isSelected ? "ring-2 ring-offset-2 ring-primary" : ""
-        }`}
+        className={`rounded-lg shadow-lg transition-shadow hover:shadow-xl relative overflow-hidden ${isSelected ? "ring-2 ring-offset-2 ring-primary" : ""
+          }`}
         style={{ backgroundColor: displayColor }}
       >
         {/* Cat silhouette background based on card creator's avatar */}
@@ -518,9 +547,8 @@ export function IdeaCard({
           }}
         >
           <GripVertical
-            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${
-              isPurpleDark ? "opacity-70" : isDark ? "opacity-50" : "opacity-40"
-            }`}
+            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${isPurpleDark ? "opacity-70" : isDark ? "opacity-50" : "opacity-40"
+              }`}
           />
           <TooltipProvider delayDuration={400}>
             <div
@@ -535,13 +563,11 @@ export function IdeaCard({
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 ${
-                            isDark ? "border-white/30" : "border-black/20"
-                          } ${
-                            isMobile
+                          className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 ${isDark ? "border-white/30" : "border-black/20"
+                            } ${isMobile
                               ? "opacity-100"
                               : "opacity-0 group-hover:opacity-100"
-                          } transition-all cursor-pointer hover:scale-110 hover:border-black/40`}
+                            } transition-all cursor-pointer hover:scale-110 hover:border-black/40`}
                           style={{ backgroundColor: displayColor }}
                         />
                       </PopoverTrigger>
@@ -582,11 +608,10 @@ export function IdeaCard({
                       onClick={handleUndo}
                       whileTap={{ scale: 0.9 }}
                       whileHover={{ scale: 1.1 }}
-                      className={`p-1 sm:p-1.5 rounded-md ${
-                        isMobile
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
-                      } ${hoverBgClass} transition-all cursor-pointer`}
+                      className={`p-1 sm:p-1.5 rounded-md ${isMobile
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100"
+                        } ${hoverBgClass} transition-all cursor-pointer`}
                     >
                       <Undo2
                         className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} group-hover:${iconActiveClass}`}
@@ -605,11 +630,10 @@ export function IdeaCard({
                       disabled={isRefining}
                       whileTap={{ scale: 0.9 }}
                       whileHover={{ scale: 1.1 }}
-                      className={`p-1 sm:p-1.5 rounded-md ${
-                        isMobile
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
-                      } ${hoverBgClass} transition-all cursor-pointer disabled:cursor-wait`}
+                      className={`p-1 sm:p-1.5 rounded-md ${isMobile
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100"
+                        } ${hoverBgClass} transition-all cursor-pointer disabled:cursor-wait`}
                     >
                       {isRefining ? (
                         <Loader2
@@ -632,11 +656,10 @@ export function IdeaCard({
                     onClick={() => setIsExpanded(!isExpanded)}
                     whileTap={{ scale: 0.9 }}
                     whileHover={{ scale: 1.1 }}
-                    className={`p-1 sm:p-1.5 rounded-md ${
-                      isMobile
-                        ? "opacity-100"
-                        : "opacity-0 group-hover:opacity-100"
-                    } ${hoverBgClass} transition-all cursor-pointer`}
+                    className={`p-1 sm:p-1.5 rounded-md ${isMobile
+                      ? "opacity-100"
+                      : "opacity-0 group-hover:opacity-100"
+                      } ${hoverBgClass} transition-all cursor-pointer`}
                   >
                     {isExpanded ? (
                       <Minimize2
@@ -661,11 +684,10 @@ export function IdeaCard({
                       onClick={handleDuplicate}
                       whileTap={{ scale: 0.9 }}
                       whileHover={{ scale: 1.1 }}
-                      className={`p-1 sm:p-1.5 rounded-md ${
-                        isMobile
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
-                      } ${hoverBgClass} transition-all cursor-pointer`}
+                      className={`p-1 sm:p-1.5 rounded-md ${isMobile
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100"
+                        } ${hoverBgClass} transition-all cursor-pointer`}
                     >
                       <CopyPlus
                         className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
@@ -683,11 +705,10 @@ export function IdeaCard({
                       onClick={handleDelete}
                       whileTap={{ scale: 0.9 }}
                       whileHover={{ scale: 1.1 }}
-                      className={`p-1 sm:p-1.5 rounded-md ${
-                        isMobile
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
-                      } ${hoverBgClass} transition-all cursor-pointer`}
+                      className={`p-1 sm:p-1.5 rounded-md ${isMobile
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100"
+                        } ${hoverBgClass} transition-all cursor-pointer`}
                     >
                       <X className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`} />
                     </motion.button>
@@ -699,7 +720,7 @@ export function IdeaCard({
           </TooltipProvider>
         </div>
         <div
-          className="p-2.5 sm:p-3.5 relative transition-all duration-200"
+          className="p-2.5 sm:p-3.5 relative min-h-[inherit] flex flex-col antialiased transition-[box-shadow] duration-200"
           style={
             isEditing
               ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" }
@@ -709,37 +730,34 @@ export function IdeaCard({
           onTouchStart={(e) => e.stopPropagation()}
         >
           {isEditing ? (
-            <Textarea
-              autoFocus
-              value={card.content}
-              onChange={handleContentChange}
-              onBlur={handleContentBlur}
-              onKeyDown={handleContentKeyDown}
-              className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none ${
-                isExpanded
+            <div className="relative group/edit h-full min-h-[inherit]">
+              <Textarea
+                autoFocus
+                value={card.content}
+                onChange={handleContentChange}
+                onBlur={handleContentBlur}
+                onKeyDown={handleContentKeyDown}
+                className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none ${isExpanded
                   ? "text-[13px] sm:text-[15px]"
                   : "text-[11px] sm:text-[13px]"
-              } ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-all duration-200 w-full h-full ${
-                isExpanded
-                  ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
-                  : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
-              }`}
-              placeholder="Type your idea..."
-            />
+                  } ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-[min-height,max-height] duration-200 w-full h-full ${isExpanded
+                    ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
+                    : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
+                  }`}
+                placeholder="Type your idea..."
+              />
+            </div>
           ) : (
             <div
               onClick={() => allowEdit && setIsEditing(true)}
-              className={`overflow-y-auto leading-relaxed ${
-                isExpanded
-                  ? "text-[13px] sm:text-[15px]"
-                  : "text-[11px] sm:text-[13px]"
-              } ${textColorClass} ${
-                allowEdit ? "cursor-text" : "cursor-default"
-              } transition-all duration-200 ${
-                isExpanded
+              className={`overflow-y-auto leading-relaxed ${isExpanded
+                ? "text-[13px] sm:text-[15px]"
+                : "text-[11px] sm:text-[13px]"
+                } ${textColorClass} ${allowEdit ? "cursor-text" : "cursor-default"
+                } transition-[min-height,max-height] duration-200 ${isExpanded
                   ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
                   : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
-              }`}
+                }`}
             >
               {card.content ? (
                 <Markdown
@@ -805,6 +823,14 @@ export function IdeaCard({
               )}
             </div>
           )}
+          {/* Centered Voice Visualizer - Outside of Footer Transform Context */}
+          <VoiceVisualizer
+            isRecording={isRecordingVoice}
+            audioLevels={audioLevels}
+            isDark={isPurpleDark || isDark}
+            containerClassName="absolute inset-0"
+          />
+
           {card.content && !isEditing && (
             <TooltipProvider delayDuration={400}>
               <Tooltip>
@@ -815,11 +841,10 @@ export function IdeaCard({
                     initial={{ opacity: 0 }}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    className={`absolute bottom-2 right-2 p-1.5 rounded-md ${
-                      isMobile
-                        ? "opacity-70"
-                        : "opacity-0 group-hover:opacity-70"
-                    } hover:opacity-100 ${hoverBgClass} transition-all cursor-pointer`}
+                    className={`absolute bottom-2 right-2 p-1.5 rounded-md ${isMobile
+                      ? "opacity-70"
+                      : "opacity-0 group-hover:opacity-70"
+                      } hover:opacity-100 ${hoverBgClass} transition-all cursor-pointer`}
                   >
                     <AnimatePresence mode="wait">
                       {isCopied ? (
@@ -870,13 +895,12 @@ export function IdeaCard({
                   onClick={() => handleReact(emoji)}
                   disabled={!allowReact && !hasReacted}
                   whileTap={{ scale: 0.9 }}
-                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] sm:text-[11px] transition-all ${
-                    hasReacted
-                      ? "bg-stone-900/15 cursor-pointer"
-                      : allowReact
-                        ? `${hoverBgClass} cursor-pointer`
-                        : "opacity-50 cursor-default"
-                  }`}
+                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] sm:text-[11px] transition-all ${hasReacted
+                    ? "bg-stone-900/15 cursor-pointer"
+                    : allowReact
+                      ? `${hoverBgClass} cursor-pointer`
+                      : "opacity-50 cursor-default"
+                    }`}
                 >
                   <span>{emoji}</span>
                   <span className={`font-medium ${mutedTextClass}`}>
@@ -893,7 +917,10 @@ export function IdeaCard({
             cursor: getCursorStyle(),
           }}
         >
-          <div className="flex items-center gap-1 sm:gap-1.5">
+          <motion.div
+            className="flex items-center gap-1 sm:gap-1.5"
+            whileHover="hover"
+          >
             <Image
               src={getAvatarForUser(card.createdById)}
               alt={`${creatorName}'s avatar`}
@@ -907,7 +934,26 @@ export function IdeaCard({
             >
               {creatorName}
             </span>
-          </div>
+            {allowEdit && (
+              <motion.div
+                initial={isMobile ? { opacity: 0.5, scale: 1 } : { opacity: 0, scale: 0.9 }}
+                animate={(isRecordingVoice || isMobile) ? { opacity: isRecordingVoice ? 1 : 0.5, scale: 1 } : {}}
+                whileHover={{ opacity: 0.8, scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                className="flex-shrink-0 ml-0.5 z-10"
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >
+                <VoiceTrigger
+                  isRecording={isRecordingVoice}
+                  isTranscribing={isTranscribingVoice}
+                  onToggle={isRecordingVoice ? stopRecording : startRecording}
+                  isDark={isPurpleDark || isDark}
+                />
+              </motion.div>
+            )}
+          </motion.div>
           <TooltipProvider delayDuration={400}>
             <div
               className="flex items-center gap-1 sm:gap-1.5"
@@ -923,11 +969,10 @@ export function IdeaCard({
                           type="button"
                           whileTap={{ scale: 0.9 }}
                           whileHover={{ scale: 1.1 }}
-                          className={`p-0.5 sm:p-1 rounded-full ${
-                            isMobile
-                              ? "opacity-100"
-                              : "opacity-0 group-hover:opacity-100"
-                          } ${hoverBgClass} transition-all cursor-pointer`}
+                          className={`p-0.5 sm:p-1 rounded-full ${isMobile
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100"
+                            } ${hoverBgClass} transition-all cursor-pointer`}
                         >
                           <Smile
                             className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass}`}
@@ -954,11 +999,10 @@ export function IdeaCard({
                             onClick={() => handleReact(emoji)}
                             whileTap={{ scale: 0.85 }}
                             whileHover={{ scale: 1.15 }}
-                            className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md text-base sm:text-lg transition-all cursor-pointer ${
-                              hasReacted
-                                ? "bg-stone-900/15"
-                                : "hover:bg-stone-100 dark:hover:bg-stone-800"
-                            }`}
+                            className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-md text-base sm:text-lg transition-all cursor-pointer ${hasReacted
+                              ? "bg-stone-900/15"
+                              : "hover:bg-stone-100 dark:hover:bg-stone-800"
+                              }`}
                           >
                             {emoji}
                           </motion.button>
@@ -983,24 +1027,22 @@ export function IdeaCard({
                     whileTap={allowVote ? { scale: 0.85 } : undefined}
                     onClick={handleVote}
                     disabled={!allowVote}
-                    className={`p-0.5 sm:p-1 rounded-full transition-all ${
-                      !allowVote
-                        ? "opacity-30 cursor-not-allowed"
-                        : hasVoted
-                          ? isPurpleDark
-                            ? "bg-white/20 text-white"
-                            : "bg-stone-900/15 text-stone-800"
-                          : `${hoverBgClass} cursor-pointer`
-                    }`}
+                    className={`p-0.5 sm:p-1 rounded-full transition-all ${!allowVote
+                      ? "opacity-30 cursor-not-allowed"
+                      : hasVoted
+                        ? isPurpleDark
+                          ? "bg-white/20 text-white"
+                          : "bg-stone-900/15 text-stone-800"
+                        : `${hoverBgClass} cursor-pointer`
+                      }`}
                   >
                     <ChevronUp
-                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
-                        hasVoted
-                          ? isPurpleDark
-                            ? "text-white"
-                            : "text-stone-800"
-                          : iconClass
-                      }`}
+                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${hasVoted
+                        ? isPurpleDark
+                          ? "text-white"
+                          : "text-stone-800"
+                        : iconClass
+                        }`}
                     />
                   </motion.button>
                 </TooltipTrigger>
