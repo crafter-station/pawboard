@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Card } from "@/db/schema";
-import { env } from "@/lib/env";
+import { env } from "@/env";
 
 // Use a dedicated client for server-side broadcasts
 const supabase = createClient(
