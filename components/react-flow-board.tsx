@@ -713,6 +713,15 @@ function ReactFlowBoardInner({
       }
 
       const cardId = generateCardId();
+      const width = Math.max(
+        150,
+        Math.min(600, Math.round(Number(card.width) || DEFAULT_CARD_WIDTH)),
+      );
+      const height = Math.max(
+        100,
+        Math.min(400, Math.round(Number(card.height) || DEFAULT_CARD_HEIGHT)),
+      );
+
       const newCard: Card = {
         id: cardId,
         sessionId,
@@ -720,8 +729,8 @@ function ReactFlowBoardInner({
         color: card.color,
         x,
         y,
-        width: card.width,
-        height: card.height,
+        width,
+        height,
         votes: 0,
         votedBy: [],
         reactions: {},
