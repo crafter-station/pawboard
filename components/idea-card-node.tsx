@@ -1,13 +1,7 @@
 "use client";
 
 import NumberFlow from "@number-flow/react";
-import {
-  Handle,
-  type Node,
-  type NodeProps,
-  Position,
-  useReactFlow,
-} from "@xyflow/react";
+import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
 import {
   Check,
   ChevronUp,
@@ -99,7 +93,6 @@ function IdeaCardNodeComponent({
   const { card, session, userRole, visitorId, creatorName, autoFocus } =
     data as IdeaCardNodeData;
 
-  const { setNodes } = useReactFlow();
   const nodeData = data as IdeaCardNodeData;
 
   const [isEditing, setIsEditing] = useState(nodeData.isEditing);
@@ -174,23 +167,6 @@ function IdeaCardNodeComponent({
   // Fetch card editors using TanStack Query
   const { data: editorsData } = useCardEditors(card.id);
   const editors = editorsData?.editors ?? [];
-
-  // Update node data when local state changes
-  useEffect(() => {
-    setNodes((nodes: Node[]) =>
-      nodes.map((n: Node) =>
-        n.id === id
-          ? {
-              ...n,
-              data: {
-                ...(n.data as IdeaCardNodeData),
-                isEditing,
-              },
-            }
-          : n,
-      ),
-    );
-  }, [id, isEditing, setNodes]);
 
   const isDark = mounted && resolvedTheme === "dark";
   const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
