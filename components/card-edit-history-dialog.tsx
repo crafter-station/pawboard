@@ -48,24 +48,33 @@ export function CardEditHistoryDialog({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) {
-      setIsLoading(true);
-      setError(null);
-      getCardEditHistory(cardId)
-        .then(({ history, error }) => {
-          if (error) {
-            setError(error);
-          } else {
-            setHistory(history);
-          }
-        })
-        .catch(() => {
-          setError("Failed to load edit history");
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    }
+    if (!open) return;
+
+    let ignore = false;
+    setIsLoading(true);
+    setError(null);
+
+    getCardEditHistory(cardId)
+      .then(({ history, error }) => {
+        if (ignore) return;
+        if (error) {
+          setError(error);
+        } else {
+          setHistory(history);
+        }
+      })
+      .catch(() => {
+        if (ignore) return;
+        setError("Failed to load edit history");
+      })
+      .finally(() => {
+        if (ignore) return;
+        setIsLoading(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [open, cardId]);
 
   return (
