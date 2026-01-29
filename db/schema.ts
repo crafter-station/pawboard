@@ -16,6 +16,23 @@ import {
 export type MovePermission = "creator" | "everyone";
 export type DeletePermission = "creator" | "everyone";
 
+// Tiptap rich text content type
+export type TiptapContent = {
+  type: "doc";
+  content?: Array<{
+    type: string;
+    attrs?: Record<string, unknown>;
+    content?: unknown[];
+    marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+  }>;
+};
+
+// Default empty document for new cards
+export const DEFAULT_TIPTAP_CONTENT: TiptapContent = {
+  type: "doc",
+  content: [{ type: "paragraph" }],
+};
+
 // Tables
 
 export const users = pgTable("users", {
@@ -63,7 +80,10 @@ export const cards = pgTable(
     sessionId: text("session_id")
       .notNull()
       .references(() => sessions.id, { onDelete: "cascade" }),
-    content: text("content").notNull().default(""),
+    content: jsonb("content")
+      .$type<TiptapContent>()
+      .notNull()
+      .default({ type: "doc", content: [{ type: "paragraph" }] }),
     color: text("color").notNull().default("#fef08a"),
     x: real("x").notNull().default(100),
     y: real("y").notNull().default(100),

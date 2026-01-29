@@ -64,6 +64,13 @@
       "when": 1769663494746,
       "tag": "0008_uneven_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1769668208433,
+      "tag": "0009_lowly_dreadnoughts",
+      "breakpoints": true
     }
   ]
 }
