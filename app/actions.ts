@@ -11,6 +11,7 @@ import type {
   NewCard,
   Session,
   SessionRole,
+  TiptapContent,
   User,
 } from "@/db/schema";
 import { cards, sessionParticipants, sessions, users } from "@/db/schema";
@@ -24,6 +25,7 @@ import {
   canReact,
   canVote,
 } from "@/lib/permissions";
+import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
 
 // Helper function to update activity timestamps
 async function updateActivityTimestamps(sessionId: string, userId: string) {
@@ -617,11 +619,13 @@ export async function updateCard(
 
     // If content was updated AND actually changed, generate embedding in background
     const contentChanged =
-      data.content !== undefined && data.content !== existingCard.content;
+      data.content !== undefined &&
+      JSON.stringify(data.content) !== JSON.stringify(existingCard.content);
 
     if (contentChanged) {
       const cardId = id;
-      const content = data.content;
+      // Extract plain text for embedding generation
+      const content = data.content ? extractTextFromTiptap(data.content) : "";
 
       // Get the host from request headers BEFORE the after() callback
       // This is needed because env vars may not be available in after() context on Vercel
@@ -950,7 +954,7 @@ export async function deleteEmptyCards(
     // Session creators (which we already verified) can always delete any card
     const emptyCardsToDelete = allCards.filter(
       (card: Card) =>
-        (!card.content || card.content.trim() === "") &&
+        isContentEmpty(card.content) &&
         canDeleteCard(session, card, userId, userRole),
     );
 
@@ -1042,8 +1046,7 @@ export async function clusterCards(
     // Filter to cards with content and embeddings
     const cardsWithEmbeddings = allCards.filter(
       (card) =>
-        card.content &&
-        card.content.trim().length > 0 &&
+        !isContentEmpty(card.content) &&
         card.embedding &&
         Array.isArray(card.embedding) &&
         card.embedding.length > 0,

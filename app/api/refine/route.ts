@@ -2,8 +2,9 @@ import { createGroq } from "@ai-sdk/groq";
 import { generateText } from "ai";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { cards, sessions } from "@/db/schema";
+import { cards, sessions, type TiptapContent } from "@/db/schema";
 import { canRefine } from "@/lib/permissions";
+import { extractTextFromTiptap } from "@/lib/tiptap-utils";
 
 const groq = createGroq({
   apiKey: process.env.GROQ_API_KEY,
@@ -11,9 +12,9 @@ const groq = createGroq({
 
 export async function POST(req: Request) {
   try {
-    const { text, cardId, userId } = await req.json();
+    const { selectedText, fullContent, cardId, userId } = await req.json();
 
-    if (!text || text.trim().length === 0) {
+    if (!selectedText?.trim()) {
       return Response.json({ error: "No text provided" }, { status: 400 });
     }
 
@@ -43,27 +44,83 @@ export async function POST(req: Request) {
       }
     }
 
-    const prompt = [
-      "Detect the language of the input text. Respond ONLY in that same language.",
-      "Restructure and clarify the idea without changing its original meaning.",
-      "Make it clearer and easier to read. You can use:",
-      "- Short paragraphs",
-      "- Bullet points (use • character)",
-      "- Key phrases highlighted",
-      "Choose the best format for the content. Be concise. Output only the refined text. The final output should be to the point and concise. response in markdown format.",
-      "",
-      `Input: "${text}"`,
-      "",
-      "Refined:",
-    ].join("\n");
+    // Extract full text for context
+    const fullText = fullContent
+      ? extractTextFromTiptap(fullContent as TiptapContent)
+      : selectedText;
 
-    const { text: refined } = await generateText({
+    const prompt = `You are refining a portion of text within a larger document.
+
+## Full Document Context:
+${fullText}
+
+## Selected Text to Refine:
+"${selectedText}"
+
+## Instructions:
+1. Detect the language and respond in the same language
+2. Refine ONLY the selected text, making it clearer and more concise
+3. Keep the same meaning and tone as the original
+4. Consider the surrounding context when refining
+5. You can use formatting: bold, italic, bullet lists
+6. Be concise - the refined text should be similar length or shorter
+7. Return ONLY valid JSON, no markdown code blocks, no explanation
+
+Return the refined content as a Tiptap document JSON structure.
+
+For simple text, return:
+{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Your refined text"}]}]}
+
+For bold text, add marks:
+{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Bold text","marks":[{"type":"bold"}]}]}]}
+
+For bullet list:
+{"type":"doc","content":[{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"First item"}]}]},{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Second item"}]}]}]}]}
+
+Return ONLY the JSON object, nothing else:`;
+
+    const { text } = await generateText({
       model: groq("openai/gpt-oss-20b"),
       prompt,
       temperature: 0.3,
     });
 
-    return Response.json({ refined: refined.trim() });
+    // Parse the JSON response
+    let refined: TiptapContent;
+    try {
+      // Clean up the response - remove markdown code blocks if present
+      let cleanedText = text.trim();
+      if (cleanedText.startsWith("```json")) {
+        cleanedText = cleanedText.slice(7);
+      } else if (cleanedText.startsWith("```")) {
+        cleanedText = cleanedText.slice(3);
+      }
+      if (cleanedText.endsWith("```")) {
+        cleanedText = cleanedText.slice(0, -3);
+      }
+      cleanedText = cleanedText.trim();
+
+      refined = JSON.parse(cleanedText);
+
+      // Validate basic structure
+      if (refined.type !== "doc" || !Array.isArray(refined.content)) {
+        throw new Error("Invalid Tiptap structure");
+      }
+    } catch (parseError) {
+      console.error("Failed to parse AI response as JSON:", text);
+      // Fallback: wrap the text in a simple paragraph structure
+      refined = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: text.trim() }],
+          },
+        ],
+      };
+    }
+
+    return Response.json({ refined });
   } catch (error) {
     console.error("Refine error:", error);
     return Response.json({ error: "Failed to refine text" }, { status: 500 });

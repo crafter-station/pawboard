@@ -7,6 +7,8 @@ import {
 } from "ai";
 import { tools } from "@/ai/tools";
 import { getSessionCards } from "@/db/queries";
+import type { Card } from "@/db/schema";
+import { extractTextFromTiptap } from "@/lib/tiptap-utils";
 import prompt from "./prompt.md";
 
 interface RequestBody {
@@ -15,15 +17,7 @@ interface RequestBody {
   userId: string;
 }
 
-function buildCanvasContext(
-  cards: Array<{
-    id: string;
-    content: string;
-    x: number;
-    y: number;
-    color: string;
-  }>,
-): string {
+function buildCanvasContext(cards: Card[]): string {
   if (cards.length === 0) {
     return "\n\n## Current Canvas State\n\nThe canvas is empty. No cards exist yet.";
   }
@@ -35,10 +29,10 @@ function buildCanvasContext(
   const maxY = Math.max(...cards.map((c) => c.y));
 
   const cardList = cards
-    .map(
-      (c) =>
-        `- ID: ${c.id} | Position: (${Math.round(c.x)}, ${Math.round(c.y)}) | Color: ${c.color} | Content: "${c.content.substring(0, 60)}${c.content.length > 60 ? "..." : ""}"`,
-    )
+    .map((c) => {
+      const textContent = extractTextFromTiptap(c.content);
+      return `- ID: ${c.id} | Position: (${Math.round(c.x)}, ${Math.round(c.y)}) | Color: ${c.color} | Content: "${textContent.substring(0, 60)}${textContent.length > 60 ? "..." : ""}"`;
+    })
     .join("\n");
 
   return `
