@@ -1,14 +1,11 @@
+import { timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cards } from "@/db/schema";
 import { generateEmbedding } from "@/lib/embeddings";
+import { embeddingsRequestSchema, validateRequest } from "@/lib/validations";
 
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET;
-
-interface EmbeddingRequest {
-  cardId: string;
-  content: string;
-}
 
 /**
  * POST /api/embeddings
@@ -32,15 +29,24 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
-    if (providedSecret !== INTERNAL_SECRET) {
+    // Use timing-safe comparison to prevent timing attacks
+    const secretBuffer = Buffer.from(INTERNAL_SECRET, "utf-8");
+    const providedBuffer = Buffer.from(providedSecret || "", "utf-8");
+    if (
+      secretBuffer.length !== providedBuffer.length ||
+      !timingSafeEqual(secretBuffer, providedBuffer)
+    ) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { cardId, content }: EmbeddingRequest = await req.json();
+    // Validate request body
+    const { data, error: validationError } = await validateRequest(
+      req,
+      embeddingsRequestSchema,
+    );
+    if (validationError) return validationError;
 
-    if (!cardId) {
-      return Response.json({ error: "Missing cardId" }, { status: 400 });
-    }
+    const { cardId, content } = data;
 
     // If content is empty, set embedding to null
     if (!content || content.trim().length === 0) {

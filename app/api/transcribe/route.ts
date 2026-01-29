@@ -1,13 +1,56 @@
 import Groq from "groq-sdk";
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
+import {
+  getClientIdentifier,
+  RATE_LIMITS,
+  rateLimit,
+  rateLimitResponse,
+} from "@/lib/rate-limit";
+
+// File validation constants
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+const ALLOWED_AUDIO_TYPES = [
+  "audio/webm",
+  "audio/wav",
+  "audio/mp3",
+  "audio/mpeg",
+  "audio/ogg",
+  "audio/mp4",
+  "audio/x-m4a",
+];
 
 export async function POST(req: NextRequest) {
+  // Rate limit check
+  const clientId = getClientIdentifier(req);
+  const { success, reset } = rateLimit(clientId, RATE_LIMITS.ai);
+  if (!success) {
+    return rateLimitResponse(reset);
+  }
+
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "File too large. Maximum size is 25MB." },
+        { status: 400 },
+      );
+    }
+
+    // Validate file type
+    if (!ALLOWED_AUDIO_TYPES.includes(file.type)) {
+      return NextResponse.json(
+        {
+          error: `Invalid file type. Allowed types: ${ALLOWED_AUDIO_TYPES.join(", ")}`,
+        },
+        { status: 400 },
+      );
     }
 
     const groqApiKey = process.env.GROQ_API_KEY;
