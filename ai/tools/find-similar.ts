@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { cards } from "@/db/schema";
 import { generateEmbedding } from "@/lib/embeddings";
+import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
 import description from "./find-similar.md";
 import type { ToolParams } from "./index";
 
@@ -44,10 +45,11 @@ export const findSimilarTool = ({ sessionId }: ToolParams) =>
               sourceCard.embedding.length === 0)
           ) {
             // Generate embedding for the card content
-            if (!sourceCard.content || sourceCard.content.trim().length === 0) {
+            if (isContentEmpty(sourceCard.content)) {
               return "Error: Cannot generate embedding for card without content";
             }
-            embedding = await generateEmbedding(sourceCard.content);
+            const textContent = extractTextFromTiptap(sourceCard.content);
+            embedding = await generateEmbedding(textContent);
           } else {
             embedding = sourceCard.embedding as number[];
           }
@@ -86,10 +88,12 @@ export const findSimilarTool = ({ sessionId }: ToolParams) =>
         }
 
         const resultText = meaningfulResults
-          .map(
-            (r, i) =>
-              `${i + 1}. [${Math.round((r.similarity || 0) * 100)}% match] ${r.content?.substring(0, 80)}${(r.content?.length || 0) > 80 ? "..." : ""} (ID: ${r.id})`,
-          )
+          .map((r, i) => {
+            const textContent = r.content
+              ? extractTextFromTiptap(r.content)
+              : "";
+            return `${i + 1}. [${Math.round((r.similarity || 0) * 100)}% match] ${textContent.substring(0, 80)}${textContent.length > 80 ? "..." : ""} (ID: ${r.id})`;
+          })
           .join("\n");
 
         return `Found ${meaningfulResults.length} similar card(s):\n\n${resultText}`;

@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { cards } from "@/db/schema";
+import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
 import type { ToolParams } from "./index";
 import description from "./summarize-cards.md";
 
@@ -40,7 +41,7 @@ export const summarizeCardsTool = ({ sessionId }: ToolParams) =>
         }
 
         const cardsWithContent = cardsToSummarize.filter(
-          (c) => c.content && c.content.trim().length > 0,
+          (c) => !isContentEmpty(c.content),
         );
 
         if (cardsWithContent.length === 0) {
@@ -48,7 +49,7 @@ export const summarizeCardsTool = ({ sessionId }: ToolParams) =>
         }
 
         const cardContents = cardsWithContent
-          .map((c, i) => `${i + 1}. ${c.content}`)
+          .map((c, i) => `${i + 1}. ${extractTextFromTiptap(c.content)}`)
           .join("\n");
 
         const prompt = `You are summarizing ideas from a brainstorming board. Here are the cards:
