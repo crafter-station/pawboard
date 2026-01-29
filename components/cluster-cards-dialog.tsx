@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import type { Card } from "@/db/schema";
+import { isContentEmpty } from "@/lib/tiptap-utils";
 
 interface ClusterCardsDialogProps {
   cards: Card[];
@@ -40,7 +41,7 @@ export function ClusterCardsDialog({
   } | null>(null);
 
   const cardsWithContent = useMemo(() => {
-    return cards.filter((card) => card.content && card.content.trim() !== "");
+    return cards.filter((card) => !isContentEmpty(card.content));
   }, [cards]);
 
   const handleOpenChange = (newOpen: boolean) => {

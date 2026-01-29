@@ -14,9 +14,10 @@
  * 3. Deletes the identified cards from the database
  */
 
-import { eq, isNull, lt, or, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cards } from "@/db/schema";
+import { extractTextFromTiptap } from "@/lib/tiptap-utils";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -33,7 +34,8 @@ async function removeShortCards() {
 
   // Filter cards with less than 3 characters after trimming
   const cardsToRemove = allCards.filter((card) => {
-    const trimmedContent = card.content?.trim() || "";
+    const textContent = extractTextFromTiptap(card.content);
+    const trimmedContent = textContent.trim();
     return trimmedContent.length < 3;
   });
 
@@ -48,11 +50,12 @@ async function removeShortCards() {
   const previewCount = Math.min(10, cardsToRemove.length);
   for (let i = 0; i < previewCount; i++) {
     const card = cardsToRemove[i];
-    const contentPreview = card.content
-      ? `"${card.content.slice(0, 50).replace(/\n/g, " ")}"`
+    const textContent = extractTextFromTiptap(card.content);
+    const contentPreview = textContent
+      ? `"${textContent.slice(0, 50).replace(/\n/g, " ")}"`
       : "(empty)";
     console.log(
-      `  - ${card.id}: ${contentPreview} (length: ${card.content?.trim().length || 0})`,
+      `  - ${card.id}: ${contentPreview} (length: ${textContent.trim().length})`,
     );
   }
 

@@ -3,7 +3,7 @@ import {
   RealtimeChannel,
 } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Card, Session } from "@/db/schema";
+import type { Card, Session, TiptapContent } from "@/db/schema";
 import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
@@ -52,7 +52,7 @@ type CardEvent =
   | { type: "card:move"; id: string; x: number; y: number }
   | { type: "card:resize"; id: string; width: number; height: number }
   | { type: "card:delete"; id: string }
-  | { type: "card:typing"; id: string; content: string }
+  | { type: "card:typing"; id: string; content: TiptapContent }
   | { type: "card:color"; id: string; color: string }
   | { type: "card:vote"; id: string; votes: number; votedBy: string[] }
   | { type: "card:react"; id: string; reactions: Record<string, string[]> }
@@ -120,17 +120,11 @@ export function useRealtimeCards(
   const broadcast = useCallback(
     (event: CardEvent) => {
       if (channelRef.current) {
-        console.log("[Cards] Broadcasting event:", event.type);
         channelRef.current.send({
           type: "broadcast",
           event: "card-event",
           payload: { ...event, odilUserId: userId },
         });
-      } else {
-        console.log(
-          "[Cards] Channel not ready, skipping broadcast:",
-          event.type,
-        );
       }
     },
     [userId],
@@ -149,7 +143,7 @@ export function useRealtimeCards(
   );
 
   const broadcastTyping = useCallback(
-    (id: string, content: string) => {
+    (id: string, content: TiptapContent) => {
       broadcast({ type: "card:typing", id, content });
     },
     [broadcast],
@@ -207,7 +201,7 @@ export function useRealtimeCards(
   );
 
   const typeCard = useCallback(
-    (id: string, content: string) => {
+    (id: string, content: TiptapContent) => {
       setCards((prev) =>
         prev.map((c) => (c.id === id ? { ...c, content } : c)),
       );
@@ -319,20 +313,10 @@ export function useRealtimeCards(
   useEffect(() => {
     if (!userId) return;
 
-    console.log(
-      "[Cards] Setting up channel for session:",
-      sessionId,
-      "userId:",
-      userId,
-    );
     const channel = supabase.channel(`cards:${sessionId}`);
 
     channel
       .on("presence", { event: "join" }, () => {
-        console.log(
-          "[Cards] Presence join event, syncing cards:",
-          cardsRef.current.length,
-        );
         if (cardsRef.current.length > 0) {
           channelRef.current?.send({
             type: "broadcast",
@@ -349,14 +333,7 @@ export function useRealtimeCards(
         "broadcast",
         { event: "card-event" },
         ({ payload }: { payload: CardEvent & { odilUserId: string } }) => {
-          console.log(
-            "[Cards] Received event:",
-            payload.type,
-            "from:",
-            payload.odilUserId,
-          );
           if (payload.odilUserId === userId) {
-            console.log("[Cards] Ignoring own event");
             return;
           }
 
@@ -393,7 +370,9 @@ export function useRealtimeCards(
             case "card:typing":
               setCards((prev) =>
                 prev.map((c) =>
-                  c.id === payload.id ? { ...c, content: payload.content } : c,
+                  c.id === payload.id
+                    ? { ...c, content: payload.content as TiptapContent }
+                    : c,
                 ),
               );
               break;
@@ -474,26 +453,12 @@ export function useRealtimeCards(
         },
       )
       .subscribe(async (status) => {
-        console.log(
-          "[Cards] Channel status:",
-          status,
-          "for session:",
-          sessionId,
-        );
         if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
-          console.log(
-            "[Cards] Successfully subscribed, tracking userId:",
-            userId,
-          );
           await channel.track({ odilUserId: userId });
           channelRef.current = channel;
 
           // Broadcast that we joined with our username
           if (usernameRef.current) {
-            console.log(
-              "[Cards] Broadcasting user:join for:",
-              usernameRef.current,
-            );
             channel.send({
               type: "broadcast",
               event: "card-event",
@@ -509,7 +474,6 @@ export function useRealtimeCards(
           status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
           status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT
         ) {
-          console.log("[Cards] Channel error or timeout:", status);
           channelRef.current = null;
         }
       });

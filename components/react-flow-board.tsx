@@ -73,7 +73,8 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { UserBadge } from "@/components/user-badge";
-import type { Card, Session, SessionRole } from "@/db/schema";
+import type { Card, Session, SessionRole, TiptapContent } from "@/db/schema";
+import { DEFAULT_TIPTAP_CONTENT } from "@/db/schema";
 import { useCatSound } from "@/hooks/use-cat-sound";
 import { useFingerprint } from "@/hooks/use-fingerprint";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
@@ -95,6 +96,7 @@ import {
   type IdeaCardNode as IdeaCardNodeType,
   updateNodeData,
 } from "@/lib/react-flow-utils";
+import { createTiptapContent } from "@/lib/tiptap-utils";
 import { cn, getAvatarForUser } from "@/lib/utils";
 import { useChatStore } from "@/stores/chat-store";
 
@@ -158,7 +160,7 @@ function ReactFlowBoardInner({
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
   const [copiedCard, setCopiedCard] = useState<{
-    content: string;
+    content: TiptapContent;
     color: string;
     width: number;
     height: number;
@@ -245,6 +247,10 @@ function ReactFlowBoardInner({
       const stored = sessionStorage.getItem("pawboard_clipboard");
       if (stored) {
         const parsed = JSON.parse(stored);
+        // Handle legacy string content format
+        if (typeof parsed.content === "string") {
+          parsed.content = createTiptapContent(parsed.content);
+        }
         setCopiedCard(parsed);
       }
     } catch (error) {
@@ -396,7 +402,7 @@ function ReactFlowBoardInner({
         reactCard(id, newReactions);
         await toggleReaction(id, emoji, visitorId);
       },
-      onPersistContent: async (id: string, content: string) => {
+      onPersistContent: async (id: string, content: TiptapContent) => {
         if (!visitorId) return;
         await updateCard(id, { content }, visitorId);
       },
@@ -543,7 +549,8 @@ function ReactFlowBoardInner({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
       ) {
         return;
       }
@@ -601,7 +608,7 @@ function ReactFlowBoardInner({
     const newCard: Card = {
       id: cardId,
       sessionId,
-      content: "",
+      content: DEFAULT_TIPTAP_CONTENT,
       color: getRandomColor(),
       x,
       y,
@@ -894,8 +901,13 @@ function ReactFlowBoardInner({
       const clipboardText = await navigator.clipboard.readText();
       const parsed = JSON.parse(clipboardText);
       if (parsed.type === "pawboard-card") {
+        // Content from clipboard may be in old string format or new TiptapContent format
+        const content =
+          typeof parsed.content === "string"
+            ? createTiptapContent(parsed.content)
+            : (parsed.content as TiptapContent);
         cardData = {
-          content: parsed.content,
+          content,
           color: parsed.color,
           width: parsed.width || DEFAULT_CARD_WIDTH,
           height: parsed.height || DEFAULT_CARD_HEIGHT,
@@ -972,10 +984,11 @@ function ReactFlowBoardInner({
   // Keyboard shortcuts for new card (key "N"), copy (Ctrl+C), and paste (Ctrl+V)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if user is typing in an input or textarea
+      // Skip if user is typing in an input, textarea, or contenteditable element
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
       ) {
         return;
       }

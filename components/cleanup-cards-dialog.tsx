@@ -13,6 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import type { Card } from "@/db/schema";
+import { isContentEmpty } from "@/lib/tiptap-utils";
 
 interface CleanupCardsDialogProps {
   cards: Card[];
@@ -37,8 +38,7 @@ export function CleanupCardsDialog({
   const [deletedCount, setDeletedCount] = useState(0);
 
   const emptyCardsCount = useMemo(() => {
-    return cards.filter((card) => !card.content || card.content.trim() === "")
-      .length;
+    return cards.filter((card) => isContentEmpty(card.content)).length;
   }, [cards]);
 
   const handleOpenChange = (newOpen: boolean) => {
