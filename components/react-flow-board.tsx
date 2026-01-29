@@ -165,6 +165,7 @@ function ReactFlowBoardInner({
   const [zoom, setZoom] = useState(1);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isReactFlowReady, setIsReactFlowReady] = useState(false);
 
   const hasInitializedViewRef = useRef(false);
 
@@ -497,7 +498,8 @@ function ReactFlowBoardInner({
   // Initialize view centered on cards on first load
   useEffect(() => {
     if (hasInitializedViewRef.current) return;
-    if (cards.length === 0) return;
+    if (!isReactFlowReady) return; // Wait for React Flow to be ready
+    if (nodes.length === 0) return; // Wait for nodes to be synced
 
     hasInitializedViewRef.current = true;
 
@@ -518,7 +520,7 @@ function ReactFlowBoardInner({
       y: viewportCenterY - centerY,
       zoom: 1,
     });
-  }, [cards, setViewport]);
+  }, [cards, nodes.length, isReactFlowReady, setViewport]);
 
   // Keyboard shortcut for fit all (key "1")
   useEffect(() => {
@@ -1400,6 +1402,7 @@ function ReactFlowBoardInner({
           onNodeDragStop={handleNodeDragStop}
           onSelectionChange={handleSelectionChange}
           onMoveEnd={handleMoveEnd}
+          onInit={() => setIsReactFlowReady(true)}
           panOnScroll
           selectionOnDrag={!isMobile}
           panOnDrag={isMobile ? true : [1, 2]}
