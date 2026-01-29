@@ -20,6 +20,7 @@ import Image from "next/image";
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
+
 import {
   Popover,
   PopoverContent,
@@ -32,7 +33,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { VoiceTrigger, VoiceVisualizer } from "@/components/voice-recorder";
 import type { Card, Session, SessionRole } from "@/db/schema";
+import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import {
   DARK_COLORS,
   getDisplayColor as getDisplayColorUtil,
@@ -130,6 +133,21 @@ export function IdeaCard({
   const hasDraggedRef = useRef(false);
   const lastWorldPosRef = useRef<{ x: number; y: number } | null>(null);
 
+  /* Voice Recorder Hook */
+  const {
+    isRecording: isRecordingVoice,
+    isTranscribing: isTranscribingVoice,
+    audioLevels,
+    startRecording,
+    stopRecording,
+  } = useVoiceRecorder({
+    onTranscription: (text) => {
+      const newContent = card.content ? `${card.content} ${text}` : text;
+      onType(card.id, newContent);
+      onPersistContent(card.id, newContent);
+    },
+  });
+
   // Permission checks
   const isOwnCard = card.createdById === visitorId;
   const hasVoted = card.votedBy?.includes(visitorId) || false;
@@ -148,10 +166,16 @@ export function IdeaCard({
 
   useEffect(() => {
     setMounted(true);
-    setIsMobile(window.innerWidth < 640);
-    const handleResize = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    const checkMobile = () => {
+      const isMobileSize = window.innerWidth < 1024;
+      const isTouch =
+        typeof window !== "undefined" &&
+        ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+      setIsMobile(isMobileSize || isTouch);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
   useEffect(() => {
@@ -349,6 +373,12 @@ export function IdeaCard({
     onPersistMultiMove,
   ]);
 
+  const handleTranscription = (text: string) => {
+    const newContent = card.content ? `${card.content} ${text}` : text;
+    onType(card.id, newContent);
+    onPersistContent(card.id, newContent);
+  };
+
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onType(card.id, e.target.value);
   };
@@ -365,6 +395,18 @@ export function IdeaCard({
       e.preventDefault();
       setIsEditing(false);
       onPersistContent(card.id, card.content);
+    }
+
+    // Cmd/Ctrl + . to toggle voice recording
+    if ((e.metaKey || e.ctrlKey) && e.key === ".") {
+      e.preventDefault();
+      if (!isTranscribingVoice) {
+        if (isRecordingVoice) {
+          stopRecording();
+        } else {
+          startRecording();
+        }
+      }
     }
   };
 
@@ -448,6 +490,12 @@ export function IdeaCard({
     }
   };
 
+  const getCursorStyle = () => {
+    if (!allowMove) return "default";
+    if (isDragging) return "grabbing";
+    return "grab";
+  };
+
   const isPurpleCard =
     card.color === LIGHT_COLORS[0] || card.color === DARK_COLORS[0];
   const isPurpleDark = isPurpleCard && isDark;
@@ -483,7 +531,6 @@ export function IdeaCard({
         stiffness: 350,
       }}
       style={{
-        cursor: allowMove ? (isDragging ? "grabbing" : "grab") : "default",
         zIndex: isDragging ? 1000 : isExpanded ? 100 : 1,
         pointerEvents: isSpacePressed ? "none" : "auto",
       }}
@@ -508,6 +555,9 @@ export function IdeaCard({
         />
         <div
           className={`flex items-center justify-between px-2.5 py-1.5 sm:px-3 sm:py-2 border-b ${borderClass}`}
+          style={{
+            cursor: getCursorStyle(),
+          }}
         >
           <GripVertical
             className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${iconClass} ${
@@ -691,7 +741,7 @@ export function IdeaCard({
           </TooltipProvider>
         </div>
         <div
-          className="p-2.5 sm:p-3.5 relative transition-all duration-200"
+          className="p-2.5 sm:p-3.5 relative min-h-[inherit] flex flex-col antialiased transition-[box-shadow] duration-200"
           style={
             isEditing
               ? { boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.08)" }
@@ -701,23 +751,25 @@ export function IdeaCard({
           onTouchStart={(e) => e.stopPropagation()}
         >
           {isEditing ? (
-            <Textarea
-              autoFocus
-              value={card.content}
-              onChange={handleContentChange}
-              onBlur={handleContentBlur}
-              onKeyDown={handleContentKeyDown}
-              className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none ${
-                isExpanded
-                  ? "text-[13px] sm:text-[15px]"
-                  : "text-[11px] sm:text-[13px]"
-              } ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-all duration-200 w-full h-full ${
-                isExpanded
-                  ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
-                  : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
-              }`}
-              placeholder="Type your idea..."
-            />
+            <div className="relative group/edit h-full min-h-[inherit]">
+              <Textarea
+                autoFocus
+                value={card.content}
+                onChange={handleContentChange}
+                onBlur={handleContentBlur}
+                onKeyDown={handleContentKeyDown}
+                className={`resize-none !bg-transparent dark:!bg-transparent border-none p-0 leading-relaxed shadow-none ${
+                  isExpanded
+                    ? "text-[13px] sm:text-[15px]"
+                    : "text-[11px] sm:text-[13px]"
+                } ${textColorClass} focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:${mutedTextClass} overflow-y-auto transition-[min-height,max-height] duration-200 w-full h-full ${
+                  isExpanded
+                    ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
+                    : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
+                }`}
+                placeholder="Type your idea..."
+              />
+            </div>
           ) : (
             <div
               onClick={() => allowEdit && setIsEditing(true)}
@@ -727,7 +779,7 @@ export function IdeaCard({
                   : "text-[11px] sm:text-[13px]"
               } ${textColorClass} ${
                 allowEdit ? "cursor-text" : "cursor-default"
-              } transition-all duration-200 ${
+              } transition-[min-height,max-height] duration-200 ${
                 isExpanded
                   ? "min-h-30 sm:min-h-50 max-h-75 sm:max-h-100"
                   : "min-h-15 sm:min-h-20 max-h-30 sm:max-h-40"
@@ -797,6 +849,14 @@ export function IdeaCard({
               )}
             </div>
           )}
+          {/* Centered Voice Visualizer - Outside of Footer Transform Context */}
+          <VoiceVisualizer
+            isRecording={isRecordingVoice}
+            audioLevels={audioLevels}
+            isDark={isPurpleDark || isDark}
+            containerClassName="absolute inset-0"
+          />
+
           {card.content && !isEditing && (
             <TooltipProvider delayDuration={400}>
               <Tooltip>
@@ -881,21 +941,66 @@ export function IdeaCard({
         )}
         <div
           className={`flex items-center justify-between px-2.5 sm:px-3.5 py-2 sm:py-2.5 border-t ${borderClass}`}
+          style={{
+            cursor: getCursorStyle(),
+          }}
         >
-          <div className="flex items-center gap-1 sm:gap-1.5">
+          <motion.div
+            className="flex items-center gap-1 sm:gap-1.5"
+            whileHover="hover"
+          >
             <Image
               src={getAvatarForUser(card.createdById)}
               alt={`${creatorName}'s avatar`}
               width={16}
               height={16}
               className="w-4 h-4 sm:w-5 sm:h-5"
+              draggable={false}
             />
             <span
               className={`text-[10px] sm:text-[11px] ${mutedTextClass} truncate max-w-13.75 sm:max-w-20 font-medium`}
             >
               {creatorName}
             </span>
-          </div>
+            {allowEdit && (
+              <TooltipProvider delayDuration={400}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <motion.div
+                      initial={{ opacity: 0.5, scale: 1 }}
+                      animate={{
+                        opacity: isRecordingVoice ? 1 : 0.5,
+                        scale: 1,
+                      }}
+                      whileHover={{ opacity: 0.8, scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 400,
+                        damping: 25,
+                      }}
+                      className="flex-shrink-0 ml-0.5 z-10"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                    >
+                      <VoiceTrigger
+                        isRecording={isRecordingVoice}
+                        isTranscribing={isTranscribingVoice}
+                        onToggle={
+                          isRecordingVoice ? stopRecording : startRecording
+                        }
+                        isDark={isPurpleDark || isDark}
+                      />
+                    </motion.div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {isRecordingVoice ? "Stop recording" : "Voice input"} (
+                    {navigator.platform?.includes("Mac") ? "\u2318" : "Ctrl"}+.)
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </motion.div>
           <TooltipProvider delayDuration={400}>
             <div
               className="flex items-center gap-1 sm:gap-1.5"
