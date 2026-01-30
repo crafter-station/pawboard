@@ -3,6 +3,17 @@
 import { Check, CheckCheck, Trash2, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { SessionRole, ThreadWithDetails } from "@/db/schema";
@@ -45,6 +56,7 @@ export function ThreadPanel({
   );
   const [isResolving, setIsResolving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const handleDeleteComment = useCallback(
@@ -68,19 +80,13 @@ export function ThreadPanel({
     }
   }, [onResolve, thread.isResolved]);
 
-  const handleDelete = useCallback(async () => {
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this thread and all its comments?",
-      )
-    ) {
-      return;
-    }
+  const confirmDelete = useCallback(async () => {
     setIsDeleting(true);
     try {
       await onDeleteThread();
     } finally {
       setIsDeleting(false);
+      setShowDeleteDialog(false);
     }
   }, [onDeleteThread]);
 
@@ -168,16 +174,43 @@ export function ThreadPanel({
             </Button>
           )}
           {showDelete && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-              onClick={handleDelete}
-              disabled={isDeleting || disabled}
-              title="Delete thread"
+            <AlertDialog
+              open={showDeleteDialog}
+              onOpenChange={setShowDeleteDialog}
             >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  disabled={isDeleting || disabled}
+                  title="Delete thread"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete thread?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete this thread and all its
+                    comments. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isDeleting}>
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={confirmDelete}
+                    disabled={isDeleting}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
           <Button
             variant="ghost"

@@ -6,7 +6,7 @@ import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import type { CommentWithCreator } from "@/db/schema";
 import { useThreadColors } from "@/hooks/use-thread-colors";
-import { cn, formatRelativeTime, getDiceBearAvatar } from "@/lib/utils";
+import { cn, formatRelativeTime, getAvatarForUser } from "@/lib/utils";
 
 interface CommentProps {
   comment: CommentWithCreator;
@@ -45,7 +45,7 @@ export const Comment = memo(function Comment({
       {/* Avatar with presence ring */}
       <div className="relative shrink-0">
         <img
-          src={getDiceBearAvatar(comment.creator.id)}
+          src={getAvatarForUser(comment.creator.id)}
           alt={comment.creator.username}
           className="h-8 w-8 rounded-full bg-muted"
           style={{

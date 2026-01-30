@@ -1,20 +1,15 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import type { SessionRole, ThreadWithDetails } from "@/db/schema";
 import type { CardThreadHandlers } from "@/lib/react-flow-utils";
 import { cn } from "@/lib/utils";
+import { useThreadFocusStore } from "@/stores/thread-focus-store";
 import { ThreadBubble } from "./thread-bubble";
 import { ThreadPanel } from "./thread-panel";
 import { ThreadTooltip } from "./thread-tooltip";
@@ -31,6 +26,7 @@ interface CardThreadNodeProps {
  * A thread node rendered inside a card (for card-attached threads).
  * Similar to ThreadNode but without React Flow node wrapper.
  * Supports click-and-drag to detach from card.
+ * Uses HoverCard with expand state: hover shows preview, click expands to full panel.
  */
 export function CardThreadNode({
   thread,
@@ -39,10 +35,17 @@ export function CardThreadNode({
   sessionLocked,
   handlers,
 }: CardThreadNodeProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  // Track if we're closing from expanded state to prevent tooltip flash
+  const [wasExpanded, setWasExpanded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Subscribe to focused thread from store
+  const focusedThreadId = useThreadFocusStore((s) => s.focusedThreadId);
+  const clearFocusedThread = useThreadFocusStore((s) => s.clearFocusedThread);
 
   // Destructure handlers to avoid dependency on entire handlers object
   const {
@@ -53,6 +56,16 @@ export function CardThreadNode({
     onDetach,
     screenToFlowPosition,
   } = handlers;
+
+  // Auto-expand when this thread is focused from sidebar
+  useEffect(() => {
+    if (focusedThreadId === thread.id) {
+      setIsExpanded(true);
+      setWasExpanded(false);
+      setIsOpen(true);
+      clearFocusedThread(); // Clear to prevent re-triggering
+    }
+  }, [focusedThreadId, thread.id, clearFocusedThread]);
 
   const handleAddComment = useCallback(
     async (content: string) => {
@@ -78,6 +91,7 @@ export function CardThreadNode({
   const handleDeleteThread = useCallback(async () => {
     await onDeleteThread(thread.id);
     setIsOpen(false);
+    setIsExpanded(false);
   }, [onDeleteThread, thread.id]);
 
   // Check if detach is supported
@@ -89,7 +103,8 @@ export function CardThreadNode({
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(true);
-      setIsOpen(false); // Close popover when starting drag
+      setIsOpen(false);
+      setIsExpanded(false);
       dragStartRef.current = { x: e.clientX, y: e.clientY };
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     },
@@ -127,24 +142,49 @@ export function CardThreadNode({
           y: e.clientY,
         });
         await onDetach(thread.id, flowPos);
-      } else if (!moved && !sessionLocked) {
-        // Short click without movement - open popover
-        setIsOpen(true);
       }
+      // If not moved, we don't force open here.
+      // The HoverCard will handle hover/click naturally.
 
       setIsDragging(false);
       setDragOffset({ x: 0, y: 0 });
       dragStartRef.current = null;
     },
-    [
-      isDragging,
-      dragOffset,
-      onDetach,
-      screenToFlowPosition,
-      thread.id,
-      sessionLocked,
-    ],
+    [isDragging, dragOffset, onDetach, screenToFlowPosition, thread.id],
   );
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      // Don't change state while dragging
+      if (isDragging) return;
+      // When expanded, only close via explicit close button
+      if (!open && isExpanded) return;
+      setIsOpen(open);
+      if (!open) {
+        setIsExpanded(false);
+      }
+      if (open) {
+        // Reset wasExpanded when opening via hover
+        setWasExpanded(false);
+      }
+    },
+    [isDragging, isExpanded],
+  );
+
+  const handleExpand = useCallback(() => {
+    if (!isDragging && !sessionLocked) {
+      setIsExpanded(true);
+      setWasExpanded(false);
+      setIsOpen(true);
+    }
+  }, [isDragging, sessionLocked]);
+
+  const handleClose = useCallback(() => {
+    // Mark that we're closing from expanded to prevent tooltip flash
+    setWasExpanded(true);
+    setIsExpanded(false);
+    setIsOpen(false);
+  }, []);
 
   return (
     <div
@@ -162,52 +202,51 @@ export function CardThreadNode({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      <Popover open={isOpen && !isDragging} onOpenChange={setIsOpen}>
-        <TooltipProvider delayDuration={400}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <PopoverTrigger asChild>
-                <div
-                  className="relative"
-                  onPointerDown={canDetach ? handlePointerDown : undefined}
-                >
-                  <ThreadBubble
-                    thread={thread}
-                    isSelected={isOpen || isDragging}
-                    onClick={canDetach ? undefined : () => setIsOpen(true)}
-                  />
-                </div>
-              </PopoverTrigger>
-            </TooltipTrigger>
-            {!isOpen && !isDragging && (
-              <TooltipContent
-                side="top"
-                className="p-0 bg-transparent border-none shadow-none"
-              >
-                <ThreadTooltip thread={thread} />
-              </TooltipContent>
-            )}
-          </Tooltip>
-        </TooltipProvider>
-        <PopoverContent
-          className="w-auto p-0 z-[1001] bg-transparent border-none shadow-none"
-          align="start"
+      <HoverCard
+        open={isOpen && !isDragging}
+        onOpenChange={handleOpenChange}
+        openDelay={150}
+        closeDelay={isExpanded ? 999999 : 100}
+      >
+        <HoverCardTrigger asChild>
+          <button
+            type="button"
+            className="relative"
+            onPointerDown={canDetach ? handlePointerDown : undefined}
+            onClick={handleExpand}
+          >
+            <ThreadBubble thread={thread} isSelected={isOpen || isDragging} />
+          </button>
+        </HoverCardTrigger>
+        <HoverCardContent
+          className="p-0 bg-transparent border-none shadow-none w-auto z-[1001]"
           side="right"
+          align="start"
           sideOffset={12}
         >
-          <ThreadPanel
-            thread={thread}
-            currentUserId={visitorId}
-            userRole={userRole}
-            onAddComment={handleAddComment}
-            onDeleteComment={handleDeleteComment}
-            onResolve={handleResolve}
-            onDeleteThread={handleDeleteThread}
-            onClose={() => setIsOpen(false)}
-            disabled={sessionLocked}
-          />
-        </PopoverContent>
-      </Popover>
+          {isExpanded ? (
+            <ThreadPanel
+              thread={thread}
+              currentUserId={visitorId}
+              userRole={userRole}
+              onAddComment={handleAddComment}
+              onDeleteComment={handleDeleteComment}
+              onResolve={handleResolve}
+              onDeleteThread={handleDeleteThread}
+              onClose={handleClose}
+              disabled={sessionLocked}
+            />
+          ) : wasExpanded ? null : (
+            <button
+              type="button"
+              onClick={handleExpand}
+              className="cursor-pointer text-left"
+            >
+              <ThreadTooltip thread={thread} />
+            </button>
+          )}
+        </HoverCardContent>
+      </HoverCard>
     </div>
   );
 }

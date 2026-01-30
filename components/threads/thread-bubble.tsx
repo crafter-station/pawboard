@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import { useMemo } from "react";
 import type { ThreadWithDetails } from "@/db/schema";
 import { useThreadColors } from "@/hooks/use-thread-colors";
-import { cn, getDiceBearAvatar } from "@/lib/utils";
+import { cn, getAvatarForUser } from "@/lib/utils";
 
 interface ThreadBubbleProps {
   thread: ThreadWithDetails;
@@ -36,8 +36,7 @@ export function ThreadBubble({
   }, [thread.creator.id, thread.comments]);
 
   return (
-    <motion.button
-      type="button"
+    <motion.div
       onClick={onClick}
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
@@ -76,20 +75,15 @@ export function ThreadBubble({
       }}
     >
       {/* Stacked avatars */}
-      <div className="flex items-center -space-x-2">
+      <div className="flex items-center -space-x-1">
         {participants.map((userId, index) => (
           <img
             key={userId}
-            src={getDiceBearAvatar(userId)}
+            src={getAvatarForUser(userId)}
             alt=""
-            className={cn(
-              "rounded-full border-2 bg-muted",
-              index === 0 ? "h-7 w-7" : "h-6 w-6",
-            )}
+            className={index === 0 ? "h-7 w-7" : "h-6 w-6"}
             style={{
               zIndex: participants.length - index,
-              borderColor: colors.surface,
-              boxShadow: `0 0 0 1px ${colors.avatarRingMedium}`,
             }}
           />
         ))}
@@ -137,7 +131,7 @@ export function ThreadBubble({
           </svg>
         </span>
       )}
-    </motion.button>
+    </motion.div>
   );
 }
 

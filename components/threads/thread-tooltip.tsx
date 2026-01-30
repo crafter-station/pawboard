@@ -4,7 +4,7 @@ import { MessageCircle } from "lucide-react";
 import { motion } from "motion/react";
 import type { ThreadWithDetails } from "@/db/schema";
 import { useThreadColors } from "@/hooks/use-thread-colors";
-import { formatRelativeTime, getDiceBearAvatar } from "@/lib/utils";
+import { formatRelativeTime, getAvatarForUser } from "@/lib/utils";
 
 interface ThreadTooltipProps {
   thread: ThreadWithDetails;
@@ -39,7 +39,7 @@ export function ThreadTooltip({ thread }: ThreadTooltipProps) {
       <div className="flex items-center gap-2.5 mb-2">
         <div className="relative shrink-0">
           <img
-            src={getDiceBearAvatar(latestComment.creator.id)}
+            src={getAvatarForUser(latestComment.creator.id)}
             alt={latestComment.creator.username}
             className="h-8 w-8 rounded-full bg-muted"
             style={{
