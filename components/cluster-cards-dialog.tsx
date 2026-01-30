@@ -104,19 +104,20 @@ export function ClusterCardsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      {trigger ? (
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-      ) : (
-        <DialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Cluster cards by similarity"
-          >
-            <Sparkles className="h-4 w-4" />
-          </Button>
-        </DialogTrigger>
-      )}
+      {!isControlled &&
+        (trigger ? (
+          <DialogTrigger asChild>{trigger}</DialogTrigger>
+        ) : (
+          <DialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Cluster cards by similarity"
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
+          </DialogTrigger>
+        ))}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
