@@ -238,7 +238,6 @@ function ReactFlowBoardInner({
   const [magneticTargetCardId, setMagneticTargetCardId] = useState<
     string | null
   >(null);
-
   const hasInitializedViewRef = useRef(false);
   // Ref to store duplicate callback to avoid stale closures in useEffect
   const handleDuplicateCardRef = useRef<((card: Card) => void) | null>(null);
@@ -1236,6 +1235,81 @@ function ReactFlowBoardInner({
     setBoardMenuOpen(false);
   }, [visitorId, isLocked, contextMenuPosition, screenToFlowPosition]);
 
+  // Handle adding card at cursor position (for keyboard shortcut)
+  const handleAddCardAtCursor = useCallback(async () => {
+    if (!username || !visitorId) return;
+    if (!canAddCard(session, userRole ?? "participant")) return;
+
+    playSound();
+
+    // Use mouse position if available, otherwise fall back to viewport center
+    const screenPosition = mousePositionRef.current ?? {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    };
+
+    // Convert screen position to flow coordinates
+    const flowPosition = screenToFlowPosition(screenPosition);
+
+    // Position card at exact cursor position (top-left corner)
+    const x = flowPosition.x;
+    const y = flowPosition.y;
+
+    const cardId = generateCardId();
+    const newCard: Card = {
+      id: cardId,
+      sessionId,
+      content: DEFAULT_TIPTAP_CONTENT,
+      color: getRandomColor(),
+      x,
+      y,
+      width: DEFAULT_CARD_WIDTH,
+      height: DEFAULT_CARD_HEIGHT,
+      votes: 0,
+      votedBy: [],
+      reactions: {},
+      embedding: null,
+      createdById: visitorId,
+      updatedAt: new Date(),
+    };
+
+    setNewCardId(cardId);
+    addCard(newCard);
+    await createCard(newCard, visitorId);
+  }, [
+    username,
+    visitorId,
+    session,
+    userRole,
+    playSound,
+    screenToFlowPosition,
+    sessionId,
+    getRandomColor,
+    addCard,
+  ]);
+
+  // Handle adding thread at cursor position (for keyboard shortcut)
+  const handleAddThreadAtCursor = useCallback(() => {
+    if (!visitorId || isLocked) return;
+
+    // Use mouse position if available, otherwise fall back to viewport center
+    const screenPosition = mousePositionRef.current ?? {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    };
+
+    // Convert screen position to flow coordinates
+    const flowPosition = screenToFlowPosition(screenPosition);
+
+    setPendingThreadPosition({
+      x: flowPosition.x,
+      y: flowPosition.y,
+    });
+    // Store screen position for the panel
+    setCreatePanelScreenPosition(screenPosition);
+    setIsCreatingThread(true);
+  }, [visitorId, isLocked, screenToFlowPosition]);
+
   // Handle pane right-click (empty space on the board)
   const handlePaneContextMenu = useCallback(
     (event: MouseEvent | React.MouseEvent) => {
@@ -1689,17 +1763,24 @@ function ReactFlowBoardInner({
         return;
       }
 
-      // "N" to create a new card
+      // "N" to create a new card at cursor position
       if (e.key === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        handleAddCard();
+        handleAddCardAtCursor();
+      }
+
+      // "C" to create a comment thread at cursor position
+      if (e.key === "c" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        handleAddThreadAtCursor();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     commandOpen,
-    handleAddCard,
+    handleAddCardAtCursor,
+    handleAddThreadAtCursor,
     selectedCardIds,
     cards,
     handleCopyCard,
