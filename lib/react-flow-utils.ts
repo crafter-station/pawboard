@@ -1,5 +1,30 @@
 import type { Node } from "@xyflow/react";
-import type { Card, Session, SessionRole } from "@/db/schema";
+import type { ThreadNodeData } from "@/components/threads";
+import type {
+  Card,
+  Session,
+  SessionRole,
+  ThreadWithDetails,
+} from "@/db/schema";
+
+/**
+ * Thread handler functions for card-attached threads
+ */
+export interface CardThreadHandlers {
+  onAddComment: (threadId: string, content: string) => Promise<void>;
+  onDeleteComment: (threadId: string, commentId: string) => Promise<void>;
+  onResolve: (threadId: string, isResolved: boolean) => Promise<void>;
+  onDeleteThread: (threadId: string) => Promise<void>;
+  onDetach?: (
+    threadId: string,
+    position: { x: number; y: number },
+  ) => Promise<void>;
+  /** Convert screen coordinates to flow (canvas) coordinates for accurate positioning */
+  screenToFlowPosition?: (position: { x: number; y: number }) => {
+    x: number;
+    y: number;
+  };
+}
 
 /**
  * Data stored in each IdeaCard node
@@ -13,6 +38,13 @@ export interface IdeaCardNodeData extends Record<string, unknown> {
   // UI state
   isEditing: boolean;
   autoFocus: boolean;
+  // Card-attached threads
+  attachedThreads?: ThreadWithDetails[];
+  threadHandlers?: CardThreadHandlers;
+  // Magnetic thread attachment feedback
+  magneticHighlight?: boolean;
+  // Card editors (users who have edited this card)
+  editors?: Array<{ userId: string; username: string }>;
 }
 
 /**
@@ -22,8 +54,9 @@ export type IdeaCardNode = Node<IdeaCardNodeData, "ideaCard">;
 
 /**
  * Convert a database Card to a React Flow Node
+ * Internal helper function - use cardsToNodes for external usage
  */
-export function cardToNode(
+function cardToNode(
   card: Card,
   session: Session,
   userRole: SessionRole | null,
@@ -32,6 +65,10 @@ export function cardToNode(
   options?: {
     autoFocus?: boolean;
     isEditing?: boolean;
+    attachedThreads?: ThreadWithDetails[];
+    threadHandlers?: CardThreadHandlers;
+    magneticHighlight?: boolean;
+    editors?: Array<{ userId: string; username: string }>;
   },
 ): IdeaCardNode {
   return {
@@ -46,6 +83,10 @@ export function cardToNode(
       creatorName,
       isEditing: options?.isEditing ?? false,
       autoFocus: options?.autoFocus ?? false,
+      attachedThreads: options?.attachedThreads,
+      threadHandlers: options?.threadHandlers,
+      magneticHighlight: options?.magneticHighlight ?? false,
+      editors: options?.editors,
     },
     draggable: true,
     selectable: true,
@@ -62,6 +103,10 @@ export function cardsToNodes(
   visitorId: string,
   getCreatorName: (userId: string) => string,
   autoFocusCardId?: string | null,
+  threadsByCardId?: Map<string, ThreadWithDetails[]>,
+  threadHandlers?: CardThreadHandlers,
+  magneticHighlightCardId?: string | null,
+  sessionEditors?: Record<string, Array<{ userId: string; username: string }>>,
 ): IdeaCardNode[] {
   return cards.map((card) =>
     cardToNode(
@@ -72,6 +117,10 @@ export function cardsToNodes(
       getCreatorName(card.createdById),
       {
         autoFocus: card.id === autoFocusCardId,
+        attachedThreads: threadsByCardId?.get(card.id),
+        threadHandlers,
+        magneticHighlight: card.id === magneticHighlightCardId,
+        editors: sessionEditors?.[card.id],
       },
     ),
   );
@@ -87,6 +136,10 @@ export function updateNodeData(
   userRole: SessionRole | null,
   visitorId: string,
   getCreatorName: (userId: string) => string,
+  threadsByCardId?: Map<string, ThreadWithDetails[]>,
+  threadHandlers?: CardThreadHandlers,
+  magneticHighlightCardId?: string | null,
+  sessionEditors?: Record<string, Array<{ userId: string; username: string }>>,
 ): IdeaCardNode[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
@@ -105,6 +158,10 @@ export function updateNodeData(
           userRole,
           visitorId,
           creatorName: getCreatorName(card.createdById),
+          attachedThreads: threadsByCardId?.get(card.id),
+          threadHandlers,
+          magneticHighlight: card.id === magneticHighlightCardId,
+          editors: sessionEditors?.[card.id],
         },
       };
     }
@@ -115,21 +172,16 @@ export function updateNodeData(
       userRole,
       visitorId,
       getCreatorName(card.createdById),
+      {
+        attachedThreads: threadsByCardId?.get(card.id),
+        threadHandlers,
+        magneticHighlight: card.id === magneticHighlightCardId,
+        editors: sessionEditors?.[card.id],
+      },
     );
   });
 
   return updatedNodes;
-}
-
-/**
- * Extract card data from a node
- */
-export function nodeToCard(node: IdeaCardNode): Card {
-  return {
-    ...node.data.card,
-    x: node.position.x,
-    y: node.position.y,
-  };
 }
 
 // Default card dimensions for new cards
@@ -171,4 +223,84 @@ export function calculateCardsBounds(
     }),
     { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
   );
+}
+
+/**
+ * Thread node type for React Flow
+ */
+export type ThreadNode = Node<ThreadNodeData, "thread">;
+
+/**
+ * Convert a thread to a React Flow node
+ * Internal helper function - use threadsToNodes for external usage
+ */
+function threadToNode(
+  thread: ThreadWithDetails,
+  userRole: SessionRole | null,
+  visitorId: string,
+  sessionLocked: boolean,
+  handlers: {
+    onAddComment: (threadId: string, content: string) => Promise<void>;
+    onDeleteComment: (threadId: string, commentId: string) => Promise<void>;
+    onResolve: (threadId: string, isResolved: boolean) => Promise<void>;
+    onDeleteThread: (threadId: string) => Promise<void>;
+  },
+  collisionBoundary?: Element | null,
+): ThreadNode {
+  // For card-attached threads, use card position (needs to be calculated elsewhere)
+  // For canvas threads, use thread's x, y
+  const x = thread.x ?? 0;
+  const y = thread.y ?? 0;
+
+  return {
+    id: `thread-${thread.id}`,
+    type: "thread",
+    position: { x, y },
+    data: {
+      thread,
+      userRole,
+      visitorId,
+      sessionLocked,
+      collisionBoundary,
+      onAddComment: handlers.onAddComment,
+      onDeleteComment: handlers.onDeleteComment,
+      onResolve: handlers.onResolve,
+      onDeleteThread: handlers.onDeleteThread,
+    },
+    draggable: !thread.cardId, // Only canvas threads are draggable
+    selectable: true,
+    zIndex: 1000, // Thread nodes should appear above cards
+  };
+}
+
+/**
+ * Convert multiple threads to React Flow nodes
+ * Only includes canvas threads (not card-attached)
+ */
+export function threadsToNodes(
+  threads: ThreadWithDetails[],
+  userRole: SessionRole | null,
+  visitorId: string,
+  sessionLocked: boolean,
+  handlers: {
+    onAddComment: (threadId: string, content: string) => Promise<void>;
+    onDeleteComment: (threadId: string, commentId: string) => Promise<void>;
+    onResolve: (threadId: string, isResolved: boolean) => Promise<void>;
+    onDeleteThread: (threadId: string) => Promise<void>;
+  },
+  collisionBoundary?: Element | null,
+): ThreadNode[] {
+  // Only include canvas-positioned threads (not card-attached)
+  return threads
+    .filter((t) => !t.cardId && t.x !== null && t.y !== null)
+    .map((thread) =>
+      threadToNode(
+        thread,
+        userRole,
+        visitorId,
+        sessionLocked,
+        handlers,
+        collisionBoundary,
+      ),
+    );
 }

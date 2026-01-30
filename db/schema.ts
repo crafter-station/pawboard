@@ -118,17 +118,65 @@ export const cardEditHistory = pgTable(
   (table) => [index("card_edit_history_card_idx").on(table.cardId)],
 );
 
+// Comment threads - can be on canvas (x,y) or attached to a card
+export const threads = pgTable(
+  "threads",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    x: real("x"), // Canvas position (null if card-attached)
+    y: real("y"),
+    cardId: text("card_id").references(() => cards.id, { onDelete: "cascade" }), // Card attachment (null if canvas position)
+    isResolved: boolean("is_resolved").notNull().default(false),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("threads_session_idx").on(table.sessionId),
+    index("threads_card_idx").on(table.cardId),
+  ],
+);
+
+// Individual comments within a thread
+export const comments = pgTable(
+  "comments",
+  {
+    id: text("id").primaryKey(),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("comments_thread_idx").on(table.threadId),
+    index("comments_created_at_idx").on(table.createdAt),
+  ],
+);
+
 // Relations
 
 export const usersRelations = relations(users, ({ many }) => ({
   participations: many(sessionParticipants),
   cards: many(cards),
   cardEdits: many(cardEditHistory),
+  threads: many(threads),
+  comments: many(comments),
 }));
 
 export const sessionsRelations = relations(sessions, ({ many }) => ({
   participants: many(sessionParticipants),
   cards: many(cards),
+  threads: many(threads),
 }));
 
 export const sessionParticipantsRelations = relations(
@@ -155,6 +203,7 @@ export const cardsRelations = relations(cards, ({ one, many }) => ({
     references: [users.id],
   }),
   editHistory: many(cardEditHistory),
+  threads: many(threads),
 }));
 
 export const cardEditHistoryRelations = relations(
@@ -171,6 +220,33 @@ export const cardEditHistoryRelations = relations(
   }),
 );
 
+export const threadsRelations = relations(threads, ({ one, many }) => ({
+  session: one(sessions, {
+    fields: [threads.sessionId],
+    references: [sessions.id],
+  }),
+  card: one(cards, {
+    fields: [threads.cardId],
+    references: [cards.id],
+  }),
+  creator: one(users, {
+    fields: [threads.createdById],
+    references: [users.id],
+  }),
+  comments: many(comments),
+}));
+
+export const commentsRelations = relations(comments, ({ one }) => ({
+  thread: one(threads, {
+    fields: [comments.threadId],
+    references: [threads.id],
+  }),
+  creator: one(users, {
+    fields: [comments.createdById],
+    references: [users.id],
+  }),
+}));
+
 // Types
 
 export type User = typeof users.$inferSelect;
@@ -184,3 +260,17 @@ export type SessionParticipant = typeof sessionParticipants.$inferSelect;
 export type NewSessionParticipant = typeof sessionParticipants.$inferInsert;
 export type CardEditHistoryEntry = typeof cardEditHistory.$inferSelect;
 export type NewCardEditHistoryEntry = typeof cardEditHistory.$inferInsert;
+export type Thread = typeof threads.$inferSelect;
+export type NewThread = typeof threads.$inferInsert;
+export type Comment = typeof comments.$inferSelect;
+export type NewComment = typeof comments.$inferInsert;
+
+// Extended types with relations (for hooks/components)
+export type CommentWithCreator = Comment & {
+  creator: Pick<User, "id" | "username">;
+};
+
+export type ThreadWithDetails = Thread & {
+  comments: CommentWithCreator[];
+  creator: Pick<User, "id" | "username">;
+};

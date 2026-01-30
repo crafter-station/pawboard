@@ -20,6 +20,8 @@ interface SessionSettingsDialogProps {
   }) => Promise<{ success: boolean; error?: string }>;
   onDeleteSession: () => Promise<{ success: boolean; error?: string }>;
   trigger?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function SessionSettingsDialog({
@@ -27,8 +29,15 @@ export function SessionSettingsDialog({
   onUpdateSettings,
   onDeleteSession,
   trigger,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: SessionSettingsDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled
+    ? (value: boolean) => controlledOnOpenChange?.(value)
+    : setInternalOpen;
   const [isLocked, setIsLocked] = useState(session.isLocked);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);

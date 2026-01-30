@@ -3,12 +3,13 @@ import postgres from "postgres";
 import { env } from "@/env";
 import * as schema from "./schema";
 
-// Detect if we're running against Supabase (production/preview) vs local Docker
-// Local Supabase uses port 54322 and doesn't support pgbouncer parameter
+// Detect environment
 const isLocalSupabase = env.DATABASE_URL.includes(":54322");
+const isProduction = process.env.NODE_ENV === "production";
 
-// Use pgBouncer for connection pooling on serverless (Vercel) with Supabase
-// Skip for local development since local Supabase doesn't have pgBouncer
+// For Supabase production: ensure using pooler connection string
+// Supabase pooler uses port 6543 (transaction mode) instead of 5432 (direct)
+// The pgbouncer=true param is for older setups, but doesn't hurt
 const connectionString =
   isLocalSupabase || env.DATABASE_URL.includes("pgbouncer=true")
     ? env.DATABASE_URL
@@ -16,5 +17,26 @@ const connectionString =
       ? `${env.DATABASE_URL}&pgbouncer=true`
       : `${env.DATABASE_URL}?pgbouncer=true`;
 
-const client = postgres(connectionString, { prepare: false });
+// Connection pool configuration optimized for each environment
+const poolConfig = {
+  prepare: false, // Required for transaction pooling mode
+  // Serverless: keep max LOW because each function instance creates its own pool
+  // Local: can be slightly higher since it's a single long-running process
+  max: isProduction ? 1 : 10,
+  idle_timeout: isProduction ? 0 : 20, // Serverless: close immediately when idle
+  connect_timeout: 10,
+};
+
+// Singleton pattern prevents multiple clients during Next.js hot reload (dev only)
+const globalForDb = globalThis as unknown as {
+  client: ReturnType<typeof postgres> | undefined;
+};
+
+const client = globalForDb.client ?? postgres(connectionString, poolConfig);
+
+// Only cache in development - serverless functions are stateless anyway
+if (!isProduction) {
+  globalForDb.client = client;
+}
+
 export const db = drizzle(client, { schema });

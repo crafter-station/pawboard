@@ -20,18 +20,14 @@ import "@xyflow/react/dist/style.css";
 import {
   Check,
   Command,
-  Copy,
   Home,
   Lock,
   Maximize2,
-  Menu,
+  MessageSquarePlus,
   Minus,
   Pencil,
   Plus,
-  Settings,
   Share2,
-  Sparkles,
-  Trash,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -39,44 +35,63 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addComment as addCommentAction,
+  attachThreadToCard as attachThreadToCardAction,
   createCard,
+  createThread as createThreadAction,
   deleteCard,
+  deleteComment as deleteCommentAction,
   deleteEmptyCards,
   deleteSession,
-  joinSession,
+  deleteThread as deleteThreadAction,
+  detachThreadFromCard as detachThreadFromCardAction,
+  moveThread as moveThreadAction,
   resizeCard,
+  resolveThread as resolveThreadAction,
   toggleReaction,
   updateCard,
   updateSessionName,
   updateSessionSettings,
   voteCard as voteCardAction,
 } from "@/app/actions";
-import { AddCardButton } from "@/components/add-card-button";
 import { ChatPanel, ChatTrigger } from "@/components/chat/chat-drawer";
-import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
 import { ClusterCardsDialog } from "@/components/cluster-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
-import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
 import {
   IdeaCardNode,
   setIdeaCardNodeCallbacks,
 } from "@/components/idea-card-node";
-import { ParticipantsDialog } from "@/components/participants-dialog";
 import { RealtimeCursors } from "@/components/realtime-cursors";
-import { SessionSettingsDialog } from "@/components/session-settings-dialog";
+import { CreateThreadPanel, ThreadNode } from "@/components/threads";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { UserBadge } from "@/components/user-badge";
-import type { Card, Session, SessionRole, TiptapContent } from "@/db/schema";
+import type {
+  Card,
+  Session,
+  ThreadWithDetails,
+  TiptapContent,
+} from "@/db/schema";
 import { DEFAULT_TIPTAP_CONTENT } from "@/db/schema";
-import { useInvalidateCardEditors } from "@/hooks/use-card-editors";
+import {
+  useInvalidateCardEditors,
+  useSessionCardEditors,
+} from "@/hooks/use-card-editors";
 import { useCatSound } from "@/hooks/use-cat-sound";
 import { useFingerprint } from "@/hooks/use-fingerprint";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
@@ -84,6 +99,7 @@ import { useRealtimeCards } from "@/hooks/use-realtime-cards";
 import { useRealtimePresence } from "@/hooks/use-realtime-presence";
 import { useSessionUsername } from "@/hooks/use-session-username";
 import { DARK_COLORS, LIGHT_COLORS } from "@/lib/colors";
+import { findCardAtPoint, getThreadBubbleCenter } from "@/lib/geometry-utils";
 import { generateCardId } from "@/lib/nanoid";
 import { canAddCard } from "@/lib/permissions";
 import {
@@ -91,16 +107,26 @@ import {
   CARD_HEIGHT_MOBILE,
   CARD_WIDTH,
   CARD_WIDTH_MOBILE,
+  type CardThreadHandlers,
   calculateCardsBounds,
   cardsToNodes,
   DEFAULT_CARD_HEIGHT,
   DEFAULT_CARD_WIDTH,
   type IdeaCardNode as IdeaCardNodeType,
+  type ThreadNode as ThreadNodeType,
+  threadsToNodes,
   updateNodeData,
 } from "@/lib/react-flow-utils";
 import { createTiptapContent } from "@/lib/tiptap-utils";
 import { cn, getAvatarForUser } from "@/lib/utils";
-import { useChatStore } from "@/stores/chat-store";
+import { useSidebarStore } from "@/stores/sidebar-store";
+import { useThreadFocusStore } from "@/stores/thread-focus-store";
+
+// Stable empty object to avoid creating new references on each render
+const EMPTY_EDITORS: Record<
+  string,
+  Array<{ userId: string; username: string }>
+> = {};
 
 export interface Participant {
   visitorId: string;
@@ -111,12 +137,14 @@ interface ReactFlowBoardProps {
   sessionId: string;
   initialSession: Session;
   initialCards: Card[];
+  initialThreads: ThreadWithDetails[];
   initialParticipants: Participant[];
 }
 
 // Register node types
 const nodeTypes: NodeTypes = {
   ideaCard: IdeaCardNode,
+  thread: ThreadNode,
 };
 
 // Minimum zoom and maximum zoom
@@ -127,13 +155,15 @@ function ReactFlowBoardInner({
   sessionId,
   initialSession,
   initialCards,
+  initialThreads,
   initialParticipants,
 }: ReactFlowBoardProps) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
   const playSound = useCatSound();
-  const isChatOpen = useChatStore((state) => state.isOpen);
+  const isSidebarOpen = useSidebarStore((state) => state.isOpen);
+  const setFocusedThread = useThreadFocusStore((s) => s.setFocusedThread);
   const invalidateCardEditors = useInvalidateCardEditors();
 
   // React Flow hooks
@@ -142,21 +172,42 @@ function ReactFlowBoardInner({
     zoomIn,
     zoomOut,
     setViewport,
+    setCenter,
     screenToFlowPosition,
     flowToScreenPosition,
   } = useReactFlow();
 
+  // Create stable ref for screenToFlowPosition to avoid infinite loops
+  // (useReactFlow returns new function references on every render)
+  const screenToFlowPositionRef = useRef(screenToFlowPosition);
+  useEffect(() => {
+    screenToFlowPositionRef.current = screenToFlowPosition;
+  });
+
+  const stableScreenToFlowPosition = useCallback(
+    (position: { x: number; y: number }) =>
+      screenToFlowPositionRef.current(position),
+    [],
+  );
+
   // State
-  const [nodes, setNodes] = useState<IdeaCardNodeType[]>([]);
+  const [cardNodes, setCardNodes] = useState<IdeaCardNodeType[]>([]);
+  const [threadNodes, setThreadNodes] = useState<ThreadNodeType[]>([]);
+  // Combined nodes for React Flow
+  const nodes = useMemo(
+    () =>
+      [...cardNodes, ...threadNodes] as (IdeaCardNodeType | ThreadNodeType)[],
+    [cardNodes, threadNodes],
+  );
+  const setNodes = setCardNodes; // For backwards compatibility with card node updates
   const [copied, setCopied] = useState(false);
-  const [sessionIdCopied, setSessionIdCopied] = useState(false);
   const [newCardId, setNewCardId] = useState<string | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [editSessionNameOpen, setEditSessionNameOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [clusterDialogOpen, setClusterDialogOpen] = useState(false);
+  const [deleteSessionDialogOpen, setDeleteSessionDialogOpen] = useState(false);
   const [session, setSession] = useState<Session>(initialSession);
-  const [userRole, setUserRole] = useState<SessionRole | null>(null);
   const [participants, setParticipants] = useState<Map<string, string>>(
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
@@ -175,12 +226,31 @@ function ReactFlowBoardInner({
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [isReactFlowReady, setIsReactFlowReady] = useState(false);
-
+  const [showResolvedThreads] = useState(true);
+  // Context menu position for right-click actions
+  const [contextMenuPosition, setContextMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  // Board context menu open state (controlled)
+  const [boardMenuOpen, setBoardMenuOpen] = useState(false);
+  // Magnetic thread attachment state
+  const [magneticTargetCardId, setMagneticTargetCardId] = useState<
+    string | null
+  >(null);
   const hasInitializedViewRef = useRef(false);
   // Ref to store duplicate callback to avoid stale closures in useEffect
   const handleDuplicateCardRef = useRef<((card: Card) => void) | null>(null);
+  // Ref to store add thread to card callback
+  const handleAddThreadToCardRef = useRef<((cardId: string) => void) | null>(
+    null,
+  );
   // Track component mount state for async operations
   const mountedRef = useRef(true);
+  // Ref to access current cards value without adding to callback dependencies
+  const cardsRef = useRef<Card[]>(initialCards);
+  // Ref for the board container - used to constrain hover card positioning
+  const boardContainerRef = useRef<HTMLDivElement>(null);
 
   // Cleanup mounted ref on unmount
   useEffect(() => {
@@ -189,14 +259,12 @@ function ReactFlowBoardInner({
     };
   }, []);
 
-  // Derived state
-  const isSessionCreator = userRole === "creator";
-  const isLocked = session.isLocked;
   // Derive isMobile from viewportSize - avoids recalculating in multiple places
   const isMobile = viewportSize.width > 0 && viewportSize.width < 640;
 
   const {
     username,
+    role: sessionRole,
     isLoading: isUsernameLoading,
     updateUsername,
   } = useSessionUsername({
@@ -204,33 +272,20 @@ function ReactFlowBoardInner({
     visitorId,
   });
 
+  // Derived state - use sessionRole directly instead of syncing via useEffect
+  const userRole = sessionRole ?? null;
+  const isSessionCreator = userRole === "creator";
+  const isLocked = session.isLocked;
+
   // Track online presence for participants
   const { onlineUsers } = useRealtimePresence({
     roomName: sessionId,
     userId: visitorId || "",
   });
 
-  // Join session and get user role
-  useEffect(() => {
-    if (!visitorId) return;
-
-    const doJoin = async () => {
-      try {
-        const { role, error } = await joinSession(visitorId, sessionId);
-        if (error) {
-          console.error("Failed to join session:", error);
-          return;
-        }
-        if (role) {
-          setUserRole(role);
-        }
-      } catch (err) {
-        console.error("Error joining session:", err);
-      }
-    };
-
-    doJoin();
-  }, [visitorId, sessionId]);
+  // Fetch all card editors for the session in one request
+  const { data: sessionEditorsData } = useSessionCardEditors(sessionId);
+  const sessionEditors = sessionEditorsData?.editors ?? EMPTY_EDITORS;
 
   // Derive participants map with current user included
   // This is better than using useEffect to sync state
@@ -335,9 +390,20 @@ function ReactFlowBoardInner({
     applyClusterPositions,
     broadcastClusterPositions,
     batchMoveCards,
+    // Thread functions
+    threads,
+    addThread,
+    moveThread,
+    attachThread,
+    detachThread,
+    resolveThread,
+    removeThread,
+    addCommentToThread,
+    removeCommentFromThread,
   } = useRealtimeCards(
     sessionId,
     initialCards,
+    initialThreads,
     visitorId || "",
     username,
     handleRemoteNameChange,
@@ -346,9 +412,109 @@ function ReactFlowBoardInner({
     handleRemoteEditorsChange,
   );
 
-  // Sync cards to nodes - skip during drag to prevent flickering
+  // Keep cardsRef in sync with cards state for use in callbacks
   useEffect(() => {
-    if (!visitorId || isDragging) return;
+    cardsRef.current = cards;
+  }, [cards]);
+
+  // Create thread handlers for card-attached threads
+  const cardThreadHandlers = useMemo<CardThreadHandlers>(
+    () => ({
+      onAddComment: async (threadId: string, content: string) => {
+        if (!visitorId) return;
+        const { comment, error } = await addCommentAction(
+          threadId,
+          content,
+          visitorId,
+        );
+        if (error || !comment) {
+          console.error("Failed to add comment:", error);
+          return;
+        }
+        addCommentToThread(threadId, comment);
+      },
+      onDeleteComment: async (threadId: string, commentId: string) => {
+        if (!visitorId) return;
+        const { error } = await deleteCommentAction(commentId, visitorId);
+        if (error) {
+          console.error("Failed to delete comment:", error);
+          return;
+        }
+        removeCommentFromThread(threadId, commentId);
+      },
+      onResolve: async (threadId: string, isResolved: boolean) => {
+        if (!visitorId) return;
+        const { error } = await resolveThreadAction(
+          threadId,
+          isResolved,
+          visitorId,
+        );
+        if (error) {
+          console.error("Failed to resolve thread:", error);
+          return;
+        }
+        resolveThread(threadId, isResolved);
+      },
+      onDeleteThread: async (threadId: string) => {
+        if (!visitorId) return;
+        const { error } = await deleteThreadAction(threadId, visitorId);
+        if (error) {
+          console.error("Failed to delete thread:", error);
+          return;
+        }
+        removeThread(threadId);
+      },
+      onDetach: async (
+        threadId: string,
+        position: { x: number; y: number },
+      ) => {
+        if (!visitorId) return;
+        // Optimistic update
+        detachThread(threadId, position.x, position.y);
+        // Persist to database
+        const { error } = await detachThreadFromCardAction(
+          threadId,
+          position.x,
+          position.y,
+          visitorId,
+        );
+        if (error) {
+          console.error("Failed to detach thread:", error);
+          // Note: Could revert optimistic update here if needed
+        }
+      },
+      screenToFlowPosition: stableScreenToFlowPosition,
+    }),
+    [
+      visitorId,
+      addCommentToThread,
+      removeCommentFromThread,
+      resolveThread,
+      removeThread,
+      detachThread,
+      stableScreenToFlowPosition,
+    ],
+  );
+
+  // Group card-attached threads by cardId
+  const threadsByCardId = useMemo(() => {
+    const map = new Map<string, typeof threads>();
+    for (const thread of threads) {
+      if (thread.cardId) {
+        const list = map.get(thread.cardId) ?? [];
+        list.push(thread);
+        map.set(thread.cardId, list);
+      }
+    }
+    return map;
+  }, [threads]);
+
+  // Sync cards to nodes - skip during drag to prevent flickering
+  // BUT we need to update during drag if magneticTargetCardId changes
+  useEffect(() => {
+    if (!visitorId) return;
+    // Skip full sync during drag, but allow magnetic highlight updates
+    if (isDragging && magneticTargetCardId === null) return;
 
     setNodes((currentNodes) => {
       if (currentNodes.length === 0 && cards.length > 0) {
@@ -360,6 +526,10 @@ function ReactFlowBoardInner({
           visitorId,
           getUsernameForId,
           newCardId,
+          threadsByCardId,
+          cardThreadHandlers,
+          magneticTargetCardId,
+          sessionEditors,
         );
       }
       // Update existing nodes
@@ -370,6 +540,10 @@ function ReactFlowBoardInner({
         userRole,
         visitorId,
         getUsernameForId,
+        threadsByCardId,
+        cardThreadHandlers,
+        magneticTargetCardId,
+        sessionEditors,
       );
     });
   }, [
@@ -380,6 +554,146 @@ function ReactFlowBoardInner({
     getUsernameForId,
     newCardId,
     isDragging,
+    threadsByCardId,
+    cardThreadHandlers,
+    magneticTargetCardId,
+    sessionEditors,
+  ]);
+
+  // Thread action handlers
+  const handleAddCommentToThread = useCallback(
+    async (threadId: string, content: string) => {
+      if (!visitorId) return;
+      const { comment, error } = await addCommentAction(
+        threadId,
+        content,
+        visitorId,
+      );
+      if (error || !comment) {
+        console.error("Failed to add comment:", error);
+        return;
+      }
+      addCommentToThread(threadId, comment);
+    },
+    [visitorId, addCommentToThread],
+  );
+
+  const handleDeleteCommentFromThread = useCallback(
+    async (threadId: string, commentId: string) => {
+      if (!visitorId) return;
+      const { error } = await deleteCommentAction(commentId, visitorId);
+      if (error) {
+        console.error("Failed to delete comment:", error);
+        return;
+      }
+      removeCommentFromThread(threadId, commentId);
+    },
+    [visitorId, removeCommentFromThread],
+  );
+
+  const handleResolveThread = useCallback(
+    async (threadId: string, isResolved: boolean) => {
+      if (!visitorId) return;
+      const { error } = await resolveThreadAction(
+        threadId,
+        isResolved,
+        visitorId,
+      );
+      if (error) {
+        console.error("Failed to resolve thread:", error);
+        return;
+      }
+      resolveThread(threadId, isResolved);
+    },
+    [visitorId, resolveThread],
+  );
+
+  const handleDeleteThread = useCallback(
+    async (threadId: string) => {
+      if (!visitorId) return;
+      const { error } = await deleteThreadAction(threadId, visitorId);
+      if (error) {
+        console.error("Failed to delete thread:", error);
+        return;
+      }
+      removeThread(threadId);
+    },
+    [visitorId, removeThread],
+  );
+
+  // Handle focusing on a thread from the sidebar
+  const handleFocusThread = useCallback(
+    (threadId: string) => {
+      const thread = threads.find((t) => t.id === threadId);
+      if (!thread) return;
+
+      // Determine the position to focus on
+      let focusX: number;
+      let focusY: number;
+
+      if (thread.cardId) {
+        // Thread is attached to a card - find the card position
+        const card = cards.find((c) => c.id === thread.cardId);
+        if (card) {
+          focusX = card.x + (card.width || DEFAULT_CARD_WIDTH) / 2;
+          focusY = card.y + (card.height || DEFAULT_CARD_HEIGHT) / 2;
+        } else {
+          return;
+        }
+      } else if (thread.x !== null && thread.y !== null) {
+        // Canvas thread - use its position
+        focusX = thread.x;
+        focusY = thread.y;
+      } else {
+        return;
+      }
+
+      // Pan to center on the thread/card
+      setCenter(focusX, focusY, { zoom: 1, duration: 300 });
+
+      // Set focused thread shortly after pan starts to trigger expansion
+      setTimeout(() => {
+        setFocusedThread(threadId);
+      }, 150);
+    },
+    [threads, cards, setCenter, setFocusedThread],
+  );
+
+  // Sync threads to nodes
+  useEffect(() => {
+    if (!visitorId || isDragging) return;
+
+    // Filter threads based on resolved state
+    const filteredThreads = showResolvedThreads
+      ? threads
+      : threads.filter((t) => !t.isResolved);
+
+    setThreadNodes(
+      threadsToNodes(
+        filteredThreads,
+        userRole,
+        visitorId,
+        session.isLocked,
+        {
+          onAddComment: handleAddCommentToThread,
+          onDeleteComment: handleDeleteCommentFromThread,
+          onResolve: handleResolveThread,
+          onDeleteThread: handleDeleteThread,
+        },
+        boardContainerRef.current,
+      ),
+    );
+  }, [
+    threads,
+    userRole,
+    visitorId,
+    session.isLocked,
+    isDragging,
+    showResolvedThreads,
+    handleAddCommentToThread,
+    handleDeleteCommentFromThread,
+    handleResolveThread,
+    handleDeleteThread,
   ]);
 
   // Set up node callbacks
@@ -391,7 +705,8 @@ function ReactFlowBoardInner({
       onVote: async (id: string) => {
         if (!visitorId) return;
 
-        const card = cards.find((c) => c.id === id);
+        // Use ref to access current cards without adding to dependencies
+        const card = cardsRef.current.find((c) => c.id === id);
         if (!card) return;
 
         if (card.createdById === visitorId) return;
@@ -408,7 +723,8 @@ function ReactFlowBoardInner({
       onReact: async (id: string, emoji: string) => {
         if (!visitorId) return;
 
-        const card = cards.find((c) => c.id === id);
+        // Use ref to access current cards without adding to dependencies
+        const card = cardsRef.current.find((c) => c.id === id);
         if (!card) return;
 
         if (card.createdById === visitorId) return;
@@ -454,7 +770,8 @@ function ReactFlowBoardInner({
         await deleteCard(id, visitorId);
       },
       onDuplicate: (cardId: string) => {
-        const card = cards.find((c) => c.id === cardId);
+        // Use ref to access current cards without adding to dependencies
+        const card = cardsRef.current.find((c) => c.id === cardId);
         if (card && handleDuplicateCardRef.current) {
           handleDuplicateCardRef.current(card);
         }
@@ -471,10 +788,12 @@ function ReactFlowBoardInner({
         if (!visitorId) return;
         await resizeCard(id, width, height, sessionId, visitorId);
       },
+      onAddThread: (cardId: string) => {
+        handleAddThreadToCardRef.current?.(cardId);
+      },
     });
   }, [
     visitorId,
-    cards,
     typeCard,
     changeColor,
     removeCard,
@@ -488,19 +807,60 @@ function ReactFlowBoardInner({
   ]);
 
   // Handle node position changes from drag - let React Flow manage positions
-  const handleNodesChange: OnNodesChange<IdeaCardNodeType> = useCallback(
-    (changes: NodeChange<IdeaCardNodeType>[]) => {
-      // Apply changes directly to nodes - don't update cards state during drag
-      // This prevents the flickering caused by state sync fighting with React Flow
-      setNodes((nds) => applyNodeChanges(changes, nds) as IdeaCardNodeType[]);
-    },
-    [],
-  );
+  const handleNodesChange: OnNodesChange<IdeaCardNodeType | ThreadNodeType> =
+    useCallback((changes: NodeChange<IdeaCardNodeType | ThreadNodeType>[]) => {
+      // Separate changes for card nodes and thread nodes
+      const cardChanges = changes.filter(
+        (c) => !("id" in c) || !c.id.startsWith("thread-"),
+      ) as NodeChange<IdeaCardNodeType>[];
+      const threadChanges = changes.filter(
+        (c) => "id" in c && c.id.startsWith("thread-"),
+      ) as NodeChange<ThreadNodeType>[];
+
+      if (cardChanges.length > 0) {
+        setCardNodes(
+          (nds) => applyNodeChanges(cardChanges, nds) as IdeaCardNodeType[],
+        );
+      }
+      if (threadChanges.length > 0) {
+        setThreadNodes(
+          (nds) => applyNodeChanges(threadChanges, nds) as ThreadNodeType[],
+        );
+      }
+    }, []);
 
   // Handle drag start - prevent cards sync during drag
   const handleNodeDragStart = useCallback(() => {
     setIsDragging(true);
   }, []);
+
+  // Handle drag to show magnetic attachment feedback
+  const handleNodeDrag = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      // Only process thread nodes
+      if (!node.id.startsWith("thread-")) {
+        setMagneticTargetCardId(null);
+        return;
+      }
+
+      const threadId = node.id.replace("thread-", "");
+      const thread = threads.find((t) => t.id === threadId);
+
+      // Only show magnetic feedback for canvas threads (not already attached)
+      if (!thread || thread.cardId) {
+        setMagneticTargetCardId(null);
+        return;
+      }
+
+      // Calculate thread bubble center position
+      const bubbleCenter = getThreadBubbleCenter(node.position);
+
+      // Check if over a card
+      const targetCard = findCardAtPoint(bubbleCenter, cards);
+      setMagneticTargetCardId(targetCard?.id ?? null);
+    },
+    [threads, cards],
+  );
 
   // Handle drag end - sync to cards state and persist to database
   const handleNodeDragStop = useCallback(
@@ -510,26 +870,72 @@ function ReactFlowBoardInner({
         return;
       }
 
-      const positions = draggedNodes.map((n) => ({
-        id: n.id,
-        x: n.position.x,
-        y: n.position.y,
-      }));
+      // Separate card nodes from thread nodes
+      const cardNodes = draggedNodes.filter((n) => !n.id.startsWith("thread-"));
+      const threadNodesArr = draggedNodes.filter((n) =>
+        n.id.startsWith("thread-"),
+      );
 
-      // Update cards state + broadcast in ONE operation (no individual moveCard calls)
-      batchMoveCards(positions);
+      // Handle card nodes
+      if (cardNodes.length > 0) {
+        const positions = cardNodes.map((n) => ({
+          id: n.id,
+          x: n.position.x,
+          y: n.position.y,
+        }));
+
+        // Update cards state + broadcast in ONE operation
+        batchMoveCards(positions);
+
+        // Persist cards to database
+        await Promise.all(
+          positions.map((pos) =>
+            updateCard(pos.id, { x: pos.x, y: pos.y }, visitorId),
+          ),
+        );
+      }
+
+      // Handle thread nodes
+      if (threadNodesArr.length > 0) {
+        for (const node of threadNodesArr) {
+          const threadId = node.id.replace("thread-", "");
+          const thread = threads.find((t) => t.id === threadId);
+
+          // Only process canvas threads (not already card-attached)
+          if (thread && !thread.cardId) {
+            // Calculate thread bubble center position
+            const bubbleCenter = getThreadBubbleCenter(node.position);
+
+            // Check if dropped over a card
+            const targetCard = findCardAtPoint(bubbleCenter, cards);
+
+            if (targetCard) {
+              // Magnetic attach!
+              attachThread(threadId, targetCard.id);
+              await attachThreadToCardAction(
+                threadId,
+                targetCard.id,
+                visitorId,
+              );
+            } else {
+              // Normal position update
+              moveThread(threadId, node.position.x, node.position.y);
+              await moveThreadAction(
+                threadId,
+                node.position.x,
+                node.position.y,
+                visitorId,
+              );
+            }
+          }
+        }
+      }
 
       // Re-enable cards sync AFTER state is updated
       setIsDragging(false);
-
-      // Persist to database
-      await Promise.all(
-        positions.map((pos) =>
-          updateCard(pos.id, { x: pos.x, y: pos.y }, visitorId),
-        ),
-      );
+      setMagneticTargetCardId(null);
     },
-    [visitorId, batchMoveCards],
+    [visitorId, batchMoveCards, moveThread, threads, cards, attachThread],
   );
 
   // Handle selection changes
@@ -689,6 +1095,281 @@ function ReactFlowBoardInner({
     setViewport,
   ]);
 
+  // State for new thread creation
+  const [isCreatingThread, setIsCreatingThread] = useState(false);
+  const [pendingThreadPosition, setPendingThreadPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  // Screen position for the creation panel
+  const [createPanelScreenPosition, setCreatePanelScreenPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  // For card-attached threads
+  const [pendingCardThreadId, setPendingCardThreadId] = useState<string | null>(
+    null,
+  );
+
+  const handleAddThread = useCallback(() => {
+    if (!visitorId || isLocked) return;
+
+    // Get center of current viewport in screen coordinates
+    const screenCenter = {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    };
+
+    // Convert to flow coordinates for the thread position
+    const flowCenter = screenToFlowPosition(screenCenter);
+
+    // Set both flow position (for DB) and screen position (for panel)
+    setPendingThreadPosition({
+      x: flowCenter.x,
+      y: flowCenter.y,
+    });
+    setCreatePanelScreenPosition(screenCenter);
+    setIsCreatingThread(true);
+  }, [visitorId, isLocked, screenToFlowPosition]);
+
+  const handleCreateThreadWithComment = useCallback(
+    async (initialComment: string, cardId?: string) => {
+      if (!visitorId) return;
+
+      // Determine if this is a card-attached thread or canvas thread
+      const targetCardId = cardId || pendingCardThreadId;
+
+      // For canvas threads, we need a position
+      if (!targetCardId && !pendingThreadPosition) return;
+
+      const { thread, error } = await createThreadAction(
+        {
+          sessionId,
+          // Either use cardId or position
+          ...(targetCardId
+            ? { cardId: targetCardId }
+            : {
+                x: pendingThreadPosition?.x ?? 0,
+                y: pendingThreadPosition?.y ?? 0,
+              }),
+          initialComment,
+        },
+        visitorId,
+      );
+
+      if (error || !thread) {
+        console.error("Failed to create thread:", error);
+        return;
+      }
+
+      addThread(thread);
+      setIsCreatingThread(false);
+      setPendingThreadPosition(null);
+      setPendingCardThreadId(null);
+      setCreatePanelScreenPosition(null);
+
+      // Auto-expand the newly created thread so it shows as ThreadPanel
+      setFocusedThread(thread.id);
+    },
+    [
+      visitorId,
+      sessionId,
+      pendingThreadPosition,
+      pendingCardThreadId,
+      addThread,
+      setFocusedThread,
+    ],
+  );
+
+  const handleCancelThreadCreation = useCallback(() => {
+    setIsCreatingThread(false);
+    setPendingThreadPosition(null);
+    setPendingCardThreadId(null);
+    setCreatePanelScreenPosition(null);
+  }, []);
+
+  // Handle adding thread to a specific card (from card context menu)
+  const handleAddThreadToCard = useCallback(
+    (cardId: string) => {
+      if (!visitorId || isLocked) return;
+
+      // Find the card to get its position
+      const card = cards.find((c) => c.id === cardId);
+      if (card) {
+        // Convert card position to screen coordinates
+        // Position the panel at the bottom-right of the card
+        const screenPos = flowToScreenPosition({
+          x: card.x + (card.width ?? DEFAULT_CARD_WIDTH),
+          y: card.y + (card.height ?? DEFAULT_CARD_HEIGHT) / 2,
+        });
+        setCreatePanelScreenPosition(screenPos);
+      } else {
+        // Fallback to center of screen
+        setCreatePanelScreenPosition({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+      }
+
+      setPendingCardThreadId(cardId);
+      setIsCreatingThread(true);
+    },
+    [visitorId, isLocked, cards, flowToScreenPosition],
+  );
+
+  // Handle adding thread from context menu (at specific position)
+  const handleAddThreadAtPosition = useCallback(() => {
+    if (!visitorId || isLocked || !contextMenuPosition) return;
+
+    // Convert screen position to flow coordinates
+    const flowPosition = screenToFlowPosition(contextMenuPosition);
+
+    setPendingThreadPosition({
+      x: flowPosition.x,
+      y: flowPosition.y,
+    });
+    // Store screen position for the panel before clearing context menu
+    setCreatePanelScreenPosition(contextMenuPosition);
+    setIsCreatingThread(true);
+    setContextMenuPosition(null);
+    setBoardMenuOpen(false);
+  }, [visitorId, isLocked, contextMenuPosition, screenToFlowPosition]);
+
+  // Handle adding card at cursor position (for keyboard shortcut)
+  const handleAddCardAtCursor = useCallback(async () => {
+    if (!username || !visitorId) return;
+    if (!canAddCard(session, userRole ?? "participant")) return;
+
+    playSound();
+
+    // Use mouse position if available, otherwise fall back to viewport center
+    const screenPosition = mousePositionRef.current ?? {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    };
+
+    // Convert screen position to flow coordinates
+    const flowPosition = screenToFlowPosition(screenPosition);
+
+    // Position card at exact cursor position (top-left corner)
+    const x = flowPosition.x;
+    const y = flowPosition.y;
+
+    const cardId = generateCardId();
+    const newCard: Card = {
+      id: cardId,
+      sessionId,
+      content: DEFAULT_TIPTAP_CONTENT,
+      color: getRandomColor(),
+      x,
+      y,
+      width: DEFAULT_CARD_WIDTH,
+      height: DEFAULT_CARD_HEIGHT,
+      votes: 0,
+      votedBy: [],
+      reactions: {},
+      embedding: null,
+      createdById: visitorId,
+      updatedAt: new Date(),
+    };
+
+    setNewCardId(cardId);
+    addCard(newCard);
+    await createCard(newCard, visitorId);
+  }, [
+    username,
+    visitorId,
+    session,
+    userRole,
+    playSound,
+    screenToFlowPosition,
+    sessionId,
+    getRandomColor,
+    addCard,
+  ]);
+
+  // Handle adding thread at cursor position (for keyboard shortcut)
+  const handleAddThreadAtCursor = useCallback(() => {
+    if (!visitorId || isLocked) return;
+
+    // Use mouse position if available, otherwise fall back to viewport center
+    const screenPosition = mousePositionRef.current ?? {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    };
+
+    // Convert screen position to flow coordinates
+    const flowPosition = screenToFlowPosition(screenPosition);
+
+    setPendingThreadPosition({
+      x: flowPosition.x,
+      y: flowPosition.y,
+    });
+    // Store screen position for the panel
+    setCreatePanelScreenPosition(screenPosition);
+    setIsCreatingThread(true);
+  }, [visitorId, isLocked, screenToFlowPosition]);
+
+  // Handle pane right-click (empty space on the board)
+  const handlePaneContextMenu = useCallback(
+    (event: MouseEvent | React.MouseEvent) => {
+      event.preventDefault();
+      setContextMenuPosition({ x: event.clientX, y: event.clientY });
+      setBoardMenuOpen(true);
+    },
+    [],
+  );
+
+  // Handle adding card from context menu (at specific position)
+  const handleAddCardAtPosition = useCallback(async () => {
+    if (!username || !visitorId || !contextMenuPosition) return;
+    if (!canAddCard(session, userRole ?? "participant")) return;
+
+    playSound();
+
+    // Convert screen position to flow coordinates
+    const flowPosition = screenToFlowPosition(contextMenuPosition);
+
+    // Position card at exact cursor position (top-left corner)
+    const x = flowPosition.x;
+    const y = flowPosition.y;
+
+    const cardId = generateCardId();
+    const newCard: Card = {
+      id: cardId,
+      sessionId,
+      content: DEFAULT_TIPTAP_CONTENT,
+      color: getRandomColor(),
+      x,
+      y,
+      width: DEFAULT_CARD_WIDTH,
+      height: DEFAULT_CARD_HEIGHT,
+      votes: 0,
+      votedBy: [],
+      reactions: {},
+      embedding: null,
+      createdById: visitorId,
+      updatedAt: new Date(),
+    };
+
+    setNewCardId(cardId);
+    addCard(newCard);
+    setContextMenuPosition(null);
+    setBoardMenuOpen(false);
+    await createCard(newCard, visitorId);
+  }, [
+    username,
+    visitorId,
+    contextMenuPosition,
+    session,
+    userRole,
+    playSound,
+    screenToFlowPosition,
+    sessionId,
+    getRandomColor,
+    addCard,
+  ]);
+
   const handleDuplicateCard = useCallback(
     async (card: Card) => {
       if (!username || !visitorId) return;
@@ -791,28 +1472,24 @@ function ReactFlowBoardInner({
     ],
   );
 
-  // Keep ref updated with latest callback
-  handleDuplicateCardRef.current = handleDuplicateCard;
+  // Keep refs updated with latest callbacks
+  useEffect(() => {
+    handleDuplicateCardRef.current = handleDuplicateCard;
+    handleAddThreadToCardRef.current = handleAddThreadToCard;
+  }, [handleDuplicateCard, handleAddThreadToCard]);
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      const timeoutId = setTimeout(() => {
+        if (mountedRef.current) setCopied(false);
+      }, 2000);
+      return () => clearTimeout(timeoutId);
     } catch (err) {
       console.error("Failed to copy to clipboard:", err);
     }
-  };
-
-  const handleCopySessionId = async () => {
-    try {
-      await navigator.clipboard.writeText(sessionId);
-      setSessionIdCopied(true);
-      setTimeout(() => setSessionIdCopied(false), 2000);
-    } catch (err) {
-      console.error("Failed to copy session ID:", err);
-    }
-  };
+  }, []);
 
   const handleUpdateUsername = async (newUsername: string) => {
     const result = await updateUsername(newUsername);
@@ -867,6 +1544,11 @@ function ReactFlowBoardInner({
       return { success: true };
     }
     return { success: false, error: error ?? "Failed to update settings" };
+  };
+
+  const handleToggleLock = async () => {
+    const result = await handleUpdateSessionSettings({ isLocked: !isLocked });
+    return result;
   };
 
   const handleDeleteSession = async () => {
@@ -1081,17 +1763,24 @@ function ReactFlowBoardInner({
         return;
       }
 
-      // "N" to create a new card
+      // "N" to create a new card at cursor position
       if (e.key === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        handleAddCard();
+        handleAddCardAtCursor();
+      }
+
+      // "C" to create a comment thread at cursor position
+      if (e.key === "c" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        handleAddThreadAtCursor();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     commandOpen,
-    handleAddCard,
+    handleAddCardAtCursor,
+    handleAddThreadAtCursor,
     selectedCardIds,
     cards,
     handleCopyCard,
@@ -1124,14 +1813,59 @@ function ReactFlowBoardInner({
   return (
     <div className="h-screen flex overflow-hidden">
       {/* Main content area */}
-      <div className="flex-1 min-h-screen overflow-hidden relative">
+      <div
+        ref={boardContainerRef}
+        className="flex-1 min-h-screen overflow-hidden relative"
+      >
         <CommandMenu
           open={commandOpen}
           onOpenChange={setCommandOpen}
           onAddCard={handleAddCard}
+          onAddThread={handleAddThread}
           onShare={handleShare}
           onChangeName={() => setEditNameOpen(true)}
+          isSessionCreator={isSessionCreator}
+          isLocked={isLocked}
+          onToggleLock={handleToggleLock}
+          onDeleteSession={() => setDeleteSessionDialogOpen(true)}
+          onClusterCards={() => setClusterDialogOpen(true)}
+          onCleanupEmptyCards={handleCleanupEmptyCards}
+          onEditBoardName={() => setEditSessionNameOpen(true)}
         />
+
+        {/* Cluster Cards Dialog (controlled by command menu) */}
+        <ClusterCardsDialog
+          cards={cards}
+          sessionId={sessionId}
+          userId={visitorId || ""}
+          onCluster={handleClusterCards}
+          open={clusterDialogOpen}
+          onOpenChange={setClusterDialogOpen}
+        />
+
+        {/* Create Thread Inline Panel */}
+        {isCreatingThread && createPanelScreenPosition && (
+          <div
+            className="fixed z-[100]"
+            style={{
+              // Position panel to the right of where the bubble will be
+              // Bubble is 40px wide, centered at click position
+              // So bubble right edge is at clickX + 20px
+              // Panel left edge: clickX + 20px (bubble half-width) + 12px (sideOffset)
+              left: createPanelScreenPosition.x + 32,
+              // Top-aligned with bubble top
+              // Bubble is 40px tall, centered at clickY
+              // So bubble top is at clickY - 20px
+              top: createPanelScreenPosition.y - 20,
+            }}
+          >
+            <CreateThreadPanel
+              onSubmit={handleCreateThreadWithComment}
+              onCancel={handleCancelThreadCreation}
+              isCardThread={!!pendingCardThreadId}
+            />
+          </div>
+        )}
 
         {/* Edit Username Dialog - controlled by command menu */}
         <EditNameDialog
@@ -1152,6 +1886,31 @@ function ReactFlowBoardInner({
           placeholder="Enter board name"
           maxLength={50}
         />
+
+        {/* Delete Session Confirmation Dialog */}
+        <AlertDialog
+          open={deleteSessionDialogOpen}
+          onOpenChange={setDeleteSessionDialogOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete session?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete this session and all its cards.
+                This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteSession}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* AI Chat Trigger Button */}
         <ChatTrigger />
@@ -1214,87 +1973,6 @@ function ReactFlowBoardInner({
               </span>
             </div>
           )}
-          {isSessionCreator && (
-            <>
-              <CleanupCardsDialog
-                cards={cards}
-                onCleanup={handleCleanupEmptyCards}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                    title="Clean up empty cards"
-                  >
-                    <Trash className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Button>
-                }
-              />
-              <ClusterCardsDialog
-                cards={cards}
-                sessionId={sessionId}
-                userId={visitorId}
-                onCluster={handleClusterCards}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                    title="Cluster cards by similarity"
-                    disabled={isLocked}
-                  >
-                    <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Button>
-                }
-              />
-              <SessionSettingsDialog
-                session={session}
-                onUpdateSettings={handleUpdateSessionSettings}
-                onDeleteSession={handleDeleteSession}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                    title="Session Settings"
-                  >
-                    <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Button>
-                }
-              />
-            </>
-          )}
-        </div>
-
-        {/* Fixed UI - Top Right: Desktop */}
-        <div
-          className={cn(
-            "fixed top-2 sm:top-4 right-2 sm:right-4 z-50 hidden sm:flex items-center gap-2 transition-[right] duration-300",
-            isChatOpen && "sm:right-[396px]",
-          )}
-        >
-          <button
-            type="button"
-            onClick={handleCopySessionId}
-            className="flex text-muted-foreground text-sm font-mono bg-card/80 backdrop-blur-sm px-3 h-9 items-center justify-center gap-2 rounded-md border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer"
-            title={sessionIdCopied ? "Copied!" : "Copy session ID"}
-          >
-            {sessionId}
-            {sessionIdCopied ? (
-              <Check className="w-3.5 h-3.5 text-sky-500" />
-            ) : (
-              <Copy className="w-3.5 h-3.5 opacity-50" />
-            )}
-          </button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleAddCard}
-            disabled={isLocked}
-            title={isLocked ? "Session is locked" : "Add card (N)"}
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
           <Button
             variant="outline"
             size="icon"
@@ -1307,162 +1985,31 @@ function ReactFlowBoardInner({
               <Share2 className="w-4 h-4" />
             )}
           </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setCommandOpen(true)}
-            title="Command menu (⌘K)"
-          >
-            <Command className="w-4 h-4" />
-          </Button>
-          <div className="bg-card/80 backdrop-blur-sm h-9 flex items-center px-2 rounded-lg border border-border">
-            <ThemeSwitcherToggle />
-          </div>
         </div>
 
-        {/* Fixed UI - Top Right: Mobile Hamburger Menu */}
+        {/* Fixed UI - Top Right: Command Menu */}
         <div
           className={cn(
-            "fixed top-2 right-2 z-50 sm:hidden transition-[right] duration-300",
-            isChatOpen && "right-[392px]",
+            "fixed top-2 sm:top-4 right-2 sm:right-4 z-50 flex items-center gap-2 transition-[right] duration-300",
+            isSidebarOpen && "sm:right-[396px]",
           )}
         >
-          <Button
-            variant="outline"
-            size="icon"
-            className="bg-card/80 backdrop-blur-sm h-8 w-8"
-            onClick={() => setMobileMenuOpen(true)}
-          >
-            <Menu className="w-4 h-4" />
-          </Button>
-        </div>
-
-        {/* Mobile Menu Drawer */}
-        <Drawer open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-          <DrawerContent>
-            <DrawerHeader>
-              <DrawerTitle>Menu</DrawerTitle>
-            </DrawerHeader>
-            <div className="px-4 pb-6 space-y-2">
-              {/* Add Card */}
-              <DrawerClose asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-11"
-                  onClick={handleAddCard}
-                  disabled={isLocked}
-                >
-                  <Plus className="w-4 h-4" />
-                  {isLocked ? "Session is locked" : "Add new card"}
-                </Button>
-              </DrawerClose>
-
-              {/* Share Link */}
-              <DrawerClose asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-11"
-                  onClick={handleShare}
-                >
-                  {copied ? (
-                    <Check className="w-4 h-4 text-sky-500" />
-                  ) : (
-                    <Share2 className="w-4 h-4" />
-                  )}
-                  {copied ? "Link copied!" : "Copy share link"}
-                </Button>
-              </DrawerClose>
-
-              {/* Copy Session ID */}
-              <DrawerClose asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-11"
-                  onClick={handleCopySessionId}
-                >
-                  {sessionIdCopied ? (
-                    <Check className="w-4 h-4 text-sky-500" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                  <span className="flex-1 text-left">
-                    {sessionIdCopied ? "Copied!" : "Copy session ID"}
-                  </span>
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {sessionId}
-                  </span>
-                </Button>
-              </DrawerClose>
-
-              {/* Edit Username */}
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Button
                 variant="outline"
-                className="w-full justify-start gap-3 h-11"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setEditNameOpen(true);
-                }}
+                size="icon"
+                className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
+                onClick={() => setCommandOpen(true)}
               >
-                <Pencil className="w-4 h-4" />
-                Change your name
+                <Command className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </Button>
-
-              {/* Clean up Empty Cards (Session Creator Only) */}
-              {isSessionCreator && (
-                <CleanupCardsDialog
-                  cards={cards}
-                  onCleanup={handleCleanupEmptyCards}
-                  trigger={
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start gap-3 h-11"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      <Trash className="w-4 h-4" />
-                      Clean up empty cards
-                    </Button>
-                  }
-                />
-              )}
-
-              {/* Command Menu */}
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-3 h-11"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setCommandOpen(true);
-                }}
-              >
-                <Command className="w-4 h-4" />
-                Command menu
-              </Button>
-
-              {/* Theme Toggle */}
-              <div className="flex items-center justify-between h-11 px-4 rounded-md border border-input bg-background">
-                <span className="text-sm">Theme</span>
-                <ThemeSwitcherToggle />
-              </div>
-            </div>
-          </DrawerContent>
-        </Drawer>
-
-        {/* Fixed UI - Bottom Right */}
-        <div
-          className={cn(
-            "fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center gap-2 transition-[right] duration-300",
-            isChatOpen && "sm:right-[404px]",
-          )}
-        >
-          <ParticipantsDialog
-            participants={participantsWithCurrentUser}
-            currentUserId={visitorId}
-            onlineUsers={onlineUsers}
-          />
-          <AddCardButton onClick={handleAddCard} disabled={isLocked} />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Command menu (⌘K)</TooltipContent>
+          </Tooltip>
         </div>
 
-        {/* Fixed UI - Bottom Left: Zoom Controls */}
+        {/* FixeUI - Bottom Left: Zoom Controls */}
         <div className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-50">
           <div className="flex items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border px-1 py-1">
             <Button
@@ -1500,111 +2047,166 @@ function ReactFlowBoardInner({
         </div>
 
         {/* React Flow Canvas */}
-        <ReactFlow
-          nodes={nodes}
-          nodeTypes={nodeTypes}
-          onNodesChange={handleNodesChange}
-          onNodeDragStart={handleNodeDragStart}
-          onNodeDragStop={handleNodeDragStop}
-          onSelectionChange={handleSelectionChange}
-          onMoveEnd={handleMoveEnd}
-          onInit={() => setIsReactFlowReady(true)}
-          panOnScroll
-          selectionOnDrag={!isMobile}
-          panOnDrag={isMobile ? true : [1, 2]}
-          selectionMode={SelectionMode.Partial}
-          selectNodesOnDrag={!isMobile}
-          minZoom={MIN_ZOOM}
-          maxZoom={MAX_ZOOM}
-          defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-          fitViewOptions={{ padding: 0.2 }}
-          className="bg-background"
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background
-            variant={BackgroundVariant.Dots}
-            gap={20}
-            size={1}
-            color="hsl(var(--muted-foreground) / 0.2)"
-          />
+        <div className="h-full w-full">
+          <ReactFlow
+            nodes={nodes}
+            nodeTypes={nodeTypes}
+            onNodesChange={handleNodesChange}
+            onNodeDragStart={handleNodeDragStart}
+            onNodeDrag={handleNodeDrag}
+            onNodeDragStop={handleNodeDragStop}
+            onSelectionChange={handleSelectionChange}
+            onMoveEnd={handleMoveEnd}
+            onInit={() => setIsReactFlowReady(true)}
+            onPaneContextMenu={handlePaneContextMenu}
+            panOnScroll
+            selectionOnDrag={!isMobile}
+            panOnDrag={isMobile ? true : [1, 2]}
+            selectionMode={SelectionMode.Partial}
+            selectNodesOnDrag={!isMobile}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
+            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            fitViewOptions={{ padding: 0.2 }}
+            className="bg-background"
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={20}
+              size={1}
+              color="hsl(var(--muted-foreground) / 0.2)"
+            />
 
-          {/* Minimap (Desktop Only) */}
-          {viewportSize.width >= 640 && (
-            <MiniMap
-              nodeColor={minimapNodeColor}
-              nodeStrokeWidth={3}
-              pannable
-              zoomable
-              className={cn(
-                "!absolute !top-20 !right-4 !bottom-auto !left-auto transition-[right] duration-300 !bg-card/80 backdrop-blur-sm !border !border-border !rounded-lg",
-                isChatOpen && "!right-[396px]",
-              )}
-              style={{
-                width: 160,
-                height: 120,
+            {/* Minimap (Desktop Only) */}
+            {viewportSize.width >= 640 && (
+              <MiniMap
+                nodeColor={minimapNodeColor}
+                nodeStrokeWidth={3}
+                pannable
+                zoomable
+                className="!absolute !top-[60px] !right-4 !bottom-auto !left-auto !bg-card/80 backdrop-blur-sm !border !border-border !rounded-lg transition-all duration-300"
+                style={{
+                  width: 160,
+                  height: 120,
+                }}
+              />
+            )}
+
+            {/* Cursors - rendered in screen space */}
+            <div
+              className="absolute inset-0 pointer-events-none overflow-hidden"
+              style={{ zIndex: 1000 }}
+            >
+              <RealtimeCursors
+                roomName={`session:${sessionId}`}
+                username={username}
+                screenToWorld={screenToWorld}
+                worldToScreen={flowToScreenPosition}
+              />
+            </div>
+
+            {/* Empty state - stays centered in viewport */}
+            {cards.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                <div className="text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 opacity-20">
+                    <Image
+                      src={
+                        visitorId
+                          ? getAvatarForUser(visitorId)
+                          : "/cat-purple.svg"
+                      }
+                      alt=""
+                      width={64}
+                      height={64}
+                      className="w-full h-full"
+                    />
+                  </div>
+                  <p className="text-lg text-muted-foreground mb-1">
+                    Your board is empty
+                  </p>
+                  <p className="text-sm text-muted-foreground/70 mb-4">
+                    Drop your first idea and watch it grow
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleAddCard}
+                    disabled={isLocked}
+                    className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add first idea
+                  </button>
+                  <p className="text-xs text-muted-foreground/50 mt-3">
+                    or press{" "}
+                    <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
+                      N
+                    </kbd>
+                  </p>
+                </div>
+              </div>
+            )}
+          </ReactFlow>
+        </div>
+
+        {/* Board context menu (custom positioned) */}
+        {boardMenuOpen && contextMenuPosition && (
+          <>
+            {/* Backdrop to close menu when clicking outside */}
+            <button
+              type="button"
+              aria-label="Close menu"
+              className="fixed inset-0 z-50 cursor-default"
+              onClick={() => setBoardMenuOpen(false)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setBoardMenuOpen(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setBoardMenuOpen(false);
               }}
             />
-          )}
-
-          {/* Cursors - rendered in screen space */}
-          <div
-            className="absolute inset-0 pointer-events-none overflow-hidden"
-            style={{ zIndex: 1000 }}
-          >
-            <RealtimeCursors
-              roomName={`session:${sessionId}`}
-              username={username}
-              screenToWorld={screenToWorld}
-              worldToScreen={flowToScreenPosition}
-            />
-          </div>
-
-          {/* Empty state - stays centered in viewport */}
-          {cards.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-              <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 opacity-20">
-                  <Image
-                    src={
-                      visitorId
-                        ? getAvatarForUser(visitorId)
-                        : "/cat-purple.svg"
-                    }
-                    alt=""
-                    width={64}
-                    height={64}
-                    className="w-full h-full"
-                  />
-                </div>
-                <p className="text-lg text-muted-foreground mb-1">
-                  Your board is empty
-                </p>
-                <p className="text-sm text-muted-foreground/70 mb-4">
-                  Drop your first idea and watch it grow
-                </p>
-                <button
-                  type="button"
-                  onClick={handleAddCard}
-                  disabled={isLocked}
-                  className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add first idea
-                </button>
-                <p className="text-xs text-muted-foreground/50 mt-3">
-                  or press{" "}
-                  <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
-                    N
-                  </kbd>
-                </p>
-              </div>
+            <div
+              role="menu"
+              className="fixed z-50 bg-popover text-popover-foreground rounded-md border p-1 shadow-md min-w-[180px] animate-in fade-in-0 zoom-in-95"
+              style={{
+                left: contextMenuPosition.x,
+                top: contextMenuPosition.y,
+              }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 text-left"
+                onClick={handleAddCardAtPosition}
+                disabled={isLocked}
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span>Add idea card</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 text-left"
+                onClick={handleAddThreadAtPosition}
+                disabled={isLocked}
+              >
+                <MessageSquarePlus className="h-4 w-4 shrink-0" />
+                <span>Add comment thread</span>
+              </button>
             </div>
-          )}
-        </ReactFlow>
+          </>
+        )}
       </div>
-
-      {/* AI Chat Panel - pushes content when open */}
-      <ChatPanel sessionId={sessionId} userId={visitorId} />
+      <ChatPanel
+        sessionId={sessionId}
+        userId={visitorId}
+        threads={threads}
+        onThreadClick={handleFocusThread}
+        participants={participantsWithCurrentUser}
+        onlineUsers={onlineUsers}
+      />
     </div>
   );
 }

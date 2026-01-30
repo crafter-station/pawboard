@@ -3,6 +3,7 @@ import {
   getOrCreateSession,
   getSessionCards,
   getSessionParticipants,
+  getSessionThreads,
 } from "@/app/actions";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { ReactFlowBoard as Board } from "@/components/react-flow-board";
@@ -45,10 +46,12 @@ export default async function SessionPage({ params }: Props) {
     );
   }
 
-  const [initialCards, initialParticipants] = await Promise.all([
-    getSessionCards(sessionId),
-    getSessionParticipants(sessionId),
-  ]);
+  const [initialCards, initialParticipants, { threads: initialThreads }] =
+    await Promise.all([
+      getSessionCards(sessionId),
+      getSessionParticipants(sessionId),
+      getSessionThreads(sessionId),
+    ]);
 
   return (
     <ErrorBoundary
@@ -83,6 +86,7 @@ export default async function SessionPage({ params }: Props) {
         sessionId={sessionId}
         initialSession={session}
         initialCards={initialCards}
+        initialThreads={initialThreads}
         initialParticipants={initialParticipants}
       />
     </ErrorBoundary>
