@@ -3,7 +3,13 @@ import {
   type RealtimeChannel,
 } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Card, Session, TiptapContent } from "@/db/schema";
+import type {
+  Card,
+  CommentWithCreator,
+  Session,
+  ThreadWithDetails,
+  TiptapContent,
+} from "@/db/schema";
 import { useThrottleCallback } from "@/hooks/use-throttle-callback";
 import { createClient } from "@/lib/supabase/client";
 
@@ -35,11 +41,28 @@ type CardEvent =
   | { type: "user:join"; visitorId: string; username: string }
   | { type: "user:rename"; visitorId: string; newUsername: string }
   | { type: "session:rename"; newName: string }
-  | { type: "session:settings"; settings: SessionSettings };
+  | { type: "session:settings"; settings: SessionSettings }
+  // Thread events
+  | { type: "thread:add"; thread: ThreadWithDetails }
+  | { type: "thread:move"; id: string; x: number; y: number }
+  | { type: "thread:attach"; threadId: string; cardId: string }
+  | { type: "thread:detach"; threadId: string; x: number; y: number }
+  | { type: "thread:resolve"; id: string; isResolved: boolean }
+  | { type: "thread:delete"; id: string }
+  | { type: "comment:add"; threadId: string; comment: CommentWithCreator }
+  | {
+      type: "comment:update";
+      threadId: string;
+      commentId: string;
+      content: string;
+    }
+  | { type: "comment:delete"; threadId: string; commentId: string }
+  | { type: "threads:sync"; threads: ThreadWithDetails[] };
 
 export function useRealtimeCards(
   sessionId: string,
   initialCards: Card[],
+  initialThreads: ThreadWithDetails[],
   userId: string,
   username: string | null,
   onUserJoinOrRename?: (visitorId: string, username: string) => void,
@@ -48,8 +71,10 @@ export function useRealtimeCards(
   onEditorsChanged?: (cardId: string) => void,
 ) {
   const [cards, setCards] = useState<Card[]>(initialCards);
+  const [threads, setThreads] = useState<ThreadWithDetails[]>(initialThreads);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const cardsRef = useRef<Card[]>(initialCards);
+  const threadsRef = useRef<ThreadWithDetails[]>(initialThreads);
   const onUserJoinOrRenameRef = useRef(onUserJoinOrRename);
   const onSessionRenameRef = useRef(onSessionRename);
   const onSessionSettingsChangeRef = useRef(onSessionSettingsChange);
@@ -93,6 +118,10 @@ export function useRealtimeCards(
   useEffect(() => {
     cardsRef.current = cards;
   }, [cards]);
+
+  useEffect(() => {
+    threadsRef.current = threads;
+  }, [threads]);
 
   const broadcast = useCallback(
     (event: CardEvent) => {
@@ -295,6 +324,126 @@ export function useRealtimeCards(
     [applyClusterPositions, broadcastClusterPositions, broadcast],
   );
 
+  // Thread functions
+  const addThread = useCallback(
+    (thread: ThreadWithDetails) => {
+      setThreads((prev) => [thread, ...prev]);
+      broadcast({ type: "thread:add", thread });
+    },
+    [broadcast],
+  );
+
+  const broadcastMoveThread = useCallback(
+    (id: string, x: number, y: number) => {
+      broadcast({ type: "thread:move", id, x, y });
+    },
+    [broadcast],
+  );
+
+  const throttledBroadcastMoveThread = useThrottleCallback(
+    broadcastMoveThread,
+    THROTTLE_MS,
+  );
+
+  const moveThread = useCallback(
+    (id: string, x: number, y: number) => {
+      setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, x, y } : t)));
+      throttledBroadcastMoveThread(id, x, y);
+    },
+    [throttledBroadcastMoveThread],
+  );
+
+  const attachThread = useCallback(
+    (threadId: string, cardId: string) => {
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === threadId ? { ...t, cardId, x: null, y: null } : t,
+        ),
+      );
+      broadcast({ type: "thread:attach", threadId, cardId });
+    },
+    [broadcast],
+  );
+
+  const detachThread = useCallback(
+    (threadId: string, x: number, y: number) => {
+      setThreads((prev) =>
+        prev.map((t) => (t.id === threadId ? { ...t, cardId: null, x, y } : t)),
+      );
+      broadcast({ type: "thread:detach", threadId, x, y });
+    },
+    [broadcast],
+  );
+
+  const resolveThread = useCallback(
+    (id: string, isResolved: boolean) => {
+      setThreads((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, isResolved } : t)),
+      );
+      broadcast({ type: "thread:resolve", id, isResolved });
+    },
+    [broadcast],
+  );
+
+  const removeThread = useCallback(
+    (id: string) => {
+      setThreads((prev) => prev.filter((t) => t.id !== id));
+      broadcast({ type: "thread:delete", id });
+    },
+    [broadcast],
+  );
+
+  const addCommentToThread = useCallback(
+    (threadId: string, comment: CommentWithCreator) => {
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === threadId ? { ...t, comments: [...t.comments, comment] } : t,
+        ),
+      );
+      broadcast({ type: "comment:add", threadId, comment });
+    },
+    [broadcast],
+  );
+
+  const updateCommentInThread = useCallback(
+    (threadId: string, commentId: string, content: string) => {
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === threadId
+            ? {
+                ...t,
+                comments: t.comments.map((c) =>
+                  c.id === commentId ? { ...c, content } : c,
+                ),
+              }
+            : t,
+        ),
+      );
+      broadcast({ type: "comment:update", threadId, commentId, content });
+    },
+    [broadcast],
+  );
+
+  const removeCommentFromThread = useCallback(
+    (threadId: string, commentId: string) => {
+      setThreads((prev) => {
+        const thread = prev.find((t) => t.id === threadId);
+        // If this is the last comment, remove the entire thread
+        if (thread && thread.comments.length === 1) {
+          return prev.filter((t) => t.id !== threadId);
+        }
+        // Otherwise just remove the comment
+        return prev.map((t) =>
+          t.id === threadId
+            ? { ...t, comments: t.comments.filter((c) => c.id !== commentId) }
+            : t,
+        );
+      });
+      broadcast({ type: "comment:delete", threadId, commentId });
+    },
+    [broadcast],
+  );
+
   useEffect(() => {
     if (!userId) return;
 
@@ -302,6 +451,7 @@ export function useRealtimeCards(
 
     channel
       .on("presence", { event: "join" }, () => {
+        // Sync cards
         if (cardsRef.current.length > 0) {
           channelRef.current?.send({
             type: "broadcast",
@@ -309,6 +459,18 @@ export function useRealtimeCards(
             payload: {
               type: "cards:sync",
               cards: cardsRef.current,
+              odilUserId: userId,
+            },
+          });
+        }
+        // Sync threads
+        if (threadsRef.current.length > 0) {
+          channelRef.current?.send({
+            type: "broadcast",
+            event: "card-event",
+            payload: {
+              type: "threads:sync",
+              threads: threadsRef.current,
               odilUserId: userId,
             },
           });
@@ -438,6 +600,106 @@ export function useRealtimeCards(
               // Notify parent component to update session settings
               onSessionSettingsChangeRef.current?.(payload.settings);
               break;
+            // Thread events
+            case "thread:add":
+              setThreads((prev) => {
+                if (prev.some((t) => t.id === payload.thread.id)) return prev;
+                return [payload.thread, ...prev];
+              });
+              break;
+            case "thread:move":
+              setThreads((prev) =>
+                prev.map((t) =>
+                  t.id === payload.id
+                    ? { ...t, x: payload.x, y: payload.y }
+                    : t,
+                ),
+              );
+              break;
+            case "thread:attach":
+              setThreads((prev) =>
+                prev.map((t) =>
+                  t.id === payload.threadId
+                    ? { ...t, cardId: payload.cardId, x: null, y: null }
+                    : t,
+                ),
+              );
+              break;
+            case "thread:detach":
+              setThreads((prev) =>
+                prev.map((t) =>
+                  t.id === payload.threadId
+                    ? { ...t, cardId: null, x: payload.x, y: payload.y }
+                    : t,
+                ),
+              );
+              break;
+            case "thread:resolve":
+              setThreads((prev) =>
+                prev.map((t) =>
+                  t.id === payload.id
+                    ? { ...t, isResolved: payload.isResolved }
+                    : t,
+                ),
+              );
+              break;
+            case "thread:delete":
+              setThreads((prev) => prev.filter((t) => t.id !== payload.id));
+              break;
+            case "comment:add":
+              setThreads((prev) =>
+                prev.map((t) =>
+                  t.id === payload.threadId
+                    ? { ...t, comments: [...t.comments, payload.comment] }
+                    : t,
+                ),
+              );
+              break;
+            case "comment:update":
+              setThreads((prev) =>
+                prev.map((t) =>
+                  t.id === payload.threadId
+                    ? {
+                        ...t,
+                        comments: t.comments.map((c) =>
+                          c.id === payload.commentId
+                            ? { ...c, content: payload.content }
+                            : c,
+                        ),
+                      }
+                    : t,
+                ),
+              );
+              break;
+            case "comment:delete":
+              setThreads((prev) => {
+                const thread = prev.find((t) => t.id === payload.threadId);
+                // If this is the last comment, remove the entire thread
+                if (thread && thread.comments.length === 1) {
+                  return prev.filter((t) => t.id !== payload.threadId);
+                }
+                // Otherwise just remove the comment
+                return prev.map((t) =>
+                  t.id === payload.threadId
+                    ? {
+                        ...t,
+                        comments: t.comments.filter(
+                          (c) => c.id !== payload.commentId,
+                        ),
+                      }
+                    : t,
+                );
+              });
+              break;
+            case "threads:sync":
+              setThreads((prev) => {
+                const newThreads = payload.threads.filter(
+                  (nt) => !prev.some((t) => t.id === nt.id),
+                );
+                if (newThreads.length === 0) return prev;
+                return [...newThreads, ...prev];
+              });
+              break;
           }
         },
       )
@@ -491,5 +753,16 @@ export function useRealtimeCards(
     applyClusterPositions,
     broadcastClusterPositions,
     batchMoveCards,
+    // Thread functions
+    threads,
+    addThread,
+    moveThread,
+    attachThread,
+    detachThread,
+    resolveThread,
+    removeThread,
+    addCommentToThread,
+    updateCommentInThread,
+    removeCommentFromThread,
   };
 }

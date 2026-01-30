@@ -1,6 +1,15 @@
 "use client";
 
-import { Home, ListTodo, Moon, Pencil, Plus, Share2, Sun } from "lucide-react";
+import {
+  Home,
+  ListTodo,
+  MessageCircle,
+  Moon,
+  Pencil,
+  Plus,
+  Share2,
+  Sun,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect } from "react";
@@ -18,6 +27,7 @@ interface CommandMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAddCard: () => void;
+  onAddThread?: () => void;
   onShare: () => void;
   onChangeName: () => void;
 }
@@ -26,6 +36,7 @@ export function CommandMenu({
   open,
   onOpenChange,
   onAddCard,
+  onAddThread,
   onShare,
   onChangeName,
 }: CommandMenuProps) {
@@ -59,6 +70,13 @@ export function CommandMenu({
             Add new card
             <CommandShortcut>N</CommandShortcut>
           </CommandItem>
+          {onAddThread && (
+            <CommandItem onSelect={() => runCommand(onAddThread)}>
+              <MessageCircle className="mr-2 h-4 w-4" />
+              Add comment thread
+              <CommandShortcut>C</CommandShortcut>
+            </CommandItem>
+          )}
           <CommandItem onSelect={() => runCommand(onShare)}>
             <Share2 className="mr-2 h-4 w-4" />
             Copy share link

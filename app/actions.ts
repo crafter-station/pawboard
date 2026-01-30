@@ -6,13 +6,17 @@ import { after } from "next/server";
 import { db } from "@/db";
 import {
   type Card,
+  type CommentWithCreator,
   cardEditHistory,
   cards,
+  comments,
   type NewCard,
   type Session,
   type SessionRole,
   sessionParticipants,
   sessions,
+  type ThreadWithDetails,
+  threads,
   type User,
   users,
 } from "@/db/schema";
@@ -26,6 +30,14 @@ import {
   canReact,
   canVote,
 } from "@/lib/permissions";
+import {
+  canAddComment,
+  canCreateThread,
+  canDeleteComment,
+  canDeleteThread,
+  canResolveThread,
+  validateCommentContent,
+} from "@/lib/thread-permissions";
 import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
 
 // Helper function to update activity timestamps
@@ -1229,5 +1241,523 @@ export async function clusterCards(
       cardsProcessed: 0,
       error: "Failed to cluster cards",
     };
+  }
+}
+
+// Thread Actions
+
+export async function getSessionThreads(
+  sessionId: string,
+): Promise<{ threads: ThreadWithDetails[]; error: string | null }> {
+  try {
+    const result = await db.query.threads.findMany({
+      where: eq(threads.sessionId, sessionId),
+      with: {
+        creator: {
+          columns: { id: true, username: true },
+        },
+        comments: {
+          with: {
+            creator: {
+              columns: { id: true, username: true },
+            },
+          },
+          orderBy: (comments, { asc }) => [asc(comments.createdAt)],
+        },
+      },
+      orderBy: (threads, { desc }) => [desc(threads.createdAt)],
+    });
+
+    return { threads: result as ThreadWithDetails[], error: null };
+  } catch (error) {
+    console.error("Database error in getSessionThreads:", error);
+    return { threads: [], error: "Failed to fetch threads" };
+  }
+}
+
+export async function createThread(
+  data: {
+    sessionId: string;
+    x?: number;
+    y?: number;
+    cardId?: string;
+    initialComment: string;
+  },
+  userId: string,
+): Promise<{ thread: ThreadWithDetails | null; error: string | null }> {
+  try {
+    // Validate comment content
+    const validation = validateCommentContent(data.initialComment);
+    if (!validation.valid) {
+      return { thread: null, error: validation.error ?? "Invalid comment" };
+    }
+
+    // Get session
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, data.sessionId),
+    });
+
+    if (!session) {
+      return { thread: null, error: "Session not found" };
+    }
+
+    // Get user role
+    const userRole = await getUserRoleInSession(userId, data.sessionId);
+
+    if (!canCreateThread(session, userRole)) {
+      return {
+        thread: null,
+        error: "Session is locked. Cannot create threads.",
+      };
+    }
+
+    // Validate positioning - must have either x,y or cardId
+    if ((data.x === undefined || data.y === undefined) && !data.cardId) {
+      return {
+        thread: null,
+        error:
+          "Thread must have either position (x, y) or be attached to a card",
+      };
+    }
+
+    const threadId = crypto.randomUUID();
+    const commentId = crypto.randomUUID();
+
+    // Create thread and initial comment
+    await db.insert(threads).values({
+      id: threadId,
+      sessionId: data.sessionId,
+      x: data.x,
+      y: data.y,
+      cardId: data.cardId,
+      createdById: userId,
+    });
+
+    await db.insert(comments).values({
+      id: commentId,
+      threadId: threadId,
+      content: data.initialComment.trim(),
+      createdById: userId,
+    });
+
+    // Update activity timestamps
+    await updateActivityTimestamps(data.sessionId, userId);
+
+    // Fetch the complete thread with relations
+    const thread = await db.query.threads.findFirst({
+      where: eq(threads.id, threadId),
+      with: {
+        creator: {
+          columns: { id: true, username: true },
+        },
+        comments: {
+          with: {
+            creator: {
+              columns: { id: true, username: true },
+            },
+          },
+          orderBy: (comments, { asc }) => [asc(comments.createdAt)],
+        },
+      },
+    });
+
+    return { thread: thread as ThreadWithDetails, error: null };
+  } catch (error) {
+    console.error("Database error in createThread:", error);
+    return { thread: null, error: "Failed to create thread" };
+  }
+}
+
+export async function moveThread(
+  threadId: string,
+  x: number,
+  y: number,
+  userId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const thread = await db.query.threads.findFirst({
+      where: eq(threads.id, threadId),
+    });
+
+    if (!thread) {
+      return { success: false, error: "Thread not found" };
+    }
+
+    // Only canvas threads can be moved (not card-attached)
+    if (thread.cardId) {
+      return {
+        success: false,
+        error: "Cannot move thread attached to a card",
+      };
+    }
+
+    await db
+      .update(threads)
+      .set({ x, y, updatedAt: new Date() })
+      .where(eq(threads.id, threadId));
+
+    // Update activity timestamps
+    await updateActivityTimestamps(thread.sessionId, userId);
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in moveThread:", error);
+    return { success: false, error: "Failed to move thread" };
+  }
+}
+
+export async function attachThreadToCard(
+  threadId: string,
+  cardId: string,
+  userId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const thread = await db.query.threads.findFirst({
+      where: eq(threads.id, threadId),
+    });
+
+    if (!thread) {
+      return { success: false, error: "Thread not found" };
+    }
+
+    // Verify card exists and is in the same session
+    const card = await db.query.cards.findFirst({
+      where: and(eq(cards.id, cardId), eq(cards.sessionId, thread.sessionId)),
+    });
+
+    if (!card) {
+      return { success: false, error: "Card not found in this session" };
+    }
+
+    // Check session lock
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, thread.sessionId),
+    });
+
+    if (session?.isLocked) {
+      return { success: false, error: "Session is locked" };
+    }
+
+    // Update thread: set cardId, clear x/y
+    await db
+      .update(threads)
+      .set({
+        cardId: cardId,
+        x: null,
+        y: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(threads.id, threadId));
+
+    await updateActivityTimestamps(thread.sessionId, userId);
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in attachThreadToCard:", error);
+    return { success: false, error: "Failed to attach thread to card" };
+  }
+}
+
+export async function detachThreadFromCard(
+  threadId: string,
+  x: number,
+  y: number,
+  userId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const thread = await db.query.threads.findFirst({
+      where: eq(threads.id, threadId),
+    });
+
+    if (!thread) {
+      return { success: false, error: "Thread not found" };
+    }
+
+    // Must be attached to a card to detach
+    if (!thread.cardId) {
+      return { success: false, error: "Thread is not attached to a card" };
+    }
+
+    // Check session lock
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, thread.sessionId),
+    });
+
+    if (session?.isLocked) {
+      return { success: false, error: "Session is locked" };
+    }
+
+    // Update thread: clear cardId, set x/y
+    await db
+      .update(threads)
+      .set({
+        cardId: null,
+        x: x,
+        y: y,
+        updatedAt: new Date(),
+      })
+      .where(eq(threads.id, threadId));
+
+    await updateActivityTimestamps(thread.sessionId, userId);
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in detachThreadFromCard:", error);
+    return { success: false, error: "Failed to detach thread from card" };
+  }
+}
+
+export async function resolveThread(
+  threadId: string,
+  isResolved: boolean,
+  userId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const thread = await db.query.threads.findFirst({
+      where: eq(threads.id, threadId),
+    });
+
+    if (!thread) {
+      return { success: false, error: "Thread not found" };
+    }
+
+    // Get user role
+    const userRole = await getUserRoleInSession(userId, thread.sessionId);
+
+    if (!canResolveThread(thread, userId, userRole)) {
+      return {
+        success: false,
+        error: "You don't have permission to resolve this thread",
+      };
+    }
+
+    await db
+      .update(threads)
+      .set({ isResolved, updatedAt: new Date() })
+      .where(eq(threads.id, threadId));
+
+    // Update activity timestamps
+    await updateActivityTimestamps(thread.sessionId, userId);
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in resolveThread:", error);
+    return { success: false, error: "Failed to resolve thread" };
+  }
+}
+
+export async function deleteThread(
+  threadId: string,
+  userId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const thread = await db.query.threads.findFirst({
+      where: eq(threads.id, threadId),
+    });
+
+    if (!thread) {
+      return { success: false, error: "Thread not found" };
+    }
+
+    // Get user role
+    const userRole = await getUserRoleInSession(userId, thread.sessionId);
+
+    if (!canDeleteThread(thread, userId, userRole)) {
+      return {
+        success: false,
+        error: "You don't have permission to delete this thread",
+      };
+    }
+
+    await db.delete(threads).where(eq(threads.id, threadId));
+
+    // Update activity timestamps
+    await updateActivityTimestamps(thread.sessionId, userId);
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in deleteThread:", error);
+    return { success: false, error: "Failed to delete thread" };
+  }
+}
+
+// Comment Actions
+
+export async function addComment(
+  threadId: string,
+  content: string,
+  userId: string,
+): Promise<{ comment: CommentWithCreator | null; error: string | null }> {
+  try {
+    // Validate content
+    const validation = validateCommentContent(content);
+    if (!validation.valid) {
+      return { comment: null, error: validation.error ?? "Invalid comment" };
+    }
+
+    // Get thread with session
+    const thread = await db.query.threads.findFirst({
+      where: eq(threads.id, threadId),
+      with: { session: true },
+    });
+
+    if (!thread) {
+      return { comment: null, error: "Thread not found" };
+    }
+
+    // Get user role
+    const userRole = await getUserRoleInSession(userId, thread.sessionId);
+
+    if (!canAddComment(thread.session, userRole)) {
+      return {
+        comment: null,
+        error: "Session is locked. Cannot add comments.",
+      };
+    }
+
+    const commentId = crypto.randomUUID();
+
+    await db.insert(comments).values({
+      id: commentId,
+      threadId,
+      content: content.trim(),
+      createdById: userId,
+    });
+
+    // Update thread's updatedAt
+    await db
+      .update(threads)
+      .set({ updatedAt: new Date() })
+      .where(eq(threads.id, threadId));
+
+    // Update activity timestamps
+    await updateActivityTimestamps(thread.sessionId, userId);
+
+    // Fetch the comment with creator
+    const comment = await db.query.comments.findFirst({
+      where: eq(comments.id, commentId),
+      with: {
+        creator: {
+          columns: { id: true, username: true },
+        },
+      },
+    });
+
+    return { comment: comment as CommentWithCreator, error: null };
+  } catch (error) {
+    console.error("Database error in addComment:", error);
+    return { comment: null, error: "Failed to add comment" };
+  }
+}
+
+export async function updateComment(
+  commentId: string,
+  content: string,
+  userId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    // Validate content
+    const validation = validateCommentContent(content);
+    if (!validation.valid) {
+      return { success: false, error: validation.error ?? "Invalid comment" };
+    }
+
+    // Get comment
+    const comment = await db.query.comments.findFirst({
+      where: eq(comments.id, commentId),
+      with: {
+        thread: true,
+      },
+    });
+
+    if (!comment) {
+      return { success: false, error: "Comment not found" };
+    }
+
+    // Only comment author can edit
+    if (comment.createdById !== userId) {
+      return {
+        success: false,
+        error: "You can only edit your own comments",
+      };
+    }
+
+    await db
+      .update(comments)
+      .set({ content: content.trim(), updatedAt: new Date() })
+      .where(eq(comments.id, commentId));
+
+    // Update thread's updatedAt
+    await db
+      .update(threads)
+      .set({ updatedAt: new Date() })
+      .where(eq(threads.id, comment.threadId));
+
+    // Update activity timestamps
+    await updateActivityTimestamps(comment.thread.sessionId, userId);
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in updateComment:", error);
+    return { success: false, error: "Failed to update comment" };
+  }
+}
+
+export async function deleteComment(
+  commentId: string,
+  userId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    // Get comment with thread
+    const comment = await db.query.comments.findFirst({
+      where: eq(comments.id, commentId),
+      with: {
+        thread: true,
+      },
+    });
+
+    if (!comment) {
+      return { success: false, error: "Comment not found" };
+    }
+
+    // Get user role
+    const userRole = await getUserRoleInSession(
+      userId,
+      comment.thread.sessionId,
+    );
+
+    if (!canDeleteComment(comment, userId, userRole)) {
+      return {
+        success: false,
+        error: "You don't have permission to delete this comment",
+      };
+    }
+
+    // Check if this is the last comment in the thread
+    const commentCount = await db
+      .select({ count: comments.id })
+      .from(comments)
+      .where(eq(comments.threadId, comment.threadId));
+
+    // If this is the only comment, delete the entire thread instead
+    if (commentCount.length === 1) {
+      await db.delete(threads).where(eq(threads.id, comment.threadId));
+    } else {
+      await db.delete(comments).where(eq(comments.id, commentId));
+
+      // Update thread's updatedAt
+      await db
+        .update(threads)
+        .set({ updatedAt: new Date() })
+        .where(eq(threads.id, comment.threadId));
+    }
+
+    // Update activity timestamps
+    await updateActivityTimestamps(comment.thread.sessionId, userId);
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in deleteComment:", error);
+    return { success: false, error: "Failed to delete comment" };
   }
 }
