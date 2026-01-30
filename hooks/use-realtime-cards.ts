@@ -9,7 +9,10 @@ import { createClient } from "@/lib/supabase/client";
 
 const supabase = createClient();
 
-const THROTTLE_MS = 50;
+// Throttle interval for realtime broadcasts (typing, moving, resizing)
+// Increased from 50ms to 100ms to prevent React error #185 (Maximum update depth exceeded)
+// when fast typing causes rapid state updates on receiving clients
+const THROTTLE_MS = 100;
 
 export type SessionSettings = Pick<Session, "isLocked">;
 

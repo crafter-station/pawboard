@@ -97,15 +97,25 @@ export function CardEditor({
   // CRITICAL: Only sync from props when NOT actively editing (editable=false)
   // When editable=true, the editor owns its content - don't overwrite from props
   // This prevents character loss during fast typing
+  // DEBOUNCE: Prevents React error #185 (Maximum update depth exceeded) when
+  // fast typing causes rapid remote updates
   useEffect(() => {
     if (!editor || !content || editable) return;
 
-    // Only update if content is actually different from editor's current state
-    const currentContent = JSON.stringify(editor.getJSON());
-    const newContent = JSON.stringify(content);
-    if (currentContent !== newContent) {
-      editor.commands.setContent(content as JSONContent);
-    }
+    // Debounce rapid remote updates to prevent exceeding React's update limit
+    const timeoutId = setTimeout(() => {
+      const currentContent = JSON.stringify(editor.getJSON());
+      const newContent = JSON.stringify(content);
+      if (currentContent !== newContent) {
+        // Use emitUpdate: false to prevent triggering onUpdate callback
+        // This breaks the potential update loop: remote update -> setContent -> onUpdate -> setState
+        editor.commands.setContent(content as JSONContent, {
+          emitUpdate: false,
+        });
+      }
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
   }, [editor, content, editable]);
 
   // Update editable state
