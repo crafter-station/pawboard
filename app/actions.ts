@@ -362,6 +362,7 @@ export async function joinSession(
 ): Promise<{
   success: boolean;
   role: SessionRole | null;
+  user: User | null;
   error: string | null;
 }> {
   try {
@@ -371,6 +372,7 @@ export async function joinSession(
       return {
         success: false,
         role: null,
+        user: null,
         error: userError ?? "Failed to create user",
       };
     }
@@ -394,7 +396,12 @@ export async function joinSession(
             eq(sessionParticipants.sessionId, sessionId),
           ),
         );
-      return { success: true, role: existing.role as SessionRole, error: null };
+      return {
+        success: true,
+        role: existing.role as SessionRole,
+        user,
+        error: null,
+      };
     }
 
     // Check if session has any participants (first user becomes creator)
@@ -411,10 +418,15 @@ export async function joinSession(
       role,
     });
 
-    return { success: true, role, error: null };
+    return { success: true, role, user, error: null };
   } catch (error) {
     console.error("Database error in joinSession:", error);
-    return { success: false, role: null, error: "Failed to join session" };
+    return {
+      success: false,
+      role: null,
+      user: null,
+      error: "Failed to join session",
+    };
   }
 }
 
@@ -606,6 +618,58 @@ export async function getCardEditors(cardId: string): Promise<{
   } catch (error) {
     console.error("Database error in getCardEditors:", error);
     return { editors: [], error: "Failed to get card editors" };
+  }
+}
+
+export async function getSessionCardEditors(sessionId: string): Promise<{
+  editors: Record<string, Array<{ userId: string; username: string }>>;
+  error: string | null;
+}> {
+  try {
+    // Get all cards for this session first
+    const sessionCards = await db.query.cards.findMany({
+      where: eq(cards.sessionId, sessionId),
+      columns: { id: true },
+    });
+
+    if (sessionCards.length === 0) {
+      return { editors: {}, error: null };
+    }
+
+    const cardIds = sessionCards.map((c) => c.id);
+
+    // Get all edit history for these cards with user data
+    const history = await db.query.cardEditHistory.findMany({
+      where: inArray(cardEditHistory.cardId, cardIds),
+      with: {
+        user: true,
+      },
+      orderBy: (history, { desc }) => [desc(history.editedAt)],
+    });
+
+    // Group by cardId and deduplicate users (preserving order - most recent first)
+    const editorsByCard: Record<
+      string,
+      Array<{ userId: string; username: string }>
+    > = {};
+
+    for (const entry of history) {
+      if (!editorsByCard[entry.cardId]) {
+        editorsByCard[entry.cardId] = [];
+      }
+      // Only add if user not already in list for this card
+      if (!editorsByCard[entry.cardId].some((e) => e.userId === entry.userId)) {
+        editorsByCard[entry.cardId].push({
+          userId: entry.userId,
+          username: entry.user.username,
+        });
+      }
+    }
+
+    return { editors: editorsByCard, error: null };
+  } catch (error) {
+    console.error("Database error in getSessionCardEditors:", error);
+    return { editors: {}, error: "Failed to fetch editors" };
   }
 }
 

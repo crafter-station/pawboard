@@ -39,7 +39,6 @@ import {
 } from "@/components/ui/tooltip";
 import { VoiceTrigger, VoiceVisualizer } from "@/components/voice-recorder";
 import type { TiptapContent } from "@/db/schema";
-import { useCardEditors } from "@/hooks/use-card-editors";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import {
   DARK_COLORS,
@@ -168,23 +167,24 @@ function IdeaCardNodeComponent({
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+  // Helper to start editing - captures original content for change detection
+  const startEditing = useCallback(() => {
+    if (!isEditing && allowEdit) {
+      originalContentRef.current = card.content;
+      setIsEditing(true);
+    }
+  }, [isEditing, allowEdit, card.content]);
+
+  // Auto-focus new cards
   useEffect(() => {
     if (autoFocus && allowEdit) {
-      setIsEditing(true);
+      startEditing();
       globalCallbacks?.onFocused?.(id);
     }
-  }, [autoFocus, allowEdit, id]);
+  }, [autoFocus, allowEdit, id, startEditing]);
 
-  // Capture original content when entering edit mode
-  useEffect(() => {
-    if (isEditing && !originalContentRef.current) {
-      originalContentRef.current = card.content;
-    }
-  }, [isEditing, card.content]);
-
-  // Fetch card editors using TanStack Query
-  const { data: editorsData } = useCardEditors(card.id);
-  const editors = editorsData?.editors ?? [];
+  // Get editors from props (fetched at session level in react-flow-board)
+  const editors = data.editors ?? [];
 
   const isDark = mounted && resolvedTheme === "dark";
   const colors = isDark ? DARK_COLORS : LIGHT_COLORS;
@@ -504,7 +504,7 @@ function IdeaCardNodeComponent({
                   isEditing && "nodrag nopan",
                   !isEditing && allowEdit && "cursor-pointer",
                 )}
-                onClick={() => !isEditing && allowEdit && setIsEditing(true)}
+                onClick={startEditing}
               >
                 {isContentEmpty(card.content) && !isEditing ? (
                   <span className={mutedTextClass}>
@@ -875,7 +875,7 @@ function IdeaCardNodeComponent({
           </div>
 
           {/* Card-attached threads - rendered outside the card border */}
-          {/* Threads are spaced horizontally from right to left, 50px apart */}
+          {/* Threads are spaced horizontally from right to left, starting from bottom right */}
           {attachedThreads &&
             threadHandlers &&
             attachedThreads.length > 0 &&
@@ -887,7 +887,7 @@ function IdeaCardNodeComponent({
                   // Space threads horizontally from right edge
                   // Each thread offset by 50px (bubble width ~48px + 2px margin)
                   right: index * 50,
-                  top: -20,
+                  bottom: -20,
                 }}
               >
                 <CardThreadNode

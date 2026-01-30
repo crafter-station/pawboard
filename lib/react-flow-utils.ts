@@ -43,6 +43,8 @@ export interface IdeaCardNodeData extends Record<string, unknown> {
   threadHandlers?: CardThreadHandlers;
   // Magnetic thread attachment feedback
   magneticHighlight?: boolean;
+  // Card editors (users who have edited this card)
+  editors?: Array<{ userId: string; username: string }>;
 }
 
 /**
@@ -65,6 +67,7 @@ export function cardToNode(
     attachedThreads?: ThreadWithDetails[];
     threadHandlers?: CardThreadHandlers;
     magneticHighlight?: boolean;
+    editors?: Array<{ userId: string; username: string }>;
   },
 ): IdeaCardNode {
   return {
@@ -82,6 +85,7 @@ export function cardToNode(
       attachedThreads: options?.attachedThreads,
       threadHandlers: options?.threadHandlers,
       magneticHighlight: options?.magneticHighlight ?? false,
+      editors: options?.editors,
     },
     draggable: true,
     selectable: true,
@@ -101,6 +105,7 @@ export function cardsToNodes(
   threadsByCardId?: Map<string, ThreadWithDetails[]>,
   threadHandlers?: CardThreadHandlers,
   magneticHighlightCardId?: string | null,
+  sessionEditors?: Record<string, Array<{ userId: string; username: string }>>,
 ): IdeaCardNode[] {
   return cards.map((card) =>
     cardToNode(
@@ -114,6 +119,7 @@ export function cardsToNodes(
         attachedThreads: threadsByCardId?.get(card.id),
         threadHandlers,
         magneticHighlight: card.id === magneticHighlightCardId,
+        editors: sessionEditors?.[card.id],
       },
     ),
   );
@@ -132,6 +138,7 @@ export function updateNodeData(
   threadsByCardId?: Map<string, ThreadWithDetails[]>,
   threadHandlers?: CardThreadHandlers,
   magneticHighlightCardId?: string | null,
+  sessionEditors?: Record<string, Array<{ userId: string; username: string }>>,
 ): IdeaCardNode[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
@@ -153,6 +160,7 @@ export function updateNodeData(
           attachedThreads: threadsByCardId?.get(card.id),
           threadHandlers,
           magneticHighlight: card.id === magneticHighlightCardId,
+          editors: sessionEditors?.[card.id],
         },
       };
     }
@@ -167,6 +175,7 @@ export function updateNodeData(
         attachedThreads: threadsByCardId?.get(card.id),
         threadHandlers,
         magneticHighlight: card.id === magneticHighlightCardId,
+        editors: sessionEditors?.[card.id],
       },
     );
   });
@@ -245,6 +254,7 @@ export function threadToNode(
     onResolve: (threadId: string, isResolved: boolean) => Promise<void>;
     onDeleteThread: (threadId: string) => Promise<void>;
   },
+  collisionBoundary?: Element | null,
 ): ThreadNode {
   // For card-attached threads, use card position (needs to be calculated elsewhere)
   // For canvas threads, use thread's x, y
@@ -260,6 +270,7 @@ export function threadToNode(
       userRole,
       visitorId,
       sessionLocked,
+      collisionBoundary,
       onAddComment: handlers.onAddComment,
       onDeleteComment: handlers.onDeleteComment,
       onResolve: handlers.onResolve,
@@ -286,11 +297,19 @@ export function threadsToNodes(
     onResolve: (threadId: string, isResolved: boolean) => Promise<void>;
     onDeleteThread: (threadId: string) => Promise<void>;
   },
+  collisionBoundary?: Element | null,
 ): ThreadNode[] {
   // Only include canvas-positioned threads (not card-attached)
   return threads
     .filter((t) => !t.cardId && t.x !== null && t.y !== null)
     .map((thread) =>
-      threadToNode(thread, userRole, visitorId, sessionLocked, handlers),
+      threadToNode(
+        thread,
+        userRole,
+        visitorId,
+        sessionLocked,
+        handlers,
+        collisionBoundary,
+      ),
     );
 }
