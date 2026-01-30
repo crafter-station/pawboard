@@ -38,6 +38,7 @@ export function ThreadTooltip({ thread }: ThreadTooltipProps) {
       {/* Header: Avatar + Name + Time */}
       <div className="flex items-center gap-2.5 mb-2">
         <div className="relative shrink-0">
+          {/* biome-ignore lint/performance/noImgElement: External avatar URL from DiceBear API */}
           <img
             src={getAvatarForUser(latestComment.creator.id)}
             alt={latestComment.creator.username}

@@ -77,6 +77,7 @@ export function ThreadBubble({
       {/* Stacked avatars */}
       <div className="flex items-center -space-x-1">
         {participants.map((userId, index) => (
+          // biome-ignore lint/performance/noImgElement: External avatar URL from DiceBear API
           <img
             key={userId}
             src={getAvatarForUser(userId)}

@@ -51,6 +51,7 @@ export function ThreadListItem({ thread, onClick }: ThreadListItemProps) {
       style={{ backgroundColor: "transparent" }}
     >
       {/* Creator Avatar */}
+      {/* biome-ignore lint/performance/noImgElement: External avatar URL from DiceBear API */}
       <img
         src={getAvatarForUser(thread.creator.id)}
         alt={thread.creator.username || "User"}

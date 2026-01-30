@@ -44,6 +44,7 @@ export const Comment = memo(function Comment({
     >
       {/* Avatar with presence ring */}
       <div className="relative shrink-0">
+        {/* biome-ignore lint/performance/noImgElement: External avatar URL from DiceBear API */}
         <img
           src={getAvatarForUser(comment.creator.id)}
           alt={comment.creator.username}
