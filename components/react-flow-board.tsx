@@ -20,17 +20,14 @@ import "@xyflow/react/dist/style.css";
 import {
   Check,
   Command,
-  Copy,
   Home,
   Lock,
   Maximize2,
-  Menu,
   MessageSquarePlus,
   Minus,
   Pencil,
   Plus,
   Share2,
-  Trash,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -58,10 +55,9 @@ import {
   voteCard as voteCardAction,
 } from "@/app/actions";
 import { ChatPanel, ChatTrigger } from "@/components/chat/chat-drawer";
-import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
+import { ClusterCardsDialog } from "@/components/cluster-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
-import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
 import {
   IdeaCardNode,
   setIdeaCardNodeCallbacks,
@@ -79,13 +75,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
 import {
   Tooltip,
   TooltipContent,
@@ -212,13 +201,10 @@ function ReactFlowBoardInner({
   );
   const setNodes = setCardNodes; // For backwards compatibility with card node updates
   const [copied, setCopied] = useState(false);
-  const [sessionIdCopied, setSessionIdCopied] = useState(false);
   const [newCardId, setNewCardId] = useState<string | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [editSessionNameOpen, setEditSessionNameOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const [clusterDialogOpen, setClusterDialogOpen] = useState(false);
   const [deleteSessionDialogOpen, setDeleteSessionDialogOpen] = useState(false);
   const [session, setSession] = useState<Session>(initialSession);
@@ -1431,19 +1417,6 @@ function ReactFlowBoardInner({
     }
   }, []);
 
-  const handleCopySessionId = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(sessionId);
-      setSessionIdCopied(true);
-      const timeoutId = setTimeout(() => {
-        if (mountedRef.current) setSessionIdCopied(false);
-      }, 2000);
-      return () => clearTimeout(timeoutId);
-    } catch (err) {
-      console.error("Failed to copy session ID:", err);
-    }
-  }, [sessionId]);
-
   const handleUpdateUsername = async (newUsername: string) => {
     const result = await updateUsername(newUsername);
     if (result.success && visitorId) {
@@ -1537,7 +1510,7 @@ function ReactFlowBoardInner({
   };
 
   // Handle cluster cards callback
-  const _handleClusterCards = useCallback(
+  const handleClusterCards = useCallback(
     (positions: Array<{ id: string; x: number; y: number }>) => {
       // Apply positions locally (this triggers animation)
       applyClusterPositions(positions);
@@ -1775,8 +1748,18 @@ function ReactFlowBoardInner({
           onToggleLock={handleToggleLock}
           onDeleteSession={() => setDeleteSessionDialogOpen(true)}
           onClusterCards={() => setClusterDialogOpen(true)}
-          onCleanupEmptyCards={() => setCleanupDialogOpen(true)}
+          onCleanupEmptyCards={handleCleanupEmptyCards}
           onEditBoardName={() => setEditSessionNameOpen(true)}
+        />
+
+        {/* Cluster Cards Dialog (controlled by command menu) */}
+        <ClusterCardsDialog
+          cards={cards}
+          sessionId={sessionId}
+          userId={visitorId || ""}
+          onCluster={handleClusterCards}
+          open={clusterDialogOpen}
+          onOpenChange={setClusterDialogOpen}
         />
 
         {/* Create Thread Inline Panel */}
@@ -1923,10 +1906,10 @@ function ReactFlowBoardInner({
           </Button>
         </div>
 
-        {/* Fixed UI - Top Right: Desktop */}
+        {/* Fixed UI - Top Right: Command Menu */}
         <div
           className={cn(
-            "fixed top-2 sm:top-4 right-2 sm:right-4 z-50 hidden sm:flex items-center gap-2 transition-[right] duration-300",
+            "fixed top-2 sm:top-4 right-2 sm:right-4 z-50 flex items-center gap-2 transition-[right] duration-300",
             isSidebarOpen && "sm:right-[396px]",
           )}
         >
@@ -1935,141 +1918,15 @@ function ReactFlowBoardInner({
               <Button
                 variant="outline"
                 size="icon"
+                className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
                 onClick={() => setCommandOpen(true)}
               >
-                <Command className="w-4 h-4" />
+                <Command className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Command menu (⌘K)</TooltipContent>
           </Tooltip>
         </div>
-
-        {/* Fixed UI - Top Right: Mobile Hamburger Menu */}
-        <div
-          className={cn(
-            "fixed top-2 right-2 z-50 sm:hidden transition-[right] duration-300",
-            isSidebarOpen && "right-[392px]",
-          )}
-        >
-          <Button
-            variant="outline"
-            size="icon"
-            className="bg-card/80 backdrop-blur-sm h-8 w-8"
-            onClick={() => setMobileMenuOpen(true)}
-          >
-            <Menu className="w-4 h-4" />
-          </Button>
-        </div>
-
-        {/* Mobile Menu Drawer */}
-        <Drawer open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-          <DrawerContent>
-            <DrawerHeader>
-              <DrawerTitle>Menu</DrawerTitle>
-            </DrawerHeader>
-            <div className="px-4 pb-6 space-y-2">
-              {/* Add Card */}
-              <DrawerClose asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-11"
-                  onClick={handleAddCard}
-                  disabled={isLocked}
-                >
-                  <Plus className="w-4 h-4" />
-                  {isLocked ? "Session is locked" : "Add new card"}
-                </Button>
-              </DrawerClose>
-
-              {/* Share Link */}
-              <DrawerClose asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-11"
-                  onClick={handleShare}
-                >
-                  {copied ? (
-                    <Check className="w-4 h-4 text-sky-500" />
-                  ) : (
-                    <Share2 className="w-4 h-4" />
-                  )}
-                  {copied ? "Link copied!" : "Copy share link"}
-                </Button>
-              </DrawerClose>
-
-              {/* Copy Session ID */}
-              <DrawerClose asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-11"
-                  onClick={handleCopySessionId}
-                >
-                  {sessionIdCopied ? (
-                    <Check className="w-4 h-4 text-sky-500" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                  <span className="flex-1 text-left">
-                    {sessionIdCopied ? "Copied!" : "Copy session ID"}
-                  </span>
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {sessionId}
-                  </span>
-                </Button>
-              </DrawerClose>
-
-              {/* Edit Username */}
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-3 h-11"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setEditNameOpen(true);
-                }}
-              >
-                <Pencil className="w-4 h-4" />
-                Change your name
-              </Button>
-
-              {/* Clean up Empty Cards (Session Creator Only) */}
-              {isSessionCreator && (
-                <CleanupCardsDialog
-                  cards={cards}
-                  onCleanup={handleCleanupEmptyCards}
-                  trigger={
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start gap-3 h-11"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      <Trash className="w-4 h-4" />
-                      Clean up empty cards
-                    </Button>
-                  }
-                />
-              )}
-
-              {/* Command Menu */}
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-3 h-11"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setCommandOpen(true);
-                }}
-              >
-                <Command className="w-4 h-4" />
-                Command menu
-              </Button>
-
-              {/* Theme Toggle */}
-              <div className="flex items-center justify-between h-11 px-4 rounded-md border border-input bg-background">
-                <span className="text-sm">Theme</span>
-                <ThemeSwitcherToggle />
-              </div>
-            </div>
-          </DrawerContent>
-        </Drawer>
 
         {/* FixeUI - Bottom Left: Zoom Controls */}
         <div className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-50">
