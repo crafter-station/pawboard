@@ -54,8 +54,9 @@ export type IdeaCardNode = Node<IdeaCardNodeData, "ideaCard">;
 
 /**
  * Convert a database Card to a React Flow Node
+ * Internal helper function - use cardsToNodes for external usage
  */
-export function cardToNode(
+function cardToNode(
   card: Card,
   session: Session,
   userRole: SessionRole | null,
@@ -183,17 +184,6 @@ export function updateNodeData(
   return updatedNodes;
 }
 
-/**
- * Extract card data from a node
- */
-export function nodeToCard(node: IdeaCardNode): Card {
-  return {
-    ...node.data.card,
-    x: node.position.x,
-    y: node.position.y,
-  };
-}
-
 // Default card dimensions for new cards
 export const DEFAULT_CARD_WIDTH = 224;
 export const DEFAULT_CARD_HEIGHT = 160;
@@ -242,8 +232,9 @@ export type ThreadNode = Node<ThreadNodeData, "thread">;
 
 /**
  * Convert a thread to a React Flow node
+ * Internal helper function - use threadsToNodes for external usage
  */
-export function threadToNode(
+function threadToNode(
   thread: ThreadWithDetails,
   userRole: SessionRole | null,
   visitorId: string,
