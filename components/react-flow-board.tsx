@@ -29,9 +29,7 @@ import {
   Minus,
   Pencil,
   Plus,
-  Settings,
   Share2,
-  Sparkles,
   Trash,
 } from "lucide-react";
 import Image from "next/image";
@@ -50,7 +48,6 @@ import {
   deleteSession,
   deleteThread as deleteThreadAction,
   detachThreadFromCard as detachThreadFromCardAction,
-  joinSession,
   moveThread as moveThreadAction,
   resizeCard,
   resolveThread as resolveThreadAction,
@@ -60,10 +57,8 @@ import {
   updateSessionSettings,
   voteCard as voteCardAction,
 } from "@/app/actions";
-import { AddCardButton } from "@/components/add-card-button";
 import { ChatPanel, ChatTrigger } from "@/components/chat/chat-drawer";
 import { CleanupCardsDialog } from "@/components/cleanup-cards-dialog";
-import { ClusterCardsDialog } from "@/components/cluster-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
 import { EditNameDialog } from "@/components/edit-name-dialog";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
@@ -71,22 +66,19 @@ import {
   IdeaCardNode,
   setIdeaCardNodeCallbacks,
 } from "@/components/idea-card-node";
-import { ParticipantsDialog } from "@/components/participants-dialog";
 import { RealtimeCursors } from "@/components/realtime-cursors";
-import { SessionSettingsDialog } from "@/components/session-settings-dialog";
+import { CreateThreadPanel, ThreadNode } from "@/components/threads";
 import {
-  CreateThreadDialog,
-  ThreadFilter,
-  ThreadNode,
-} from "@/components/threads";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
 import {
   Drawer,
   DrawerClose,
@@ -94,16 +86,23 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { UserBadge } from "@/components/user-badge";
 import type {
   Card,
   Session,
-  SessionRole,
   ThreadWithDetails,
   TiptapContent,
 } from "@/db/schema";
 import { DEFAULT_TIPTAP_CONTENT } from "@/db/schema";
-import { useInvalidateCardEditors } from "@/hooks/use-card-editors";
+import {
+  useInvalidateCardEditors,
+  useSessionCardEditors,
+} from "@/hooks/use-card-editors";
 import { useCatSound } from "@/hooks/use-cat-sound";
 import { useFingerprint } from "@/hooks/use-fingerprint";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
@@ -131,7 +130,14 @@ import {
 } from "@/lib/react-flow-utils";
 import { createTiptapContent } from "@/lib/tiptap-utils";
 import { cn, getAvatarForUser } from "@/lib/utils";
-import { useChatStore } from "@/stores/chat-store";
+import { useSidebarStore } from "@/stores/sidebar-store";
+import { useThreadFocusStore } from "@/stores/thread-focus-store";
+
+// Stable empty object to avoid creating new references on each render
+const EMPTY_EDITORS: Record<
+  string,
+  Array<{ userId: string; username: string }>
+> = {};
 
 export interface Participant {
   visitorId: string;
@@ -167,7 +173,8 @@ function ReactFlowBoardInner({
   const { resolvedTheme } = useTheme();
   const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
   const playSound = useCatSound();
-  const isChatOpen = useChatStore((state) => state.isOpen);
+  const isSidebarOpen = useSidebarStore((state) => state.isOpen);
+  const setFocusedThread = useThreadFocusStore((s) => s.setFocusedThread);
   const invalidateCardEditors = useInvalidateCardEditors();
 
   // React Flow hooks
@@ -176,9 +183,23 @@ function ReactFlowBoardInner({
     zoomIn,
     zoomOut,
     setViewport,
+    setCenter,
     screenToFlowPosition,
     flowToScreenPosition,
   } = useReactFlow();
+
+  // Create stable ref for screenToFlowPosition to avoid infinite loops
+  // (useReactFlow returns new function references on every render)
+  const screenToFlowPositionRef = useRef(screenToFlowPosition);
+  useEffect(() => {
+    screenToFlowPositionRef.current = screenToFlowPosition;
+  });
+
+  const stableScreenToFlowPosition = useCallback(
+    (position: { x: number; y: number }) =>
+      screenToFlowPositionRef.current(position),
+    [],
+  );
 
   // State
   const [cardNodes, setCardNodes] = useState<IdeaCardNodeType[]>([]);
@@ -197,8 +218,10 @@ function ReactFlowBoardInner({
   const [editNameOpen, setEditNameOpen] = useState(false);
   const [editSessionNameOpen, setEditSessionNameOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
+  const [clusterDialogOpen, setClusterDialogOpen] = useState(false);
+  const [deleteSessionDialogOpen, setDeleteSessionDialogOpen] = useState(false);
   const [session, setSession] = useState<Session>(initialSession);
-  const [userRole, setUserRole] = useState<SessionRole | null>(null);
   const [participants, setParticipants] = useState<Map<string, string>>(
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
   );
@@ -217,12 +240,14 @@ function ReactFlowBoardInner({
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [isReactFlowReady, setIsReactFlowReady] = useState(false);
-  const [showResolvedThreads, setShowResolvedThreads] = useState(true);
+  const [showResolvedThreads] = useState(true);
   // Context menu position for right-click actions
   const [contextMenuPosition, setContextMenuPosition] = useState<{
     x: number;
     y: number;
   } | null>(null);
+  // Board context menu open state (controlled)
+  const [boardMenuOpen, setBoardMenuOpen] = useState(false);
   // Magnetic thread attachment state
   const [magneticTargetCardId, setMagneticTargetCardId] = useState<
     string | null
@@ -239,6 +264,8 @@ function ReactFlowBoardInner({
   const mountedRef = useRef(true);
   // Ref to access current cards value without adding to callback dependencies
   const cardsRef = useRef<Card[]>(initialCards);
+  // Ref for the board container - used to constrain hover card positioning
+  const boardContainerRef = useRef<HTMLDivElement>(null);
 
   // Cleanup mounted ref on unmount
   useEffect(() => {
@@ -247,14 +274,12 @@ function ReactFlowBoardInner({
     };
   }, []);
 
-  // Derived state
-  const isSessionCreator = userRole === "creator";
-  const isLocked = session.isLocked;
   // Derive isMobile from viewportSize - avoids recalculating in multiple places
   const isMobile = viewportSize.width > 0 && viewportSize.width < 640;
 
   const {
     username,
+    role: sessionRole,
     isLoading: isUsernameLoading,
     updateUsername,
   } = useSessionUsername({
@@ -262,33 +287,20 @@ function ReactFlowBoardInner({
     visitorId,
   });
 
+  // Derived state - use sessionRole directly instead of syncing via useEffect
+  const userRole = sessionRole ?? null;
+  const isSessionCreator = userRole === "creator";
+  const isLocked = session.isLocked;
+
   // Track online presence for participants
   const { onlineUsers } = useRealtimePresence({
     roomName: sessionId,
     userId: visitorId || "",
   });
 
-  // Join session and get user role
-  useEffect(() => {
-    if (!visitorId) return;
-
-    const doJoin = async () => {
-      try {
-        const { role, error } = await joinSession(visitorId, sessionId);
-        if (error) {
-          console.error("Failed to join session:", error);
-          return;
-        }
-        if (role) {
-          setUserRole(role);
-        }
-      } catch (err) {
-        console.error("Error joining session:", err);
-      }
-    };
-
-    doJoin();
-  }, [visitorId, sessionId]);
+  // Fetch all card editors for the session in one request
+  const { data: sessionEditorsData } = useSessionCardEditors(sessionId);
+  const sessionEditors = sessionEditorsData?.editors ?? EMPTY_EDITORS;
 
   // Derive participants map with current user included
   // This is better than using useEffect to sync state
@@ -486,7 +498,7 @@ function ReactFlowBoardInner({
           // Note: Could revert optimistic update here if needed
         }
       },
-      screenToFlowPosition,
+      screenToFlowPosition: stableScreenToFlowPosition,
     }),
     [
       visitorId,
@@ -495,7 +507,7 @@ function ReactFlowBoardInner({
       resolveThread,
       removeThread,
       detachThread,
-      screenToFlowPosition,
+      stableScreenToFlowPosition,
     ],
   );
 
@@ -532,6 +544,7 @@ function ReactFlowBoardInner({
           threadsByCardId,
           cardThreadHandlers,
           magneticTargetCardId,
+          sessionEditors,
         );
       }
       // Update existing nodes
@@ -545,6 +558,7 @@ function ReactFlowBoardInner({
         threadsByCardId,
         cardThreadHandlers,
         magneticTargetCardId,
+        sessionEditors,
       );
     });
   }, [
@@ -558,6 +572,7 @@ function ReactFlowBoardInner({
     threadsByCardId,
     cardThreadHandlers,
     magneticTargetCardId,
+    sessionEditors,
   ]);
 
   // Thread action handlers
@@ -621,6 +636,44 @@ function ReactFlowBoardInner({
     [visitorId, removeThread],
   );
 
+  // Handle focusing on a thread from the sidebar
+  const handleFocusThread = useCallback(
+    (threadId: string) => {
+      const thread = threads.find((t) => t.id === threadId);
+      if (!thread) return;
+
+      // Determine the position to focus on
+      let focusX: number;
+      let focusY: number;
+
+      if (thread.cardId) {
+        // Thread is attached to a card - find the card position
+        const card = cards.find((c) => c.id === thread.cardId);
+        if (card) {
+          focusX = card.x + (card.width || DEFAULT_CARD_WIDTH) / 2;
+          focusY = card.y + (card.height || DEFAULT_CARD_HEIGHT) / 2;
+        } else {
+          return;
+        }
+      } else if (thread.x !== null && thread.y !== null) {
+        // Canvas thread - use its position
+        focusX = thread.x;
+        focusY = thread.y;
+      } else {
+        return;
+      }
+
+      // Pan to center on the thread/card
+      setCenter(focusX, focusY, { zoom: 1, duration: 300 });
+
+      // Set focused thread shortly after pan starts to trigger expansion
+      setTimeout(() => {
+        setFocusedThread(threadId);
+      }, 150);
+    },
+    [threads, cards, setCenter, setFocusedThread],
+  );
+
   // Sync threads to nodes
   useEffect(() => {
     if (!visitorId || isDragging) return;
@@ -631,12 +684,19 @@ function ReactFlowBoardInner({
       : threads.filter((t) => !t.isResolved);
 
     setThreadNodes(
-      threadsToNodes(filteredThreads, userRole, visitorId, session.isLocked, {
-        onAddComment: handleAddCommentToThread,
-        onDeleteComment: handleDeleteCommentFromThread,
-        onResolve: handleResolveThread,
-        onDeleteThread: handleDeleteThread,
-      }),
+      threadsToNodes(
+        filteredThreads,
+        userRole,
+        visitorId,
+        session.isLocked,
+        {
+          onAddComment: handleAddCommentToThread,
+          onDeleteComment: handleDeleteCommentFromThread,
+          onResolve: handleResolveThread,
+          onDeleteThread: handleDeleteThread,
+        },
+        boardContainerRef.current,
+      ),
     );
   }, [
     threads,
@@ -1056,6 +1116,11 @@ function ReactFlowBoardInner({
     x: number;
     y: number;
   } | null>(null);
+  // Screen position for the creation panel
+  const [createPanelScreenPosition, setCreatePanelScreenPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   // For card-attached threads
   const [pendingCardThreadId, setPendingCardThreadId] = useState<string | null>(
     null,
@@ -1064,17 +1129,21 @@ function ReactFlowBoardInner({
   const handleAddThread = useCallback(() => {
     if (!visitorId || isLocked) return;
 
-    // Get center of current viewport in flow coordinates
-    const flowCenter = screenToFlowPosition({
+    // Get center of current viewport in screen coordinates
+    const screenCenter = {
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
-    });
+    };
 
-    // Show a dialog/prompt for initial comment
+    // Convert to flow coordinates for the thread position
+    const flowCenter = screenToFlowPosition(screenCenter);
+
+    // Set both flow position (for DB) and screen position (for panel)
     setPendingThreadPosition({
       x: flowCenter.x,
       y: flowCenter.y,
     });
+    setCreatePanelScreenPosition(screenCenter);
     setIsCreatingThread(true);
   }, [visitorId, isLocked, screenToFlowPosition]);
 
@@ -1112,6 +1181,10 @@ function ReactFlowBoardInner({
       setIsCreatingThread(false);
       setPendingThreadPosition(null);
       setPendingCardThreadId(null);
+      setCreatePanelScreenPosition(null);
+
+      // Auto-expand the newly created thread so it shows as ThreadPanel
+      setFocusedThread(thread.id);
     },
     [
       visitorId,
@@ -1119,6 +1192,7 @@ function ReactFlowBoardInner({
       pendingThreadPosition,
       pendingCardThreadId,
       addThread,
+      setFocusedThread,
     ],
   );
 
@@ -1126,16 +1200,36 @@ function ReactFlowBoardInner({
     setIsCreatingThread(false);
     setPendingThreadPosition(null);
     setPendingCardThreadId(null);
+    setCreatePanelScreenPosition(null);
   }, []);
 
   // Handle adding thread to a specific card (from card context menu)
   const handleAddThreadToCard = useCallback(
     (cardId: string) => {
       if (!visitorId || isLocked) return;
+
+      // Find the card to get its position
+      const card = cards.find((c) => c.id === cardId);
+      if (card) {
+        // Convert card position to screen coordinates
+        // Position the panel at the bottom-right of the card
+        const screenPos = flowToScreenPosition({
+          x: card.x + (card.width ?? DEFAULT_CARD_WIDTH),
+          y: card.y + (card.height ?? DEFAULT_CARD_HEIGHT) / 2,
+        });
+        setCreatePanelScreenPosition(screenPos);
+      } else {
+        // Fallback to center of screen
+        setCreatePanelScreenPosition({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+      }
+
       setPendingCardThreadId(cardId);
       setIsCreatingThread(true);
     },
-    [visitorId, isLocked],
+    [visitorId, isLocked, cards, flowToScreenPosition],
   );
 
   // Handle adding thread from context menu (at specific position)
@@ -1149,9 +1243,22 @@ function ReactFlowBoardInner({
       x: flowPosition.x,
       y: flowPosition.y,
     });
+    // Store screen position for the panel before clearing context menu
+    setCreatePanelScreenPosition(contextMenuPosition);
     setIsCreatingThread(true);
     setContextMenuPosition(null);
+    setBoardMenuOpen(false);
   }, [visitorId, isLocked, contextMenuPosition, screenToFlowPosition]);
+
+  // Handle pane right-click (empty space on the board)
+  const handlePaneContextMenu = useCallback(
+    (event: MouseEvent | React.MouseEvent) => {
+      event.preventDefault();
+      setContextMenuPosition({ x: event.clientX, y: event.clientY });
+      setBoardMenuOpen(true);
+    },
+    [],
+  );
 
   // Handle adding card from context menu (at specific position)
   const handleAddCardAtPosition = useCallback(async () => {
@@ -1160,15 +1267,12 @@ function ReactFlowBoardInner({
 
     playSound();
 
-    const isMobile = window.innerWidth < 640;
-    const cardWidth = isMobile ? CARD_WIDTH_MOBILE : CARD_WIDTH;
-    const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT;
-
     // Convert screen position to flow coordinates
     const flowPosition = screenToFlowPosition(contextMenuPosition);
 
-    const x = flowPosition.x - cardWidth / 2;
-    const y = flowPosition.y - cardHeight / 2;
+    // Position card at exact cursor position (top-left corner)
+    const x = flowPosition.x;
+    const y = flowPosition.y;
 
     const cardId = generateCardId();
     const newCard: Card = {
@@ -1191,6 +1295,7 @@ function ReactFlowBoardInner({
     setNewCardId(cardId);
     addCard(newCard);
     setContextMenuPosition(null);
+    setBoardMenuOpen(false);
     await createCard(newCard, visitorId);
   }, [
     username,
@@ -1394,6 +1499,11 @@ function ReactFlowBoardInner({
     return { success: false, error: error ?? "Failed to update settings" };
   };
 
+  const handleToggleLock = async () => {
+    const result = await handleUpdateSessionSettings({ isLocked: !isLocked });
+    return result;
+  };
+
   const handleDeleteSession = async () => {
     if (!visitorId) return { success: false, error: "Not logged in" };
 
@@ -1427,7 +1537,7 @@ function ReactFlowBoardInner({
   };
 
   // Handle cluster cards callback
-  const handleClusterCards = useCallback(
+  const _handleClusterCards = useCallback(
     (positions: Array<{ id: string; x: number; y: number }>) => {
       // Apply positions locally (this triggers animation)
       applyClusterPositions(positions);
@@ -1649,7 +1759,10 @@ function ReactFlowBoardInner({
   return (
     <div className="h-screen flex overflow-hidden">
       {/* Main content area */}
-      <div className="flex-1 min-h-screen overflow-hidden relative">
+      <div
+        ref={boardContainerRef}
+        className="flex-1 min-h-screen overflow-hidden relative"
+      >
         <CommandMenu
           open={commandOpen}
           onOpenChange={setCommandOpen}
@@ -1657,16 +1770,38 @@ function ReactFlowBoardInner({
           onAddThread={handleAddThread}
           onShare={handleShare}
           onChangeName={() => setEditNameOpen(true)}
+          isSessionCreator={isSessionCreator}
+          isLocked={isLocked}
+          onToggleLock={handleToggleLock}
+          onDeleteSession={() => setDeleteSessionDialogOpen(true)}
+          onClusterCards={() => setClusterDialogOpen(true)}
+          onCleanupEmptyCards={() => setCleanupDialogOpen(true)}
+          onEditBoardName={() => setEditSessionNameOpen(true)}
         />
 
-        {/* Create Thread Dialog */}
-        <CreateThreadDialog
-          open={isCreatingThread}
-          onOpenChange={setIsCreatingThread}
-          onSubmit={handleCreateThreadWithComment}
-          onCancel={handleCancelThreadCreation}
-          cardId={pendingCardThreadId ?? undefined}
-        />
+        {/* Create Thread Inline Panel */}
+        {isCreatingThread && createPanelScreenPosition && (
+          <div
+            className="fixed z-[100]"
+            style={{
+              // Position panel to the right of where the bubble will be
+              // Bubble is 40px wide, centered at click position
+              // So bubble right edge is at clickX + 20px
+              // Panel left edge: clickX + 20px (bubble half-width) + 12px (sideOffset)
+              left: createPanelScreenPosition.x + 32,
+              // Top-aligned with bubble top
+              // Bubble is 40px tall, centered at clickY
+              // So bubble top is at clickY - 20px
+              top: createPanelScreenPosition.y - 20,
+            }}
+          >
+            <CreateThreadPanel
+              onSubmit={handleCreateThreadWithComment}
+              onCancel={handleCancelThreadCreation}
+              isCardThread={!!pendingCardThreadId}
+            />
+          </div>
+        )}
 
         {/* Edit Username Dialog - controlled by command menu */}
         <EditNameDialog
@@ -1687,6 +1822,31 @@ function ReactFlowBoardInner({
           placeholder="Enter board name"
           maxLength={50}
         />
+
+        {/* Delete Session Confirmation Dialog */}
+        <AlertDialog
+          open={deleteSessionDialogOpen}
+          onOpenChange={setDeleteSessionDialogOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete session?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete this session and all its cards.
+                This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteSession}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* AI Chat Trigger Button */}
         <ChatTrigger />
@@ -1749,87 +1909,6 @@ function ReactFlowBoardInner({
               </span>
             </div>
           )}
-          {isSessionCreator && (
-            <>
-              <CleanupCardsDialog
-                cards={cards}
-                onCleanup={handleCleanupEmptyCards}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                    title="Clean up empty cards"
-                  >
-                    <Trash className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Button>
-                }
-              />
-              <ClusterCardsDialog
-                cards={cards}
-                sessionId={sessionId}
-                userId={visitorId}
-                onCluster={handleClusterCards}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                    title="Cluster cards by similarity"
-                    disabled={isLocked}
-                  >
-                    <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Button>
-                }
-              />
-              <SessionSettingsDialog
-                session={session}
-                onUpdateSettings={handleUpdateSessionSettings}
-                onDeleteSession={handleDeleteSession}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="bg-card/80 backdrop-blur-sm h-8 w-8 sm:h-9 sm:w-9"
-                    title="Session Settings"
-                  >
-                    <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  </Button>
-                }
-              />
-            </>
-          )}
-        </div>
-
-        {/* Fixed UI - Top Right: Desktop */}
-        <div
-          className={cn(
-            "fixed top-2 sm:top-4 right-2 sm:right-4 z-50 hidden sm:flex items-center gap-2 transition-[right] duration-300",
-            isChatOpen && "sm:right-[396px]",
-          )}
-        >
-          <button
-            type="button"
-            onClick={handleCopySessionId}
-            className="flex text-muted-foreground text-sm font-mono bg-card/80 backdrop-blur-sm px-3 h-9 items-center justify-center gap-2 rounded-md border border-border shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 transition-all cursor-pointer"
-            title={sessionIdCopied ? "Copied!" : "Copy session ID"}
-          >
-            {sessionId}
-            {sessionIdCopied ? (
-              <Check className="w-3.5 h-3.5 text-sky-500" />
-            ) : (
-              <Copy className="w-3.5 h-3.5 opacity-50" />
-            )}
-          </button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleAddCard}
-            disabled={isLocked}
-            title={isLocked ? "Session is locked" : "Add card (N)"}
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
           <Button
             variant="outline"
             size="icon"
@@ -1842,24 +1921,34 @@ function ReactFlowBoardInner({
               <Share2 className="w-4 h-4" />
             )}
           </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setCommandOpen(true)}
-            title="Command menu (⌘K)"
-          >
-            <Command className="w-4 h-4" />
-          </Button>
-          <div className="bg-card/80 backdrop-blur-sm h-9 flex items-center px-2 rounded-lg border border-border">
-            <ThemeSwitcherToggle />
-          </div>
+        </div>
+
+        {/* Fixed UI - Top Right: Desktop */}
+        <div
+          className={cn(
+            "fixed top-2 sm:top-4 right-2 sm:right-4 z-50 hidden sm:flex items-center gap-2 transition-[right] duration-300",
+            isSidebarOpen && "sm:right-[396px]",
+          )}
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCommandOpen(true)}
+              >
+                <Command className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Command menu (⌘K)</TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Fixed UI - Top Right: Mobile Hamburger Menu */}
         <div
           className={cn(
             "fixed top-2 right-2 z-50 sm:hidden transition-[right] duration-300",
-            isChatOpen && "right-[392px]",
+            isSidebarOpen && "right-[392px]",
           )}
         >
           <Button
@@ -1982,22 +2071,7 @@ function ReactFlowBoardInner({
           </DrawerContent>
         </Drawer>
 
-        {/* Fixed UI - Bottom Right */}
-        <div
-          className={cn(
-            "fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center gap-2 transition-[right] duration-300",
-            isChatOpen && "sm:right-[404px]",
-          )}
-        >
-          <ParticipantsDialog
-            participants={participantsWithCurrentUser}
-            currentUserId={visitorId}
-            onlineUsers={onlineUsers}
-          />
-          <AddCardButton onClick={handleAddCard} disabled={isLocked} />
-        </div>
-
-        {/* Fixed UI - Bottom Left: Zoom Controls */}
+        {/* FixeUI - Bottom Left: Zoom Controls */}
         <div className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-50">
           <div className="flex items-center gap-1 bg-card/80 backdrop-blur-sm rounded-lg border border-border px-1 py-1">
             <Button
@@ -2031,166 +2105,170 @@ function ReactFlowBoardInner({
             >
               <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </Button>
-            {threads.length > 0 && (
-              <>
-                <div className="w-px h-5 bg-border mx-1" />
-                <ThreadFilter
-                  showResolved={showResolvedThreads}
-                  onToggle={setShowResolvedThreads}
-                  resolvedCount={threads.filter((t) => t.isResolved).length}
-                  totalCount={threads.length}
-                />
-              </>
-            )}
           </div>
         </div>
 
-        {/* React Flow Canvas with Context Menu */}
-        <ContextMenu>
-          <ContextMenuTrigger
-            className="h-full w-full"
-            onContextMenu={(e) => {
-              // Store the position for context menu actions
-              setContextMenuPosition({ x: e.clientX, y: e.clientY });
-            }}
+        {/* React Flow Canvas */}
+        <div className="h-full w-full">
+          <ReactFlow
+            nodes={nodes}
+            nodeTypes={nodeTypes}
+            onNodesChange={handleNodesChange}
+            onNodeDragStart={handleNodeDragStart}
+            onNodeDrag={handleNodeDrag}
+            onNodeDragStop={handleNodeDragStop}
+            onSelectionChange={handleSelectionChange}
+            onMoveEnd={handleMoveEnd}
+            onInit={() => setIsReactFlowReady(true)}
+            onPaneContextMenu={handlePaneContextMenu}
+            panOnScroll
+            selectionOnDrag={!isMobile}
+            panOnDrag={isMobile ? true : [1, 2]}
+            selectionMode={SelectionMode.Partial}
+            selectNodesOnDrag={!isMobile}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
+            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            fitViewOptions={{ padding: 0.2 }}
+            className="bg-background"
+            proOptions={{ hideAttribution: true }}
           >
-            <ReactFlow
-              nodes={nodes}
-              nodeTypes={nodeTypes}
-              onNodesChange={handleNodesChange}
-              onNodeDragStart={handleNodeDragStart}
-              onNodeDrag={handleNodeDrag}
-              onNodeDragStop={handleNodeDragStop}
-              onSelectionChange={handleSelectionChange}
-              onMoveEnd={handleMoveEnd}
-              onInit={() => setIsReactFlowReady(true)}
-              panOnScroll
-              selectionOnDrag={!isMobile}
-              panOnDrag={isMobile ? true : [1, 2]}
-              selectionMode={SelectionMode.Partial}
-              selectNodesOnDrag={!isMobile}
-              minZoom={MIN_ZOOM}
-              maxZoom={MAX_ZOOM}
-              defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-              fitViewOptions={{ padding: 0.2 }}
-              className="bg-background"
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background
-                variant={BackgroundVariant.Dots}
-                gap={20}
-                size={1}
-                color="hsl(var(--muted-foreground) / 0.2)"
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={20}
+              size={1}
+              color="hsl(var(--muted-foreground) / 0.2)"
+            />
+
+            {/* Minimap (Desktop Only) */}
+            {viewportSize.width >= 640 && (
+              <MiniMap
+                nodeColor={minimapNodeColor}
+                nodeStrokeWidth={3}
+                pannable
+                zoomable
+                className="!absolute !top-[60px] !right-4 !bottom-auto !left-auto !bg-card/80 backdrop-blur-sm !border !border-border !rounded-lg transition-all duration-300"
+                style={{
+                  width: 160,
+                  height: 120,
+                }}
               />
+            )}
 
-              {/* Minimap (Desktop Only) */}
-              {viewportSize.width >= 640 && (
-                <MiniMap
-                  nodeColor={minimapNodeColor}
-                  nodeStrokeWidth={3}
-                  pannable
-                  zoomable
-                  className={cn(
-                    "!absolute !top-20 !right-4 !bottom-auto !left-auto transition-[right] duration-300 !bg-card/80 backdrop-blur-sm !border !border-border !rounded-lg",
-                    isChatOpen && "!right-[396px]",
-                  )}
-                  style={{
-                    width: 160,
-                    height: 120,
-                  }}
-                />
-              )}
+            {/* Cursors - rendered in screen space */}
+            <div
+              className="absolute inset-0 pointer-events-none overflow-hidden"
+              style={{ zIndex: 1000 }}
+            >
+              <RealtimeCursors
+                roomName={`session:${sessionId}`}
+                username={username}
+                screenToWorld={screenToWorld}
+                worldToScreen={flowToScreenPosition}
+              />
+            </div>
 
-              {/* Cursors - rendered in screen space */}
-              <div
-                className="absolute inset-0 pointer-events-none overflow-hidden"
-                style={{ zIndex: 1000 }}
-              >
-                <RealtimeCursors
-                  roomName={`session:${sessionId}`}
-                  username={username}
-                  screenToWorld={screenToWorld}
-                  worldToScreen={flowToScreenPosition}
-                />
-              </div>
-
-              {/* Empty state - stays centered in viewport */}
-              {cards.length === 0 && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                  <div className="text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 opacity-20">
-                      <Image
-                        src={
-                          visitorId
-                            ? getAvatarForUser(visitorId)
-                            : "/cat-purple.svg"
-                        }
-                        alt=""
-                        width={64}
-                        height={64}
-                        className="w-full h-full"
-                      />
-                    </div>
-                    <p className="text-lg text-muted-foreground mb-1">
-                      Your board is empty
-                    </p>
-                    <p className="text-sm text-muted-foreground/70 mb-4">
-                      Drop your first idea and watch it grow
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleAddCard}
-                      disabled={isLocked}
-                      className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add first idea
-                    </button>
-                    <p className="text-xs text-muted-foreground/50 mt-3">
-                      or press{" "}
-                      <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
-                        N
-                      </kbd>
-                    </p>
+            {/* Empty state - stays centered in viewport */}
+            {cards.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                <div className="text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 opacity-20">
+                    <Image
+                      src={
+                        visitorId
+                          ? getAvatarForUser(visitorId)
+                          : "/cat-purple.svg"
+                      }
+                      alt=""
+                      width={64}
+                      height={64}
+                      className="w-full h-full"
+                    />
                   </div>
+                  <p className="text-lg text-muted-foreground mb-1">
+                    Your board is empty
+                  </p>
+                  <p className="text-sm text-muted-foreground/70 mb-4">
+                    Drop your first idea and watch it grow
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleAddCard}
+                    disabled={isLocked}
+                    className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add first idea
+                  </button>
+                  <p className="text-xs text-muted-foreground/50 mt-3">
+                    or press{" "}
+                    <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">
+                      N
+                    </kbd>
+                  </p>
                 </div>
-              )}
-            </ReactFlow>
-          </ContextMenuTrigger>
-          <ContextMenuContent className="w-48">
-            <ContextMenuItem
-              onClick={handleAddCardAtPosition}
-              disabled={isLocked}
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Add idea card
-            </ContextMenuItem>
-            <ContextMenuItem
-              onClick={handleAddThreadAtPosition}
-              disabled={isLocked}
-              className="gap-2"
-            >
-              <MessageSquarePlus className="h-4 w-4" />
-              Add comment thread
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              onClick={() => {
-                setContextMenuPosition(null);
-                setCommandOpen(true);
-              }}
-              className="gap-2"
-            >
-              <Command className="h-4 w-4" />
-              Command menu
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      </div>
+              </div>
+            )}
+          </ReactFlow>
+        </div>
 
-      {/* AI Chat Panel - pushes content when open */}
-      <ChatPanel sessionId={sessionId} userId={visitorId} />
+        {/* Board context menu (custom positioned) */}
+        {boardMenuOpen && contextMenuPosition && (
+          <>
+            {/* Backdrop to close menu when clicking outside */}
+            <button
+              type="button"
+              aria-label="Close menu"
+              className="fixed inset-0 z-50 cursor-default"
+              onClick={() => setBoardMenuOpen(false)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setBoardMenuOpen(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setBoardMenuOpen(false);
+              }}
+            />
+            <div
+              role="menu"
+              className="fixed z-50 bg-popover text-popover-foreground rounded-md border p-1 shadow-md min-w-[180px] animate-in fade-in-0 zoom-in-95"
+              style={{
+                left: contextMenuPosition.x,
+                top: contextMenuPosition.y,
+              }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 text-left"
+                onClick={handleAddCardAtPosition}
+                disabled={isLocked}
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span>Add idea card</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 text-left"
+                onClick={handleAddThreadAtPosition}
+                disabled={isLocked}
+              >
+                <MessageSquarePlus className="h-4 w-4 shrink-0" />
+                <span>Add comment thread</span>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+      <ChatPanel
+        sessionId={sessionId}
+        userId={visitorId}
+        threads={threads}
+        onThreadClick={handleFocusThread}
+        participants={participantsWithCurrentUser}
+        onlineUsers={onlineUsers}
+      />
     </div>
   );
 }

@@ -23,14 +23,23 @@ interface CleanupCardsDialogProps {
     error?: string;
   }>;
   trigger?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function CleanupCardsDialog({
   cards,
   onCleanup,
   trigger,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: CleanupCardsDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled
+    ? (value: boolean) => controlledOnOpenChange?.(value)
+    : setInternalOpen;
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfirmation, setShowConfirmation] = useState(false);

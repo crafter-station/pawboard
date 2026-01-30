@@ -22,6 +22,8 @@ interface ClusterCardsDialogProps {
   userId: string;
   onCluster: (positions: Array<{ id: string; x: number; y: number }>) => void;
   trigger?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function ClusterCardsDialog({
@@ -30,8 +32,15 @@ export function ClusterCardsDialog({
   userId,
   onCluster,
   trigger,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: ClusterCardsDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled
+    ? (value: boolean) => controlledOnOpenChange?.(value)
+    : setInternalOpen;
   const [isClustering, setIsClustering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);

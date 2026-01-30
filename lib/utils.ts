@@ -26,17 +26,6 @@ export function getAvatarForUser(identifier: string): string {
 }
 
 /**
- * Generate a DiceBear avatar URL for a user.
- * Uses "adventurer" style for fun, consistent avatars.
- */
-export function getDiceBearAvatar(
-  userId: string,
-  style: "adventurer" | "bottts" | "fun-emoji" = "adventurer",
-): string {
-  return `https://api.dicebear.com/7.x/${style}/svg?seed=${encodeURIComponent(userId)}`;
-}
-
-/**
  * Format a date as relative time (e.g., "2m ago", "1h ago", "3d ago")
  */
 export function formatRelativeTime(date: Date): string {
