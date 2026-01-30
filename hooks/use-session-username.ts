@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  getOrCreateUser,
   joinSession,
   updateUsername as updateUsernameAction,
 } from "@/app/actions";
+import type { SessionRole } from "@/db/schema";
 
 interface UseSessionUsernameProps {
   sessionId: string;
@@ -14,6 +14,7 @@ interface UseSessionUsernameProps {
 
 interface UseSessionUsernameReturn {
   username: string | null;
+  role: SessionRole | null;
   isLoading: boolean;
   error: string | null;
   updateUsername: (
@@ -26,54 +27,57 @@ export function useSessionUsername({
   visitorId,
 }: UseSessionUsernameProps): UseSessionUsernameReturn {
   const [username, setUsername] = useState<string | null>(null);
+  const [role, setRole] = useState<SessionRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const initializedRef = useRef(false);
-  const mountedRef = useRef(true);
 
-  // Cleanup mounted ref on unmount
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  // Initialize: get or create user, join session
+  // Initialize: join session (which also creates user if needed)
   useEffect(() => {
     if (!visitorId || initializedRef.current) return;
 
+    // Use cancelled flag for race condition prevention
+    let cancelled = false;
+
     const init = async () => {
-      if (!mountedRef.current) return;
       setIsLoading(true);
       setError(null);
 
-      // Get or create user (will generate random username if new)
-      const { user, error: userError } = await getOrCreateUser(visitorId);
+      // Join the session - this also calls getOrCreateUser internally
+      // and returns user, role, and any error
+      const {
+        role: userRole,
+        error: joinError,
+        user,
+      } = await joinSession(visitorId, sessionId);
 
-      if (!mountedRef.current) return;
+      // Prevent state updates if effect was cleaned up (component unmounted
+      // or dependencies changed before async operation completed)
+      if (cancelled) return;
 
-      if (userError || !user) {
-        setError(userError ?? "Failed to load user");
+      if (joinError) {
+        setError(joinError);
         setIsLoading(false);
         return;
       }
 
-      setUsername(user.username);
-
-      // Join the session (creates participant record)
-      const { error: joinError } = await joinSession(visitorId, sessionId);
-      if (joinError) {
-        console.error("Failed to join session:", joinError);
-        // Non-fatal - user can still use the board
+      if (user) {
+        setUsername(user.username);
       }
 
-      if (mountedRef.current) {
-        setIsLoading(false);
-        initializedRef.current = true;
+      if (userRole) {
+        setRole(userRole);
       }
+
+      setIsLoading(false);
+      initializedRef.current = true;
     };
 
     init();
+
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId, visitorId]);
 
   // Update username function (global - affects all sessions)
@@ -95,9 +99,7 @@ export function useSessionUsername({
       }
 
       if (user) {
-        if (mountedRef.current) {
-          setUsername(user.username);
-        }
+        setUsername(user.username);
         return { success: true };
       }
 
@@ -108,6 +110,7 @@ export function useSessionUsername({
 
   return {
     username,
+    role,
     isLoading,
     error,
     updateUsername,
