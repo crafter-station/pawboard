@@ -1,14 +1,20 @@
 "use client";
 
 import {
+  FileText,
   Home,
   ListTodo,
+  Lock,
   MessageCircle,
   Moon,
   Pencil,
   Plus,
   Share2,
+  Sparkles,
   Sun,
+  Trash,
+  Trash2,
+  Unlock,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -30,6 +36,14 @@ interface CommandMenuProps {
   onAddThread?: () => void;
   onShare: () => void;
   onChangeName: () => void;
+  // Session management (creator-only)
+  isSessionCreator?: boolean;
+  isLocked?: boolean;
+  onToggleLock?: () => void;
+  onDeleteSession?: () => void;
+  onClusterCards?: () => void;
+  onCleanupEmptyCards?: () => void;
+  onEditBoardName?: () => void;
 }
 
 export function CommandMenu({
@@ -39,6 +53,13 @@ export function CommandMenu({
   onAddThread,
   onShare,
   onChangeName,
+  isSessionCreator,
+  isLocked,
+  onToggleLock,
+  onDeleteSession,
+  onClusterCards,
+  onCleanupEmptyCards,
+  onEditBoardName,
 }: CommandMenuProps) {
   const { setTheme } = useTheme();
   const router = useRouter();
@@ -65,43 +86,126 @@ export function CommandMenu({
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
         <CommandGroup heading="Actions">
-          <CommandItem onSelect={() => runCommand(onAddCard)}>
+          <CommandItem
+            keywords={["create", "note", "sticky", "idea"]}
+            onSelect={() => runCommand(onAddCard)}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Add new card
             <CommandShortcut>N</CommandShortcut>
           </CommandItem>
           {onAddThread && (
-            <CommandItem onSelect={() => runCommand(onAddThread)}>
+            <CommandItem
+              keywords={["comment", "discussion", "chat"]}
+              onSelect={() => runCommand(onAddThread)}
+            >
               <MessageCircle className="mr-2 h-4 w-4" />
               Add comment thread
               <CommandShortcut>C</CommandShortcut>
             </CommandItem>
           )}
-          <CommandItem onSelect={() => runCommand(onShare)}>
+          <CommandItem
+            keywords={["share", "url", "invite"]}
+            onSelect={() => runCommand(onShare)}
+          >
             <Share2 className="mr-2 h-4 w-4" />
             Copy share link
           </CommandItem>
-          <CommandItem onSelect={() => runCommand(() => router.push("/"))}>
+          <CommandItem
+            keywords={["dashboard", "main", "landing"]}
+            onSelect={() => runCommand(() => router.push("/"))}
+          >
             <Home className="mr-2 h-4 w-4" />
             Go home
           </CommandItem>
           <CommandItem
+            keywords={["boards", "list", "all"]}
             onSelect={() => runCommand(() => router.push("/sessions"))}
           >
             <ListTodo className="mr-2 h-4 w-4" />
             My sessions
           </CommandItem>
-          <CommandItem onSelect={() => runCommand(onChangeName)}>
+          <CommandItem
+            keywords={["rename", "username", "display", "nickname"]}
+            onSelect={() => runCommand(onChangeName)}
+          >
             <Pencil className="mr-2 h-4 w-4" />
-            Change name
+            Change my name
           </CommandItem>
         </CommandGroup>
+        {isSessionCreator && (
+          <CommandGroup heading="Session">
+            {onEditBoardName && (
+              <CommandItem
+                keywords={["rename", "title", "board"]}
+                onSelect={() => runCommand(onEditBoardName)}
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                Edit board name
+              </CommandItem>
+            )}
+            {onToggleLock && (
+              <CommandItem
+                keywords={["lock", "unlock", "freeze", "protect", "readonly"]}
+                onSelect={() => runCommand(onToggleLock)}
+              >
+                {isLocked ? (
+                  <Unlock className="mr-2 h-4 w-4" />
+                ) : (
+                  <Lock className="mr-2 h-4 w-4" />
+                )}
+                {isLocked ? "Unlock session" : "Lock session"}
+              </CommandItem>
+            )}
+            {onClusterCards && (
+              <CommandItem
+                keywords={[
+                  "cluster",
+                  "group",
+                  "organize",
+                  "ai",
+                  "categorize",
+                  "sort",
+                  "arrange",
+                ]}
+                onSelect={() => runCommand(onClusterCards)}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                Cluster cards
+              </CommandItem>
+            )}
+            {onCleanupEmptyCards && (
+              <CommandItem
+                keywords={["cleanup", "clean", "empty", "clear", "trash"]}
+                onSelect={() => runCommand(onCleanupEmptyCards)}
+              >
+                <Trash className="mr-2 h-4 w-4" />
+                Delete empty cards
+              </CommandItem>
+            )}
+            {onDeleteSession && (
+              <CommandItem
+                keywords={["delete", "remove", "destroy"]}
+                onSelect={() => runCommand(onDeleteSession)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete session
+              </CommandItem>
+            )}
+          </CommandGroup>
+        )}
         <CommandGroup heading="Theme">
-          <CommandItem onSelect={() => runCommand(() => setTheme("light"))}>
+          <CommandItem
+            keywords={["theme", "mode", "appearance", "color", "switch"]}
+            onSelect={() => runCommand(() => setTheme("light"))}
+          >
             <Sun className="mr-2 h-4 w-4" />
             Light mode
           </CommandItem>
-          <CommandItem onSelect={() => runCommand(() => setTheme("dark"))}>
+          <CommandItem
+            keywords={["theme", "mode", "appearance", "color", "switch"]}
+            onSelect={() => runCommand(() => setTheme("dark"))}
+          >
             <Moon className="mr-2 h-4 w-4" />
             Dark mode
           </CommandItem>
