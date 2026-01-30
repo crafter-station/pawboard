@@ -44,34 +44,44 @@ export function CardThreadNode({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
+  // Destructure handlers to avoid dependency on entire handlers object
+  const {
+    onAddComment,
+    onDeleteComment,
+    onResolve,
+    onDeleteThread,
+    onDetach,
+    screenToFlowPosition,
+  } = handlers;
+
   const handleAddComment = useCallback(
     async (content: string) => {
-      await handlers.onAddComment(thread.id, content);
+      await onAddComment(thread.id, content);
     },
-    [handlers, thread.id],
+    [onAddComment, thread.id],
   );
 
   const handleDeleteComment = useCallback(
     async (commentId: string) => {
-      await handlers.onDeleteComment(thread.id, commentId);
+      await onDeleteComment(thread.id, commentId);
     },
-    [handlers, thread.id],
+    [onDeleteComment, thread.id],
   );
 
   const handleResolve = useCallback(
     async (isResolved: boolean) => {
-      await handlers.onResolve(thread.id, isResolved);
+      await onResolve(thread.id, isResolved);
     },
-    [handlers, thread.id],
+    [onResolve, thread.id],
   );
 
   const handleDeleteThread = useCallback(async () => {
-    await handlers.onDeleteThread(thread.id);
+    await onDeleteThread(thread.id);
     setIsOpen(false);
-  }, [handlers, thread.id]);
+  }, [onDeleteThread, thread.id]);
 
   // Check if detach is supported
-  const canDetach = !sessionLocked && handlers.onDetach;
+  const canDetach = !sessionLocked && onDetach;
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -110,13 +120,13 @@ export function CardThreadNode({
         Math.abs(dragOffset.x) > moveThreshold ||
         Math.abs(dragOffset.y) > moveThreshold;
 
-      if (moved && handlers.onDetach && handlers.screenToFlowPosition) {
+      if (moved && onDetach && screenToFlowPosition) {
         // Convert cursor screen position to flow coordinates
-        const flowPos = handlers.screenToFlowPosition({
+        const flowPos = screenToFlowPosition({
           x: e.clientX,
           y: e.clientY,
         });
-        await handlers.onDetach(thread.id, flowPos);
+        await onDetach(thread.id, flowPos);
       } else if (!moved && !sessionLocked) {
         // Short click without movement - open popover
         setIsOpen(true);
@@ -126,7 +136,14 @@ export function CardThreadNode({
       setDragOffset({ x: 0, y: 0 });
       dragStartRef.current = null;
     },
-    [isDragging, dragOffset, handlers, thread.id, sessionLocked],
+    [
+      isDragging,
+      dragOffset,
+      onDetach,
+      screenToFlowPosition,
+      thread.id,
+      sessionLocked,
+    ],
   );
 
   return (

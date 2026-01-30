@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // Thread color palette - hardcoded for Safari compatibility
 const THREAD_COLORS = {
@@ -58,10 +58,12 @@ export function useThreadColors(): ThreadColors {
     setMounted(true);
   }, []);
 
-  // Return light theme colors during SSR and before mount to avoid hydration mismatch
-  if (!mounted) {
-    return THREAD_COLORS.light;
-  }
-
-  return resolvedTheme === "dark" ? THREAD_COLORS.dark : THREAD_COLORS.light;
+  // Memoize return value to prevent object recreation on every render
+  return useMemo(() => {
+    // Return light theme colors during SSR and before mount to avoid hydration mismatch
+    if (!mounted) {
+      return THREAD_COLORS.light;
+    }
+    return resolvedTheme === "dark" ? THREAD_COLORS.dark : THREAD_COLORS.light;
+  }, [mounted, resolvedTheme]);
 }

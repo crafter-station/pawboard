@@ -81,22 +81,18 @@ export function useRealtimeCards(
   const onEditorsChangedRef = useRef(onEditorsChanged);
   const usernameRef = useRef(username);
 
-  // Keep refs updated
+  // Keep callback refs updated - consolidated into single effect
   useEffect(() => {
     onUserJoinOrRenameRef.current = onUserJoinOrRename;
-  }, [onUserJoinOrRename]);
-
-  useEffect(() => {
     onSessionRenameRef.current = onSessionRename;
-  }, [onSessionRename]);
-
-  useEffect(() => {
     onSessionSettingsChangeRef.current = onSessionSettingsChange;
-  }, [onSessionSettingsChange]);
-
-  useEffect(() => {
     onEditorsChangedRef.current = onEditorsChanged;
-  }, [onEditorsChanged]);
+  }, [
+    onUserJoinOrRename,
+    onSessionRename,
+    onSessionSettingsChange,
+    onEditorsChanged,
+  ]);
 
   useEffect(() => {
     usernameRef.current = username;
@@ -447,6 +443,9 @@ export function useRealtimeCards(
   useEffect(() => {
     if (!userId) return;
 
+    // Track if component is mounted to prevent state updates after unmount
+    let isMounted = true;
+
     const channel = supabase.channel(`cards:${sessionId}`);
 
     channel
@@ -706,6 +705,10 @@ export function useRealtimeCards(
       .subscribe(async (status) => {
         if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
           await channel.track({ odilUserId: userId });
+
+          // Exit early if component unmounted during async operation
+          if (!isMounted) return;
+
           channelRef.current = channel;
 
           // Broadcast that we joined with our username
@@ -730,6 +733,7 @@ export function useRealtimeCards(
       });
 
     return () => {
+      isMounted = false;
       channel.unsubscribe();
       channelRef.current = null;
     };

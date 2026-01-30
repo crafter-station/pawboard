@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,7 +33,7 @@ export function CreateThreadDialog({
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     const trimmed = content.trim();
     if (!trimmed || isSubmitting) return;
 
@@ -44,18 +44,29 @@ export function CreateThreadDialog({
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [content, isSubmitting, onSubmit, cardId]);
 
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
     setContent("");
     onCancel();
-  };
+  }, [onCancel]);
+
+  // Reset content when dialog closes
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        setContent("");
+      }
+      onOpenChange(open);
+    },
+    [onOpenChange],
+  );
 
   const isOverLimit = content.length > COMMENT_CONSTRAINTS.MAX_LENGTH;
   const canSubmit = content.trim().length > 0 && !isOverLimit;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>

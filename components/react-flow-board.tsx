@@ -237,6 +237,8 @@ function ReactFlowBoardInner({
   );
   // Track component mount state for async operations
   const mountedRef = useRef(true);
+  // Ref to access current cards value without adding to callback dependencies
+  const cardsRef = useRef<Card[]>(initialCards);
 
   // Cleanup mounted ref on unmount
   useEffect(() => {
@@ -412,6 +414,11 @@ function ReactFlowBoardInner({
     handleRemoteSessionSettingsChange,
     handleRemoteEditorsChange,
   );
+
+  // Keep cardsRef in sync with cards state for use in callbacks
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
 
   // Create thread handlers for card-attached threads
   const cardThreadHandlers = useMemo<CardThreadHandlers>(
@@ -653,7 +660,8 @@ function ReactFlowBoardInner({
       onVote: async (id: string) => {
         if (!visitorId) return;
 
-        const card = cards.find((c) => c.id === id);
+        // Use ref to access current cards without adding to dependencies
+        const card = cardsRef.current.find((c) => c.id === id);
         if (!card) return;
 
         if (card.createdById === visitorId) return;
@@ -670,7 +678,8 @@ function ReactFlowBoardInner({
       onReact: async (id: string, emoji: string) => {
         if (!visitorId) return;
 
-        const card = cards.find((c) => c.id === id);
+        // Use ref to access current cards without adding to dependencies
+        const card = cardsRef.current.find((c) => c.id === id);
         if (!card) return;
 
         if (card.createdById === visitorId) return;
@@ -716,7 +725,8 @@ function ReactFlowBoardInner({
         await deleteCard(id, visitorId);
       },
       onDuplicate: (cardId: string) => {
-        const card = cards.find((c) => c.id === cardId);
+        // Use ref to access current cards without adding to dependencies
+        const card = cardsRef.current.find((c) => c.id === cardId);
         if (card && handleDuplicateCardRef.current) {
           handleDuplicateCardRef.current(card);
         }
@@ -739,7 +749,6 @@ function ReactFlowBoardInner({
     });
   }, [
     visitorId,
-    cards,
     typeCard,
     changeColor,
     removeCard,
@@ -1299,28 +1308,36 @@ function ReactFlowBoardInner({
   );
 
   // Keep refs updated with latest callbacks
-  handleDuplicateCardRef.current = handleDuplicateCard;
-  handleAddThreadToCardRef.current = handleAddThreadToCard;
+  useEffect(() => {
+    handleDuplicateCardRef.current = handleDuplicateCard;
+    handleAddThreadToCardRef.current = handleAddThreadToCard;
+  }, [handleDuplicateCard, handleAddThreadToCard]);
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      const timeoutId = setTimeout(() => {
+        if (mountedRef.current) setCopied(false);
+      }, 2000);
+      return () => clearTimeout(timeoutId);
     } catch (err) {
       console.error("Failed to copy to clipboard:", err);
     }
-  };
+  }, []);
 
-  const handleCopySessionId = async () => {
+  const handleCopySessionId = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(sessionId);
       setSessionIdCopied(true);
-      setTimeout(() => setSessionIdCopied(false), 2000);
+      const timeoutId = setTimeout(() => {
+        if (mountedRef.current) setSessionIdCopied(false);
+      }, 2000);
+      return () => clearTimeout(timeoutId);
     } catch (err) {
       console.error("Failed to copy session ID:", err);
     }
-  };
+  }, [sessionId]);
 
   const handleUpdateUsername = async (newUsername: string) => {
     const result = await updateUsername(newUsername);

@@ -2,6 +2,7 @@
 
 import { Trash2 } from "lucide-react";
 import { motion } from "motion/react";
+import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import type { CommentWithCreator } from "@/db/schema";
 import { useThreadColors } from "@/hooks/use-thread-colors";
@@ -15,7 +16,8 @@ interface CommentProps {
   isLast?: boolean;
 }
 
-export function Comment({
+// Memoize to prevent re-renders when sibling comments change
+export const Comment = memo(function Comment({
   comment,
   canDelete,
   onDelete,
@@ -95,4 +97,4 @@ export function Comment({
       )}
     </motion.div>
   );
-}
+});

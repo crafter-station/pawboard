@@ -2,6 +2,7 @@
 
 import { MessageCircle } from "lucide-react";
 import { motion } from "motion/react";
+import { useMemo } from "react";
 import type { ThreadWithDetails } from "@/db/schema";
 import { useThreadColors } from "@/hooks/use-thread-colors";
 import { cn, getDiceBearAvatar } from "@/lib/utils";
@@ -19,17 +20,20 @@ export function ThreadBubble({
 }: ThreadBubbleProps) {
   const colors = useThreadColors();
 
-  // Get unique participants (max 2 shown to avoid overflow)
-  const participantIds = new Set<string>();
-  participantIds.add(thread.creator.id);
-  for (const comment of thread.comments) {
-    participantIds.add(comment.creator.id);
-  }
-  const allParticipants = Array.from(participantIds);
-  const participants = allParticipants.slice(0, 2);
-  const extraCount = allParticipants.length - 2;
-
-  const commentCount = thread.comments.length;
+  // Memoize participant calculation to avoid recomputing on every render
+  const { participants, extraCount, commentCount } = useMemo(() => {
+    const participantIds = new Set<string>();
+    participantIds.add(thread.creator.id);
+    for (const comment of thread.comments) {
+      participantIds.add(comment.creator.id);
+    }
+    const allParticipants = Array.from(participantIds);
+    return {
+      participants: allParticipants.slice(0, 2),
+      extraCount: Math.max(0, allParticipants.length - 2),
+      commentCount: thread.comments.length,
+    };
+  }, [thread.creator.id, thread.comments]);
 
   return (
     <motion.button

@@ -2,7 +2,7 @@
 
 import { Check, CheckCheck, Trash2, X } from "lucide-react";
 import { motion } from "motion/react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { SessionRole, ThreadWithDetails } from "@/db/schema";
@@ -87,20 +87,21 @@ export function ThreadPanel({
   const handleAddComment = useCallback(
     async (content: string) => {
       await onAddComment(content);
-      // Scroll to bottom after adding comment
-      setTimeout(() => {
-        if (scrollAreaRef.current) {
-          const scrollContainer = scrollAreaRef.current.querySelector(
-            "[data-radix-scroll-area-viewport]",
-          );
-          if (scrollContainer) {
-            scrollContainer.scrollTop = scrollContainer.scrollHeight;
-          }
-        }
-      }, 50);
     },
     [onAddComment],
   );
+
+  // Scroll to bottom when new comments are added
+  const commentCount = thread.comments.length;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Intentionally trigger scroll when comment count changes
+  useEffect(() => {
+    const scrollContainer = scrollAreaRef.current?.querySelector(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (scrollContainer) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
+  }, [commentCount]);
 
   const showResolve = canResolveThread(thread, currentUserId, userRole);
   const showDelete = canDeleteThread(thread, currentUserId, userRole);

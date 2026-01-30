@@ -39,31 +39,35 @@ interface ThreadNodeProps {
 export function ThreadNode({ data, selected }: ThreadNodeProps) {
   const [isOpen, setIsOpen] = useState(false);
 
+  // Destructure specific values to avoid dependency on entire data object
+  const { thread, onAddComment, onDeleteComment, onResolve, onDeleteThread } =
+    data;
+
   const handleAddComment = useCallback(
     async (content: string) => {
-      await data.onAddComment(data.thread.id, content);
+      await onAddComment(thread.id, content);
     },
-    [data],
+    [onAddComment, thread.id],
   );
 
   const handleDeleteComment = useCallback(
     async (commentId: string) => {
-      await data.onDeleteComment(data.thread.id, commentId);
+      await onDeleteComment(thread.id, commentId);
     },
-    [data],
+    [onDeleteComment, thread.id],
   );
 
   const handleResolve = useCallback(
     async (isResolved: boolean) => {
-      await data.onResolve(data.thread.id, isResolved);
+      await onResolve(thread.id, isResolved);
     },
-    [data],
+    [onResolve, thread.id],
   );
 
   const handleDeleteThread = useCallback(async () => {
-    await data.onDeleteThread(data.thread.id);
+    await onDeleteThread(thread.id);
     setIsOpen(false);
-  }, [data]);
+  }, [onDeleteThread, thread.id]);
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
