@@ -2356,27 +2356,32 @@ export async function claimAnonymousWorkOnBoard(
       `);
 
       // 6. Update votes in cards.votedBy (JSONB array) - only for this board's cards
+      // Use DISTINCT to prevent duplicates when user voted as both fingerprint and Clerk ID
       await tx.execute(sql`
         UPDATE cards 
         SET voted_by = (
-          SELECT COALESCE(jsonb_agg(
-            CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END
-          ), '[]'::jsonb)
-          FROM jsonb_array_elements_text(voted_by) AS elem
+          SELECT COALESCE(jsonb_agg(DISTINCT replaced_elem), '[]'::jsonb)
+          FROM (
+            SELECT CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END AS replaced_elem
+            FROM jsonb_array_elements_text(voted_by) AS elem
+          ) subq
         )
         WHERE session_id = ${sessionId}
         AND voted_by @> ${JSON.stringify([fingerprintId])}::jsonb
       `);
 
       // 7. Update reactions in cards.reactions (JSONB object) - only for this board's cards
+      // Use DISTINCT to prevent duplicates when user reacted as both fingerprint and Clerk ID
       await tx.execute(sql`
         UPDATE cards
         SET reactions = (
           SELECT COALESCE(jsonb_object_agg(
             key,
-            (SELECT COALESCE(jsonb_agg(
-              CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END
-            ), '[]'::jsonb) FROM jsonb_array_elements_text(value) AS elem)
+            (SELECT COALESCE(jsonb_agg(DISTINCT replaced_elem), '[]'::jsonb) 
+             FROM (
+               SELECT CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END AS replaced_elem
+               FROM jsonb_array_elements_text(value) AS elem
+             ) subq)
           ), '{}'::jsonb)
           FROM jsonb_each(reactions)
         )
@@ -2455,33 +2460,39 @@ export async function claimSession(
   }
 
   try {
-    // Find the creator participation with fingerprint
-    const creatorParticipation = await db.query.sessionParticipants.findFirst({
-      where: and(
-        eq(sessionParticipants.sessionId, sessionId),
-        eq(sessionParticipants.userId, fingerprintId),
-        eq(sessionParticipants.role, "creator"),
-      ),
-    });
-
-    if (!creatorParticipation) {
-      return {
-        success: false,
-        error: "You are not the creator of this session",
-      };
+    // Ensure Clerk user exists before claiming
+    const { error: userError } = await ensureClerkUserExists();
+    if (userError) {
+      return { success: false, error: userError };
     }
 
-    // Check if Clerk user is already a participant (from joinSession after signing in)
-    const existingClerkParticipant =
-      await db.query.sessionParticipants.findFirst({
-        where: and(
-          eq(sessionParticipants.sessionId, sessionId),
-          eq(sessionParticipants.userId, clerkId),
-        ),
-      });
-
     // Claim the session by replacing fingerprint with Clerk ID
+    // All checks are inside the transaction to prevent TOCTOU race conditions
     await db.transaction(async (tx) => {
+      // Find the creator participation with fingerprint (inside transaction)
+      const creatorParticipation = await tx.query.sessionParticipants.findFirst(
+        {
+          where: and(
+            eq(sessionParticipants.sessionId, sessionId),
+            eq(sessionParticipants.userId, fingerprintId),
+            eq(sessionParticipants.role, "creator"),
+          ),
+        },
+      );
+
+      if (!creatorParticipation) {
+        throw new Error("You are not the creator of this session");
+      }
+
+      // Check if Clerk user is already a participant (inside transaction)
+      const existingClerkParticipant =
+        await tx.query.sessionParticipants.findFirst({
+          where: and(
+            eq(sessionParticipants.sessionId, sessionId),
+            eq(sessionParticipants.userId, clerkId),
+          ),
+        });
+
       // Handle session participants based on whether Clerk user already exists
       if (existingClerkParticipant) {
         // Clerk user already joined - delete fingerprint record and update Clerk's role to creator
@@ -2556,27 +2567,32 @@ export async function claimSession(
       `);
 
       // Update votes in cards.votedBy (JSONB array)
+      // Use DISTINCT to prevent duplicates when user voted as both fingerprint and Clerk ID
       await tx.execute(sql`
         UPDATE cards 
         SET voted_by = (
-          SELECT COALESCE(jsonb_agg(
-            CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END
-          ), '[]'::jsonb)
-          FROM jsonb_array_elements_text(voted_by) AS elem
+          SELECT COALESCE(jsonb_agg(DISTINCT replaced_elem), '[]'::jsonb)
+          FROM (
+            SELECT CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END AS replaced_elem
+            FROM jsonb_array_elements_text(voted_by) AS elem
+          ) subq
         )
         WHERE session_id = ${sessionId}
         AND voted_by @> ${JSON.stringify([fingerprintId])}::jsonb
       `);
 
       // Update reactions in cards.reactions (JSONB object)
+      // Use DISTINCT to prevent duplicates when user reacted as both fingerprint and Clerk ID
       await tx.execute(sql`
         UPDATE cards
         SET reactions = (
           SELECT COALESCE(jsonb_object_agg(
             key,
-            (SELECT COALESCE(jsonb_agg(
-              CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END
-            ), '[]'::jsonb) FROM jsonb_array_elements_text(value) AS elem)
+            (SELECT COALESCE(jsonb_agg(DISTINCT replaced_elem), '[]'::jsonb) 
+             FROM (
+               SELECT CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END AS replaced_elem
+               FROM jsonb_array_elements_text(value) AS elem
+             ) subq)
           ), '{}'::jsonb)
           FROM jsonb_each(reactions)
         )
@@ -2594,6 +2610,12 @@ export async function claimSession(
     return { success: true, error: null };
   } catch (error) {
     console.error("Database error in claimSession:", error);
+    // Return the specific error message if it's a known error
+    if (error instanceof Error) {
+      if (error.message === "You are not the creator of this session") {
+        return { success: false, error: error.message };
+      }
+    }
     return { success: false, error: "Failed to claim session" };
   }
 }
@@ -2659,25 +2681,29 @@ export async function getClaimedSessions(): Promise<{
  * Delete expired unclaimed sessions.
  * This is called by a cron job to clean up old anonymous boards.
  */
+// Batch size limit to avoid overwhelming the database
+const CLEANUP_BATCH_SIZE = 100;
+
 export async function deleteExpiredSessions(): Promise<{
   deletedCount: number;
   error: string | null;
 }> {
   try {
-    // First get the count of sessions to delete
+    // Get expired sessions with a batch size limit
     const expiredSessions = await db.query.sessions.findMany({
       where: and(
         isNotNull(sessions.expiresAt),
         lt(sessions.expiresAt, new Date()),
       ),
       columns: { id: true },
+      limit: CLEANUP_BATCH_SIZE,
     });
 
     if (expiredSessions.length === 0) {
       return { deletedCount: 0, error: null };
     }
 
-    // Delete expired sessions
+    // Delete expired sessions (cascade will handle related data)
     await db.delete(sessions).where(
       inArray(
         sessions.id,

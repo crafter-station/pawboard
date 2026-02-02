@@ -37,14 +37,21 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const sessions = pgTable("sessions", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  isLocked: boolean("is_locked").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
-  expiresAt: timestamp("expires_at"), // TTL for unclaimed boards (null = claimed/no expiry)
-});
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    isLocked: boolean("is_locked").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at"), // TTL for unclaimed boards (null = claimed/no expiry)
+  },
+  (table) => [
+    // Index for efficient cleanup of expired sessions
+    index("sessions_expires_at_idx").on(table.expiresAt),
+  ],
+);
 
 export const sessionParticipants = pgTable(
   "session_participants",

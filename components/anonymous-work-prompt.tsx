@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   claimAnonymousWorkOnBoard,
@@ -43,6 +43,7 @@ export function AnonymousWorkPrompt({
   const [isStartingFresh, setIsStartingFresh] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
   const [isCheckingHistory, setIsCheckingHistory] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Check localStorage for dismissal
   useEffect(() => {
@@ -90,7 +91,8 @@ export function AnonymousWorkPrompt({
     if (!fingerprintId) return;
 
     setIsClaimingWork(true);
-    const { success, error } = await claimAnonymousWorkOnBoard(
+    setError(null);
+    const { success, error: claimError } = await claimAnonymousWorkOnBoard(
       sessionId,
       fingerprintId,
     );
@@ -105,7 +107,8 @@ export function AnonymousWorkPrompt({
       setIsDismissed(true);
       onWorkClaimed?.();
     } else {
-      console.error("Failed to claim work:", error);
+      console.error("Failed to claim work:", claimError);
+      setError(claimError ?? "Failed to claim work. Please try again.");
     }
 
     setIsClaimingWork(false);
@@ -113,7 +116,9 @@ export function AnonymousWorkPrompt({
 
   const handleStartFresh = useCallback(async () => {
     setIsStartingFresh(true);
-    const { success, error } = await joinSessionAsClerkUser(sessionId);
+    setError(null);
+    const { success, error: joinError } =
+      await joinSessionAsClerkUser(sessionId);
 
     if (success) {
       // Mark as dismissed
@@ -125,7 +130,8 @@ export function AnonymousWorkPrompt({
       setIsDismissed(true);
       onStartFresh?.();
     } else {
-      console.error("Failed to start fresh:", error);
+      console.error("Failed to start fresh:", joinError);
+      setError(joinError ?? "Failed to join session. Please try again.");
     }
 
     setIsStartingFresh(false);
@@ -197,6 +203,13 @@ export function AnonymousWorkPrompt({
             <X className="h-4 w-4" />
           </Button>
         </div>
+
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <Button

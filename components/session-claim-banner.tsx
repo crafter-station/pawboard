@@ -1,7 +1,7 @@
 "use client";
 
 import { SignInButton, useAuth } from "@clerk/nextjs";
-import { Clock, Shield, X } from "lucide-react";
+import { AlertCircle, Clock, Shield, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { claimSession, getUserRoleInSession } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -31,20 +31,34 @@ export function SessionClaimBanner({
   const [isClaiming, setIsClaiming] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
 
-  // Check if already dismissed
+  // Check if already dismissed, but re-show if < 1 hour until expiration
   useEffect(() => {
+    if (!session.expiresAt) return;
+
     try {
-      const dismissed = localStorage.getItem(
+      const dismissedAt = localStorage.getItem(
         `${DISMISSED_KEY_PREFIX}${session.id}`,
       );
-      if (dismissed === "true") {
-        setIsDismissed(true);
+
+      if (dismissedAt) {
+        // Check if we should re-show the banner (< 1 hour until expiration)
+        const now = new Date();
+        const expires = new Date(session.expiresAt);
+        const diffMs = expires.getTime() - now.getTime();
+        const oneHourMs = 60 * 60 * 1000;
+
+        // Re-show if less than 1 hour remaining, regardless of previous dismissal
+        if (diffMs > oneHourMs) {
+          setIsDismissed(true);
+        }
+        // If < 1 hour remaining, don't set dismissed (banner will show)
       }
     } catch {
       // localStorage unavailable
     }
-  }, [session.id]);
+  }, [session.id, session.expiresAt]);
 
   // Check if user is creator using fingerprint ID
   // We use fingerprintId (not userId/Clerk ID) because the creator is stored
@@ -107,19 +121,27 @@ export function SessionClaimBanner({
 
   const handleClaim = useCallback(async () => {
     setIsClaiming(true);
-    const { success, error } = await claimSession(session.id, fingerprintId);
+    setError(null);
+    const { success, error: claimError } = await claimSession(
+      session.id,
+      fingerprintId,
+    );
 
     if (success) {
-      // Mark as dismissed
+      // Mark as permanently dismissed (claimed boards don't need the banner)
       try {
-        localStorage.setItem(`${DISMISSED_KEY_PREFIX}${session.id}`, "true");
+        localStorage.setItem(
+          `${DISMISSED_KEY_PREFIX}${session.id}`,
+          "permanent",
+        );
       } catch {
         // localStorage unavailable
       }
       setIsDismissed(true);
       onSessionClaimed?.();
     } else {
-      console.error("Failed to claim session:", error);
+      console.error("Failed to claim session:", claimError);
+      setError(claimError ?? "Failed to claim board. Please try again.");
     }
 
     setIsClaiming(false);
@@ -127,7 +149,11 @@ export function SessionClaimBanner({
 
   const handleDismiss = useCallback(() => {
     try {
-      localStorage.setItem(`${DISMISSED_KEY_PREFIX}${session.id}`, "true");
+      // Store dismissal timestamp so we can re-show if < 1 hour until expiration
+      localStorage.setItem(
+        `${DISMISSED_KEY_PREFIX}${session.id}`,
+        new Date().toISOString(),
+      );
     } catch {
       // localStorage unavailable
     }
@@ -173,6 +199,13 @@ export function SessionClaimBanner({
                 <X className="h-4 w-4" />
               </Button>
             </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
 
             <div className="flex gap-2">
               {isSignedIn ? (
