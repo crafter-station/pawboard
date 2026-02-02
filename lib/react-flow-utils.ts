@@ -186,13 +186,13 @@ export function updateNodeData(
 
 // Default card dimensions for new cards
 export const DEFAULT_CARD_WIDTH = 224;
-export const DEFAULT_CARD_HEIGHT = 160;
+export const DEFAULT_CARD_HEIGHT = 200;
 
 // Keep legacy exports for backwards compatibility
 export const CARD_WIDTH = DEFAULT_CARD_WIDTH;
 export const CARD_HEIGHT = DEFAULT_CARD_HEIGHT;
 export const CARD_WIDTH_MOBILE = 160;
-export const CARD_HEIGHT_MOBILE = 120;
+export const CARD_HEIGHT_MOBILE = 150;
 
 /**
  * Get default card dimensions based on screen size
