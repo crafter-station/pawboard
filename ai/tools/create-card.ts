@@ -13,9 +13,9 @@ import description from "./create-card.md";
 import type { ToolParams } from "./index";
 
 const CARD_WIDTH = 224;
-const CARD_HEIGHT = 160;
+const CARD_HEIGHT = 200;
 const SPACING_X = 250;
-const SPACING_Y = 180;
+const SPACING_Y = 220;
 
 function findNonOverlappingPosition(
   existingCards: Pick<Card, "x" | "y">[],
