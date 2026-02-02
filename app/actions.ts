@@ -1214,9 +1214,6 @@ export async function voteCard(
     const userRole = await getUserRoleInSession(visitorId, existing.sessionId);
 
     if (!canVote(session, existing, visitorId, userRole ?? "participant")) {
-      if (existing.createdById === visitorId) {
-        return { card: existing, action: "denied", error: null }; // Can't vote on own card
-      }
       return {
         card: existing,
         action: "denied",
@@ -1284,9 +1281,6 @@ export async function toggleReaction(
     const userRole = await getUserRoleInSession(userId, existing.sessionId);
 
     if (!canReact(session, existing, userId, userRole ?? "participant")) {
-      if (existing.createdById === userId) {
-        return { card: existing, action: "denied", error: null };
-      }
       return {
         card: existing,
         action: "denied",

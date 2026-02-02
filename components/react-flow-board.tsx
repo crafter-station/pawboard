@@ -759,8 +759,6 @@ function ReactFlowBoardInner({
         const card = cardsRef.current.find((c) => c.id === id);
         if (!card) return;
 
-        if (card.createdById === visitorId) return;
-
         const hasVoted = card.votedBy?.includes(visitorId) || false;
         const newVotes = hasVoted ? card.votes - 1 : card.votes + 1;
         const newVotedBy = hasVoted
@@ -776,8 +774,6 @@ function ReactFlowBoardInner({
         // Use ref to access current cards without adding to dependencies
         const card = cardsRef.current.find((c) => c.id === id);
         if (!card) return;
-
-        if (card.createdById === visitorId) return;
 
         const currentReactions = card.reactions || {};
         const usersForEmoji = currentReactions[emoji] || [];
