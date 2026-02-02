@@ -13,6 +13,11 @@ export const env = createEnv({
     // Upstash Redis for rate limiting (optional - falls back to no rate limiting if not set)
     UPSTASH_REDIS_REST_URL: z.string().url().optional(),
     UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+    // Clerk authentication
+    CLERK_SECRET_KEY: z.string().min(1, "CLERK_SECRET_KEY is required"),
+    CLERK_WEBHOOK_SECRET: z.string().optional(),
+    // Cron job authentication
+    CRON_SECRET: z.string().optional(),
   },
 
   /**
@@ -26,6 +31,9 @@ export const env = createEnv({
       .string()
       .min(1, "Supabase anon key is required"),
     NEXT_PUBLIC_SITE_URL: z.string().url().optional(),
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z
+      .string()
+      .min(1, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is required"),
   },
 
   /**
@@ -39,10 +47,15 @@ export const env = createEnv({
     INTERNAL_API_SECRET: process.env.INTERNAL_API_SECRET,
     UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
     UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+    CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+    CLERK_WEBHOOK_SECRET: process.env.CLERK_WEBHOOK_SECRET,
+    CRON_SECRET: process.env.CRON_SECRET,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY:
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY,
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   },
 
   /**
