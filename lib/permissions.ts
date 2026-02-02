@@ -80,34 +80,34 @@ export function canRefine(
 
 /**
  * Check if user can vote on a card
- * - Allowed when session is not locked AND user is NOT the card creator
- * - Session creator can vote on others' cards even when locked
+ * - Allowed when session is not locked
+ * - Session creator can always vote even when locked
+ * - Users can vote on their own cards
  */
 export function canVote(
   session: Session,
-  card: Card,
-  userId: string,
+  _card: Card,
+  _userId: string,
   userRole: SessionRole,
 ): boolean {
-  const isNotOwnCard = card.createdById !== userId;
-  if (userRole === "creator") return isNotOwnCard;
-  return !session.isLocked && isNotOwnCard;
+  if (userRole === "creator") return true;
+  return !session.isLocked;
 }
 
 /**
  * Check if user can react to a card with emojis
- * - Allowed when session is not locked AND user is NOT the card creator
- * - Session creator can react to others' cards even when locked
+ * - Allowed when session is not locked
+ * - Session creator can always react even when locked
+ * - Users can react to their own cards
  */
 export function canReact(
   session: Session,
-  card: Card,
-  userId: string,
+  _card: Card,
+  _userId: string,
   userRole: SessionRole,
 ): boolean {
-  const isNotOwnCard = card.createdById !== userId;
-  if (userRole === "creator") return isNotOwnCard;
-  return !session.isLocked && isNotOwnCard;
+  if (userRole === "creator") return true;
+  return !session.isLocked;
 }
 
 /**

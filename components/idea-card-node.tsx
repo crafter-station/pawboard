@@ -142,7 +142,6 @@ function IdeaCardNodeComponent({
   });
 
   // Permission checks
-  const isOwnCard = card.createdById === visitorId;
   const hasVoted = card.votedBy?.includes(visitorId) || false;
   const role = userRole ?? "participant";
   const allowMove = canMoveCard(session, card, visitorId, role);
@@ -831,13 +830,11 @@ function IdeaCardNodeComponent({
                       </motion.button>
                     </TooltipTrigger>
                     <TooltipContent side="top">
-                      {isOwnCard
-                        ? "Can't vote on your own"
-                        : session.isLocked
-                          ? "Session is locked"
-                          : hasVoted
-                            ? "Remove vote"
-                            : "Vote"}
+                      {!allowVote
+                        ? "Session is locked"
+                        : hasVoted
+                          ? "Remove vote"
+                          : "Vote"}
                     </TooltipContent>
                   </Tooltip>
                 </div>
