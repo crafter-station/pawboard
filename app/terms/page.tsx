@@ -46,6 +46,35 @@ export default function TermsPage() {
           </section>
 
           <section className="space-y-4">
+            <h2 className="text-xl font-semibold">User Accounts</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              Pawboard offers two ways to use our service:
+            </p>
+            <ul className="list-disc list-inside space-y-2 text-muted-foreground">
+              <li>
+                <strong className="text-foreground">Anonymous Access:</strong>{" "}
+                You can use Pawboard without creating an account. We use a
+                device fingerprint to identify you across sessions. Anonymous
+                boards expire after 2 days of inactivity.
+              </li>
+              <li>
+                <strong className="text-foreground">
+                  Authenticated Accounts:
+                </strong>{" "}
+                You may optionally create an account by signing in with Google
+                or GitHub. Authentication is handled by Clerk, a third-party
+                authentication provider. Authenticated users can claim anonymous
+                boards to make them permanent and access additional features.
+              </li>
+            </ul>
+            <p className="text-muted-foreground leading-relaxed">
+              If you create an account, you are responsible for maintaining the
+              security of your account credentials and for all activities that
+              occur under your account.
+            </p>
+          </section>
+
+          <section className="space-y-4">
             <h2 className="text-xl font-semibold">User Responsibilities</h2>
             <p className="text-muted-foreground leading-relaxed">
               When using Pawboard, you agree to:
@@ -69,6 +98,14 @@ export default function TermsPage() {
                 service
               </li>
               <li>Respect other users and their contributions</li>
+              <li>
+                Keep your account credentials secure and not share your account
+                with others
+              </li>
+              <li>
+                Provide accurate information when creating an account or
+                updating your profile
+              </li>
             </ul>
           </section>
 
@@ -86,6 +123,13 @@ export default function TermsPage() {
               participants. Do not share sensitive, confidential, or personal
               information in sessions unless you are comfortable with other
               participants seeing it.
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              <strong className="text-foreground">Board Expiration:</strong>{" "}
+              Sessions created by anonymous users expire after 2 days of
+              inactivity. If you sign in and claim an anonymous board, it
+              becomes permanent and will not expire. Authenticated users&apos;
+              boards do not expire.
             </p>
           </section>
 
@@ -142,6 +186,13 @@ export default function TermsPage() {
               service at any time, without prior notice, for conduct that we
               believe violates these terms or is harmful to other users, us, or
               third parties, or for any other reason at our sole discretion.
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              If you have an account, you may delete it at any time through your
+              account settings or by contacting us. Upon account deletion, your
+              personal information will be removed, but content you created in
+              sessions may remain visible to other participants unless
+              specifically deleted.
             </p>
           </section>
 
