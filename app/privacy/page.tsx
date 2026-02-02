@@ -174,10 +174,10 @@ export default function PrivacyPage() {
               If you have any questions about this privacy policy, please
               contact us at{" "}
               <a
-                href="mailto:privacy@pawboard.dev"
+                href="mailto:contact@crafterstation.com"
                 className="text-primary hover:underline"
               >
-                privacy@pawboard.dev
+                contact@crafterstation.com
               </a>
               .
             </p>

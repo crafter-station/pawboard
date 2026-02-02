@@ -2,6 +2,7 @@
 
 import { ArrowRight, ListTodo } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeSwitcherToggle } from "@/components/elements/theme-switcher-toggle";
@@ -559,6 +560,24 @@ export default function Home() {
               <SupabaseLogo className="h-5 w-auto" />
             </a>
           </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground/50">
+          <Link
+            href="/privacy"
+            onClick={playSound}
+            className="hover:text-foreground/50 transition-colors"
+          >
+            Privacy Policy
+          </Link>
+          <span>·</span>
+          <Link
+            href="/terms"
+            onClick={playSound}
+            className="hover:text-foreground/50 transition-colors"
+          >
+            Terms of Service
+          </Link>
         </div>
       </div>
     </ImageMouseTrail>
