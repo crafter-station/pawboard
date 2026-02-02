@@ -23,9 +23,9 @@ export function ThreadBubble({
   // Memoize participant calculation to avoid recomputing on every render
   const { participants, extraCount, commentCount } = useMemo(() => {
     const participantIds = new Set<string>();
-    participantIds.add(thread.creator.id);
+    participantIds.add(thread.createdById);
     for (const comment of thread.comments) {
-      participantIds.add(comment.creator.id);
+      participantIds.add(comment.createdById);
     }
     const allParticipants = Array.from(participantIds);
     return {
@@ -33,7 +33,7 @@ export function ThreadBubble({
       extraCount: Math.max(0, allParticipants.length - 2),
       commentCount: thread.comments.length,
     };
-  }, [thread.creator.id, thread.comments]);
+  }, [thread.createdById, thread.comments]);
 
   return (
     <motion.div

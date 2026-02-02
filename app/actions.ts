@@ -1,6 +1,7 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { auth, clerkClient } from "@clerk/nextjs/server";
+import { and, count, eq, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { after } from "next/server";
 import { db } from "@/db";
@@ -39,6 +40,7 @@ import {
   validateCommentContent,
 } from "@/lib/thread-permissions";
 import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
+import { getUsername, isClerkUserId, resolveUsernames } from "@/lib/user-utils";
 
 // Helper function to update activity timestamps
 async function updateActivityTimestamps(sessionId: string, userId: string) {
@@ -68,6 +70,9 @@ async function updateActivityTimestamps(sessionId: string, userId: string) {
 
 // Session Actions
 
+// TTL for unclaimed boards (2 days in milliseconds)
+const UNCLAIMED_BOARD_TTL_MS = 2 * 24 * 60 * 60 * 1000;
+
 export async function getOrCreateSession(id: string) {
   try {
     let session = await db.query.sessions.findFirst({
@@ -75,9 +80,21 @@ export async function getOrCreateSession(id: string) {
     });
 
     if (!session) {
+      // Check if user is authenticated
+      const { userId: clerkId } = await auth();
+
+      // Sessions created by authenticated users don't expire
+      const expiresAt = clerkId
+        ? null
+        : new Date(Date.now() + UNCLAIMED_BOARD_TTL_MS);
+
       const [newSession] = await db
         .insert(sessions)
-        .values({ id, name: generateSessionName() })
+        .values({
+          id,
+          name: generateSessionName(),
+          expiresAt,
+        })
         .returning();
       session = newSession;
     }
@@ -271,20 +288,40 @@ export async function getUserRoleInSession(
 export async function getOrCreateUser(
   userId: string,
 ): Promise<{ user: User | null; error: string | null }> {
+  console.log("[getOrCreateUser] Looking up userId:", userId);
+
+  // Reject Clerk IDs - they shouldn't be stored in users table
+  if (isClerkUserId(userId)) {
+    console.warn("Attempted to create user for Clerk ID:", userId);
+    return { user: null, error: "Clerk users are not stored in database" };
+  }
+
   try {
     let user = await db.query.users.findFirst({
       where: eq(users.id, userId),
     });
 
+    console.log("[getOrCreateUser] Found user:", user);
+
     if (!user) {
+      // Generate username for fingerprint users
+      const username = generateUsername();
+
+      console.log(
+        "[getOrCreateUser] Creating new user with username:",
+        username,
+      );
+
       const [newUser] = await db
         .insert(users)
         .values({
           id: userId,
-          username: generateUsername(),
+          username,
         })
         .returning();
       user = newUser;
+
+      console.log("[getOrCreateUser] Created new user:", newUser);
     }
 
     return { user, error: null };
@@ -297,27 +334,47 @@ export async function getOrCreateUser(
 export async function updateUsername(
   userId: string,
   newUsername: string,
-): Promise<{ user: User | null; error: string | null }> {
+): Promise<{
+  username: string | null;
+  error: string | null;
+}> {
   try {
     const validation = validateUsername(newUsername);
     if (!validation.valid) {
-      return { user: null, error: validation.error ?? "Invalid username" };
+      return { username: null, error: validation.error ?? "Invalid username" };
     }
 
+    const trimmedName = newUsername.trim();
+
+    // Handle Clerk users differently - update via Clerk API only
+    if (isClerkUserId(userId)) {
+      try {
+        const client = await clerkClient();
+        await client.users.updateUser(userId, {
+          firstName: trimmedName,
+        });
+        return { username: trimmedName, error: null };
+      } catch (clerkError) {
+        console.error("Failed to update Clerk username:", clerkError);
+        return { username: null, error: "Failed to update username" };
+      }
+    }
+
+    // Fingerprint users - update in local DB
     const [user] = await db
       .update(users)
-      .set({ username: newUsername.trim() })
+      .set({ username: trimmedName })
       .where(eq(users.id, userId))
       .returning();
 
     if (!user) {
-      return { user: null, error: "User not found" };
+      return { username: null, error: "User not found" };
     }
 
-    return { user, error: null };
+    return { username: user.username, error: null };
   } catch (error) {
     console.error("Database error in updateUsername:", error);
-    return { user: null, error: "Failed to update username" };
+    return { username: null, error: "Failed to update username" };
   }
 }
 
@@ -362,19 +419,33 @@ export async function joinSession(
 ): Promise<{
   success: boolean;
   role: SessionRole | null;
-  user: User | null;
+  username: string | null;
   error: string | null;
 }> {
+  console.log("[joinSession] userId:", userId, "sessionId:", sessionId);
+
   try {
-    // Ensure user exists first
-    const { user, error: userError } = await getOrCreateUser(userId);
-    if (userError || !user) {
-      return {
-        success: false,
-        role: null,
-        user: null,
-        error: userError ?? "Failed to create user",
-      };
+    let username: string;
+
+    if (isClerkUserId(userId)) {
+      // Clerk users: fetch username from Clerk API, don't store in DB
+      console.log("[joinSession] Clerk user detected, fetching from API");
+      username = await getUsername(userId);
+    } else {
+      // Fingerprint users: ensure they exist in DB
+      console.log("[joinSession] Fingerprint user, calling getOrCreateUser");
+      const { user, error: userError } = await getOrCreateUser(userId);
+      if (userError || !user) {
+        console.log("[joinSession] Error creating user:", userError);
+        return {
+          success: false,
+          role: null,
+          username: null,
+          error: userError ?? "Failed to create user",
+        };
+      }
+      username = user.username;
+      console.log("[joinSession] Got username from DB:", username);
     }
 
     // Check if already a participant
@@ -399,7 +470,7 @@ export async function joinSession(
       return {
         success: true,
         role: existing.role as SessionRole,
-        user,
+        username,
         error: null,
       };
     }
@@ -418,13 +489,13 @@ export async function joinSession(
       role,
     });
 
-    return { success: true, role, user, error: null };
+    return { success: true, role, username, error: null };
   } catch (error) {
     console.error("Database error in joinSession:", error);
     return {
       success: false,
       role: null,
-      user: null,
+      username: null,
       error: "Failed to join session",
     };
   }
@@ -451,9 +522,6 @@ export async function getUserSessions(userId: string): Promise<{
           with: {
             participants: {
               where: eq(sessionParticipants.role, "creator"),
-              with: {
-                user: true,
-              },
             },
             cards: {
               columns: {
@@ -465,14 +533,24 @@ export async function getUserSessions(userId: string): Promise<{
       },
     });
 
-    // Transform the data - no additional queries needed
+    // Collect creator user IDs for username resolution
+    const creatorUserIds = participations
+      .map((p) => p.session.participants[0]?.userId)
+      .filter((id): id is string => id !== undefined);
+
+    // Resolve usernames
+    const usernames = await resolveUsernames(creatorUserIds);
+
+    // Transform the data
     const sessionsData = participations.map((participation) => {
-      const creator = participation.session.participants[0];
+      const creatorUserId = participation.session.participants[0]?.userId;
       return {
         id: participation.session.id,
         name: participation.session.name,
         role: participation.role as SessionRole,
-        creatorName: creator?.user.username ?? "Unknown",
+        creatorName: creatorUserId
+          ? (usernames.get(creatorUserId) ?? "Unknown")
+          : "Unknown",
         lastActivityAt: participation.session.lastActivityAt,
         lastActiveAt: participation.lastActiveAt,
         cardCount: participation.session.cards.length,
@@ -491,6 +569,133 @@ export async function getUserSessions(userId: string): Promise<{
   }
 }
 
+/**
+ * Get all sessions for a user, combining both fingerprint and Clerk ID sessions.
+ * Returns sessions with metadata about whether participation was anonymous and if claimed.
+ */
+export async function getAllUserSessions(fingerprintId: string): Promise<{
+  sessions: Array<{
+    id: string;
+    name: string;
+    role: SessionRole;
+    creatorName: string;
+    lastActivityAt: Date;
+    lastActiveAt: Date;
+    cardCount: number;
+    isAnonymous: boolean;
+    isClaimed: boolean;
+    expiresAt: Date | null;
+  }>;
+  error: string | null;
+}> {
+  try {
+    const { userId: clerkId } = await auth();
+
+    // Build list of user IDs to query
+    const userIds = [fingerprintId];
+    if (clerkId && clerkId !== fingerprintId) {
+      userIds.push(clerkId);
+    }
+
+    // Get all sessions where user is a participant (with any of their IDs)
+    const participations = await db.query.sessionParticipants.findMany({
+      where: inArray(sessionParticipants.userId, userIds),
+      with: {
+        session: {
+          with: {
+            participants: {
+              where: eq(sessionParticipants.role, "creator"),
+            },
+            cards: {
+              columns: {
+                id: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Collect creator user IDs for username resolution
+    const creatorUserIds = participations
+      .map((p) => p.session.participants[0]?.userId)
+      .filter((id): id is string => id !== undefined);
+
+    // Resolve usernames
+    const usernames = await resolveUsernames(creatorUserIds);
+
+    // Deduplicate sessions (same session might appear for both fingerprint and clerk IDs)
+    // Keep track of which sessions were accessed anonymously
+    const sessionMap = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        role: SessionRole;
+        creatorName: string;
+        lastActivityAt: Date;
+        lastActiveAt: Date;
+        cardCount: number;
+        isAnonymous: boolean;
+        isClaimed: boolean;
+        expiresAt: Date | null;
+      }
+    >();
+
+    for (const participation of participations) {
+      const sessionId = participation.session.id;
+      const isAnonymousParticipation = participation.userId === fingerprintId;
+      // A session is claimed if it has no expiration (null expiresAt means permanent)
+      const isClaimed = participation.session.expiresAt === null;
+
+      const existing = sessionMap.get(sessionId);
+
+      if (!existing) {
+        const creatorUserId = participation.session.participants[0]?.userId;
+        sessionMap.set(sessionId, {
+          id: sessionId,
+          name: participation.session.name,
+          role: participation.role as SessionRole,
+          creatorName: creatorUserId
+            ? (usernames.get(creatorUserId) ?? "Unknown")
+            : "Unknown",
+          lastActivityAt: participation.session.lastActivityAt,
+          lastActiveAt: participation.lastActiveAt,
+          cardCount: participation.session.cards.length,
+          isAnonymous: isAnonymousParticipation && clerkId !== null,
+          isClaimed,
+          expiresAt: participation.session.expiresAt,
+        });
+      } else {
+        // Session already exists - update with best values
+        // Prefer creator role over participant
+        if (participation.role === "creator" && existing.role !== "creator") {
+          existing.role = "creator";
+        }
+        // Use most recent lastActiveAt
+        if (participation.lastActiveAt > existing.lastActiveAt) {
+          existing.lastActiveAt = participation.lastActiveAt;
+        }
+        // Mark as anonymous only if the fingerprint participation exists AND user is authenticated
+        if (isAnonymousParticipation && clerkId !== null) {
+          existing.isAnonymous = true;
+        }
+      }
+    }
+
+    // Convert to array and sort by lastActiveAt (most recent first)
+    const sessionsData = Array.from(sessionMap.values());
+    sessionsData.sort(
+      (a, b) => b.lastActiveAt.getTime() - a.lastActiveAt.getTime(),
+    );
+
+    return { sessions: sessionsData, error: null };
+  } catch (error) {
+    console.error("Database error in getAllUserSessions:", error);
+    return { sessions: [], error: "Failed to fetch sessions" };
+  }
+}
+
 export async function getSessionParticipants(
   sessionId: string,
 ): Promise<{ visitorId: string; username: string }[]> {
@@ -500,9 +705,6 @@ export async function getSessionParticipants(
       // Get participants who explicitly joined the session
       db.query.sessionParticipants.findMany({
         where: eq(sessionParticipants.sessionId, sessionId),
-        with: {
-          user: true,
-        },
       }),
       // Get distinct card creators for this session
       db
@@ -513,29 +715,21 @@ export async function getSessionParticipants(
         .where(eq(cards.sessionId, sessionId)),
     ]);
 
-    // Build map from participants
-    const userMap = new Map<string, string>();
+    // Collect all unique user IDs
+    const allUserIds = new Set<string>();
     for (const p of participants) {
-      userMap.set(p.userId, p.user.username);
+      allUserIds.add(p.userId);
+    }
+    for (const c of cardCreators) {
+      allUserIds.add(c.createdById);
     }
 
-    // Get any card creators not already in the map
-    const missingCreatorIds = cardCreators
-      .map((c) => c.createdById)
-      .filter((id) => !userMap.has(id));
+    // Resolve all usernames
+    const usernames = await resolveUsernames([...allUserIds]);
 
-    if (missingCreatorIds.length > 0) {
-      const missingUsers = await db.query.users.findMany({
-        where: inArray(users.id, missingCreatorIds),
-      });
-      for (const user of missingUsers) {
-        userMap.set(user.id, user.username);
-      }
-    }
-
-    return Array.from(userMap.entries()).map(([visitorId, username]) => ({
-      visitorId,
-      username,
+    return Array.from(allUserIds).map((userId) => ({
+      visitorId: userId,
+      username: usernames.get(userId) ?? "Anonymous",
     }));
   } catch (error) {
     console.error("Database error in getSessionParticipants:", error);
@@ -561,28 +755,82 @@ export type CardEditHistoryWithUser = {
   cardId: string;
   userId: string;
   editedAt: Date;
-  user: {
-    id: string;
-    username: string;
-  };
+  username: string;
 };
 
 export async function getCardEditHistory(
   cardId: string,
 ): Promise<{ history: CardEditHistoryWithUser[]; error: string | null }> {
   try {
-    const history = await db.query.cardEditHistory.findMany({
+    const historyEntries = await db.query.cardEditHistory.findMany({
       where: eq(cardEditHistory.cardId, cardId),
-      with: {
-        user: true,
-      },
       orderBy: (history, { desc }) => [desc(history.editedAt)],
     });
+
+    // Resolve usernames
+    const userIds = historyEntries.map((h) => h.userId);
+    const usernames = await resolveUsernames(userIds);
+
+    const history: CardEditHistoryWithUser[] = historyEntries.map((entry) => ({
+      id: entry.id,
+      cardId: entry.cardId,
+      userId: entry.userId,
+      editedAt: entry.editedAt,
+      username: usernames.get(entry.userId) ?? "Anonymous",
+    }));
 
     return { history, error: null };
   } catch (error) {
     console.error("Database error in getCardEditHistory:", error);
     return { history: [], error: "Failed to get card edit history" };
+  }
+}
+
+/**
+ * Raw version of getCardEditHistory that doesn't resolve usernames.
+ * Used by client-side caching to separate history fetch from user resolution.
+ */
+export async function getCardEditHistoryRaw(cardId: string): Promise<{
+  history: Array<{
+    id: string;
+    cardId: string;
+    userId: string;
+    editedAt: Date;
+  }>;
+  error: string | null;
+}> {
+  try {
+    const historyEntries = await db.query.cardEditHistory.findMany({
+      where: eq(cardEditHistory.cardId, cardId),
+      orderBy: (history, { desc }) => [desc(history.editedAt)],
+    });
+
+    return { history: historyEntries, error: null };
+  } catch (error) {
+    console.error("Database error in getCardEditHistoryRaw:", error);
+    return { history: [], error: "Failed to get card edit history" };
+  }
+}
+
+/**
+ * Batch fetch user data by IDs.
+ * Handles both Clerk users and fingerprint users.
+ * Used by client-side caching to resolve usernames efficiently.
+ */
+export async function getUsersByIds(userIds: string[]): Promise<{
+  users: Array<{ userId: string; username: string }>;
+  error: string | null;
+}> {
+  try {
+    const usernames = await resolveUsernames(userIds);
+    const users = Array.from(usernames.entries()).map(([userId, username]) => ({
+      userId,
+      username,
+    }));
+    return { users, error: null };
+  } catch (error) {
+    console.error("Error in getUsersByIds:", error);
+    return { users: [], error: "Failed to fetch users" };
   }
 }
 
@@ -592,27 +840,29 @@ export async function getCardEditors(cardId: string): Promise<{
 }> {
   try {
     // Get distinct editors ordered by most recent edit
-    const history = await db.query.cardEditHistory.findMany({
+    const historyEntries = await db.query.cardEditHistory.findMany({
       where: eq(cardEditHistory.cardId, cardId),
-      with: {
-        user: true,
-      },
       orderBy: (history, { desc }) => [desc(history.editedAt)],
     });
 
-    // Get unique editors while preserving order (most recent first)
+    // Get unique user IDs while preserving order (most recent first)
     const seen = new Set<string>();
-    const editors: Array<{ userId: string; username: string }> = [];
+    const uniqueUserIds: string[] = [];
 
-    for (const entry of history) {
+    for (const entry of historyEntries) {
       if (!seen.has(entry.userId)) {
         seen.add(entry.userId);
-        editors.push({
-          userId: entry.userId,
-          username: entry.user.username,
-        });
+        uniqueUserIds.push(entry.userId);
       }
     }
+
+    // Resolve usernames
+    const usernames = await resolveUsernames(uniqueUserIds);
+
+    const editors = uniqueUserIds.map((userId) => ({
+      userId,
+      username: usernames.get(userId) ?? "Anonymous",
+    }));
 
     return { editors, error: null };
   } catch (error) {
@@ -638,14 +888,17 @@ export async function getSessionCardEditors(sessionId: string): Promise<{
 
     const cardIds = sessionCards.map((c) => c.id);
 
-    // Get all edit history for these cards with user data
-    const history = await db.query.cardEditHistory.findMany({
+    // Get all edit history for these cards
+    const historyEntries = await db.query.cardEditHistory.findMany({
       where: inArray(cardEditHistory.cardId, cardIds),
-      with: {
-        user: true,
-      },
       orderBy: (history, { desc }) => [desc(history.editedAt)],
     });
+
+    // Collect all unique user IDs
+    const allUserIds = [...new Set(historyEntries.map((h) => h.userId))];
+
+    // Resolve usernames
+    const usernames = await resolveUsernames(allUserIds);
 
     // Group by cardId and deduplicate users (preserving order - most recent first)
     const editorsByCard: Record<
@@ -653,7 +906,7 @@ export async function getSessionCardEditors(sessionId: string): Promise<{
       Array<{ userId: string; username: string }>
     > = {};
 
-    for (const entry of history) {
+    for (const entry of historyEntries) {
       if (!editorsByCard[entry.cardId]) {
         editorsByCard[entry.cardId] = [];
       }
@@ -661,7 +914,7 @@ export async function getSessionCardEditors(sessionId: string): Promise<{
       if (!editorsByCard[entry.cardId].some((e) => e.userId === entry.userId)) {
         editorsByCard[entry.cardId].push({
           userId: entry.userId,
-          username: entry.user.username,
+          username: usernames.get(entry.userId) ?? "Anonymous",
         });
       }
     }
@@ -1317,22 +1570,36 @@ export async function getSessionThreads(
     const result = await db.query.threads.findMany({
       where: eq(threads.sessionId, sessionId),
       with: {
-        creator: {
-          columns: { id: true, username: true },
-        },
         comments: {
-          with: {
-            creator: {
-              columns: { id: true, username: true },
-            },
-          },
           orderBy: (comments, { asc }) => [asc(comments.createdAt)],
         },
       },
       orderBy: (threads, { desc }) => [desc(threads.createdAt)],
     });
 
-    return { threads: result as ThreadWithDetails[], error: null };
+    // Collect all user IDs (thread creators and comment creators)
+    const userIds = new Set<string>();
+    for (const thread of result) {
+      userIds.add(thread.createdById);
+      for (const comment of thread.comments) {
+        userIds.add(comment.createdById);
+      }
+    }
+
+    // Resolve usernames
+    const usernames = await resolveUsernames([...userIds]);
+
+    // Transform to ThreadWithDetails
+    const threadsWithDetails: ThreadWithDetails[] = result.map((thread) => ({
+      ...thread,
+      creatorUsername: usernames.get(thread.createdById) ?? "Anonymous",
+      comments: thread.comments.map((comment) => ({
+        ...comment,
+        creatorUsername: usernames.get(comment.createdById) ?? "Anonymous",
+      })),
+    }));
+
+    return { threads: threadsWithDetails, error: null };
   } catch (error) {
     console.error("Database error in getSessionThreads:", error);
     return { threads: [], error: "Failed to fetch threads" };
@@ -1407,25 +1674,37 @@ export async function createThread(
     // Update activity timestamps
     await updateActivityTimestamps(data.sessionId, userId);
 
-    // Fetch the complete thread with relations
+    // Fetch the complete thread with comments
     const thread = await db.query.threads.findFirst({
       where: eq(threads.id, threadId),
       with: {
-        creator: {
-          columns: { id: true, username: true },
-        },
         comments: {
-          with: {
-            creator: {
-              columns: { id: true, username: true },
-            },
-          },
           orderBy: (comments, { asc }) => [asc(comments.createdAt)],
         },
       },
     });
 
-    return { thread: thread as ThreadWithDetails, error: null };
+    if (!thread) {
+      return { thread: null, error: "Thread not found after creation" };
+    }
+
+    // Resolve usernames
+    const userIds = [
+      thread.createdById,
+      ...thread.comments.map((c) => c.createdById),
+    ];
+    const usernames = await resolveUsernames(userIds);
+
+    const threadWithDetails: ThreadWithDetails = {
+      ...thread,
+      creatorUsername: usernames.get(thread.createdById) ?? "Anonymous",
+      comments: thread.comments.map((comment) => ({
+        ...comment,
+        creatorUsername: usernames.get(comment.createdById) ?? "Anonymous",
+      })),
+    };
+
+    return { thread: threadWithDetails, error: null };
   } catch (error) {
     console.error("Database error in createThread:", error);
     return { thread: null, error: "Failed to create thread" };
@@ -1697,17 +1976,24 @@ export async function addComment(
     // Update activity timestamps
     await updateActivityTimestamps(thread.sessionId, userId);
 
-    // Fetch the comment with creator
+    // Fetch the comment
     const comment = await db.query.comments.findFirst({
       where: eq(comments.id, commentId),
-      with: {
-        creator: {
-          columns: { id: true, username: true },
-        },
-      },
     });
 
-    return { comment: comment as CommentWithCreator, error: null };
+    if (!comment) {
+      return { comment: null, error: "Comment not found after creation" };
+    }
+
+    // Resolve username
+    const usernames = await resolveUsernames([comment.createdById]);
+
+    const commentWithCreator: CommentWithCreator = {
+      ...comment,
+      creatorUsername: usernames.get(comment.createdById) ?? "Anonymous",
+    };
+
+    return { comment: commentWithCreator, error: null };
   } catch (error) {
     console.error("Database error in addComment:", error);
     return { comment: null, error: "Failed to add comment" };
@@ -1823,5 +2109,585 @@ export async function deleteComment(
   } catch (error) {
     console.error("Database error in deleteComment:", error);
     return { success: false, error: "Failed to delete comment" };
+  }
+}
+
+// ============================================================================
+// Claimable Boards Actions
+// ============================================================================
+
+/**
+ * Ensure the Clerk user exists in our database.
+ * Creates a new user record with the Clerk ID if it doesn't exist.
+ * Uses Clerk's name (firstName) when creating the user.
+ */
+export async function ensureClerkUserExists(): Promise<{
+  user: User | null;
+  error: string | null;
+}> {
+  const { userId: clerkId } = await auth();
+  if (!clerkId) {
+    return { user: null, error: "Not authenticated" };
+  }
+
+  try {
+    // Check if Clerk user already exists in our DB
+    let user = await db.query.users.findFirst({
+      where: eq(users.id, clerkId),
+    });
+
+    if (!user) {
+      // Fetch Clerk user to get their name
+      let clerkName = generateUsername(); // Fallback
+      try {
+        const client = await clerkClient();
+        const clerkUser = await client.users.getUser(clerkId);
+        // Clerk stores full name in firstName (single input config)
+        clerkName =
+          clerkUser.firstName || clerkUser.username || generateUsername();
+      } catch (clerkError) {
+        console.error("Failed to fetch Clerk user:", clerkError);
+        // Continue with generated username
+      }
+
+      // Create user with Clerk ID and their Clerk name
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          id: clerkId,
+          username: clerkName,
+        })
+        .returning();
+      user = newUser;
+    }
+
+    return { user, error: null };
+  } catch (error) {
+    console.error("Database error in ensureClerkUserExists:", error);
+    return { user: null, error: "Failed to ensure user exists" };
+  }
+}
+
+/**
+ * Check if a fingerprint has any contributions on a specific board.
+ * Returns stats about what they did (cards created, comments, etc.)
+ */
+export async function getAnonymousHistoryOnBoard(
+  sessionId: string,
+  fingerprintId: string,
+): Promise<{
+  hasHistory: boolean;
+  stats: {
+    role: SessionRole | null;
+    cardsCreated: number;
+    commentsCreated: number;
+  } | null;
+}> {
+  try {
+    // Check if this fingerprint has any activity on this board
+    const participation = await db.query.sessionParticipants.findFirst({
+      where: and(
+        eq(sessionParticipants.sessionId, sessionId),
+        eq(sessionParticipants.userId, fingerprintId),
+      ),
+    });
+
+    if (!participation) {
+      return { hasHistory: false, stats: null };
+    }
+
+    // Get stats about what they did
+    const [cardCountResult] = await db
+      .select({ count: count() })
+      .from(cards)
+      .where(
+        and(
+          eq(cards.sessionId, sessionId),
+          eq(cards.createdById, fingerprintId),
+        ),
+      );
+
+    // Get comment count for this board's threads
+    const boardThreads = await db.query.threads.findMany({
+      where: eq(threads.sessionId, sessionId),
+      columns: { id: true },
+    });
+    const threadIds = boardThreads.map((t) => t.id);
+
+    let commentCountValue = 0;
+    if (threadIds.length > 0) {
+      const [commentCountResult] = await db
+        .select({ count: count() })
+        .from(comments)
+        .where(
+          and(
+            inArray(comments.threadId, threadIds),
+            eq(comments.createdById, fingerprintId),
+          ),
+        );
+      commentCountValue = commentCountResult?.count ?? 0;
+    }
+
+    return {
+      hasHistory: true,
+      stats: {
+        role: participation.role as SessionRole,
+        cardsCreated: cardCountResult?.count ?? 0,
+        commentsCreated: commentCountValue,
+      },
+    };
+  } catch (error) {
+    console.error("Database error in getAnonymousHistoryOnBoard:", error);
+    return { hasHistory: false, stats: null };
+  }
+}
+
+/**
+ * Migrate anonymous contributions on a specific board to the authenticated Clerk user.
+ * This transfers ownership of cards, comments, votes, reactions, etc.
+ */
+export async function claimAnonymousWorkOnBoard(
+  sessionId: string,
+  fingerprintId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  const { userId: clerkId } = await auth();
+  if (!clerkId) {
+    return { success: false, error: "Not authenticated" };
+  }
+
+  try {
+    // Ensure Clerk user exists
+    const { error: userError } = await ensureClerkUserExists();
+    if (userError) {
+      return { success: false, error: userError };
+    }
+
+    await db.transaction(async (tx) => {
+      // 1. Handle session participation transfer
+      const existingClerkParticipation =
+        await tx.query.sessionParticipants.findFirst({
+          where: and(
+            eq(sessionParticipants.sessionId, sessionId),
+            eq(sessionParticipants.userId, clerkId),
+          ),
+        });
+
+      const anonParticipation = await tx.query.sessionParticipants.findFirst({
+        where: and(
+          eq(sessionParticipants.sessionId, sessionId),
+          eq(sessionParticipants.userId, fingerprintId),
+        ),
+      });
+
+      if (anonParticipation && !existingClerkParticipation) {
+        // Transfer the participation (keeps role like "creator")
+        await tx
+          .update(sessionParticipants)
+          .set({ userId: clerkId })
+          .where(
+            and(
+              eq(sessionParticipants.sessionId, sessionId),
+              eq(sessionParticipants.userId, fingerprintId),
+            ),
+          );
+      } else if (anonParticipation && existingClerkParticipation) {
+        // Clerk already participating, merge roles (keep creator if either has it)
+        if (
+          anonParticipation.role === "creator" &&
+          existingClerkParticipation.role !== "creator"
+        ) {
+          await tx
+            .update(sessionParticipants)
+            .set({ role: "creator" })
+            .where(
+              and(
+                eq(sessionParticipants.sessionId, sessionId),
+                eq(sessionParticipants.userId, clerkId),
+              ),
+            );
+        }
+        // Delete anon participation since Clerk user already exists
+        await tx
+          .delete(sessionParticipants)
+          .where(
+            and(
+              eq(sessionParticipants.sessionId, sessionId),
+              eq(sessionParticipants.userId, fingerprintId),
+            ),
+          );
+      }
+
+      // 2. Transfer cards created on this board
+      await tx
+        .update(cards)
+        .set({ createdById: clerkId })
+        .where(
+          and(
+            eq(cards.sessionId, sessionId),
+            eq(cards.createdById, fingerprintId),
+          ),
+        );
+
+      // 3. Transfer card edit history on this board
+      await tx.execute(sql`
+        UPDATE card_edit_history 
+        SET user_id = ${clerkId}
+        WHERE user_id = ${fingerprintId}
+        AND card_id IN (SELECT id FROM cards WHERE session_id = ${sessionId})
+      `);
+
+      // 4. Transfer threads created on this board
+      await tx
+        .update(threads)
+        .set({ createdById: clerkId })
+        .where(
+          and(
+            eq(threads.sessionId, sessionId),
+            eq(threads.createdById, fingerprintId),
+          ),
+        );
+
+      // 5. Transfer comments on this board's threads
+      await tx.execute(sql`
+        UPDATE comments 
+        SET created_by_id = ${clerkId}
+        WHERE created_by_id = ${fingerprintId}
+        AND thread_id IN (SELECT id FROM threads WHERE session_id = ${sessionId})
+      `);
+
+      // 6. Update votes in cards.votedBy (JSONB array) - only for this board's cards
+      await tx.execute(sql`
+        UPDATE cards 
+        SET voted_by = (
+          SELECT COALESCE(jsonb_agg(
+            CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END
+          ), '[]'::jsonb)
+          FROM jsonb_array_elements_text(voted_by) AS elem
+        )
+        WHERE session_id = ${sessionId}
+        AND voted_by @> ${JSON.stringify([fingerprintId])}::jsonb
+      `);
+
+      // 7. Update reactions in cards.reactions (JSONB object) - only for this board's cards
+      await tx.execute(sql`
+        UPDATE cards
+        SET reactions = (
+          SELECT COALESCE(jsonb_object_agg(
+            key,
+            (SELECT COALESCE(jsonb_agg(
+              CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END
+            ), '[]'::jsonb) FROM jsonb_array_elements_text(value) AS elem)
+          ), '{}'::jsonb)
+          FROM jsonb_each(reactions)
+        )
+        WHERE session_id = ${sessionId}
+        AND reactions::text LIKE ${`%${fingerprintId}%`}
+      `);
+    });
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in claimAnonymousWorkOnBoard:", error);
+    return { success: false, error: "Failed to claim anonymous work" };
+  }
+}
+
+/**
+ * Join a session as the authenticated Clerk user (without migrating anonymous work).
+ * Used when user chooses to "start fresh" instead of claiming their anonymous history.
+ */
+export async function joinSessionAsClerkUser(sessionId: string): Promise<{
+  success: boolean;
+  role: SessionRole | null;
+  error: string | null;
+}> {
+  const { userId: clerkId } = await auth();
+  if (!clerkId) {
+    return { success: false, role: null, error: "Not authenticated" };
+  }
+
+  try {
+    // Ensure user exists
+    const { error: userError } = await ensureClerkUserExists();
+    if (userError) {
+      return { success: false, role: null, error: userError };
+    }
+
+    // Check if already participating
+    const existing = await db.query.sessionParticipants.findFirst({
+      where: and(
+        eq(sessionParticipants.sessionId, sessionId),
+        eq(sessionParticipants.userId, clerkId),
+      ),
+    });
+
+    if (existing) {
+      // Already a participant
+      return { success: true, role: existing.role as SessionRole, error: null };
+    }
+
+    // Join as new participant
+    await db.insert(sessionParticipants).values({
+      userId: clerkId,
+      sessionId,
+      role: "participant",
+    });
+
+    return { success: true, role: "participant", error: null };
+  } catch (error) {
+    console.error("Database error in joinSessionAsClerkUser:", error);
+    return { success: false, role: null, error: "Failed to join session" };
+  }
+}
+
+/**
+ * Claim a session (board) to remove its expiration TTL.
+ * This replaces the fingerprint ID with the Clerk ID in all relevant tables.
+ * Only the session creator (identified by fingerprintId) can claim a board.
+ */
+export async function claimSession(
+  sessionId: string,
+  fingerprintId: string,
+): Promise<{ success: boolean; error: string | null }> {
+  const { userId: clerkId } = await auth();
+  if (!clerkId) {
+    return { success: false, error: "Not authenticated" };
+  }
+
+  try {
+    // Find the creator participation with fingerprint
+    const creatorParticipation = await db.query.sessionParticipants.findFirst({
+      where: and(
+        eq(sessionParticipants.sessionId, sessionId),
+        eq(sessionParticipants.userId, fingerprintId),
+        eq(sessionParticipants.role, "creator"),
+      ),
+    });
+
+    if (!creatorParticipation) {
+      return {
+        success: false,
+        error: "You are not the creator of this session",
+      };
+    }
+
+    // Check if Clerk user is already a participant (from joinSession after signing in)
+    const existingClerkParticipant =
+      await db.query.sessionParticipants.findFirst({
+        where: and(
+          eq(sessionParticipants.sessionId, sessionId),
+          eq(sessionParticipants.userId, clerkId),
+        ),
+      });
+
+    // Claim the session by replacing fingerprint with Clerk ID
+    await db.transaction(async (tx) => {
+      // Handle session participants based on whether Clerk user already exists
+      if (existingClerkParticipant) {
+        // Clerk user already joined - delete fingerprint record and update Clerk's role to creator
+        await tx
+          .delete(sessionParticipants)
+          .where(
+            and(
+              eq(sessionParticipants.sessionId, sessionId),
+              eq(sessionParticipants.userId, fingerprintId),
+            ),
+          );
+
+        // Update Clerk participant's role to creator
+        await tx
+          .update(sessionParticipants)
+          .set({ role: creatorParticipation.role })
+          .where(
+            and(
+              eq(sessionParticipants.sessionId, sessionId),
+              eq(sessionParticipants.userId, clerkId),
+            ),
+          );
+      } else {
+        // No Clerk participant yet - just update fingerprint to Clerk ID
+        await tx
+          .update(sessionParticipants)
+          .set({ userId: clerkId })
+          .where(
+            and(
+              eq(sessionParticipants.sessionId, sessionId),
+              eq(sessionParticipants.userId, fingerprintId),
+            ),
+          );
+      }
+
+      // Replace fingerprint with Clerk ID in cards
+      await tx
+        .update(cards)
+        .set({ createdById: clerkId })
+        .where(
+          and(
+            eq(cards.sessionId, sessionId),
+            eq(cards.createdById, fingerprintId),
+          ),
+        );
+
+      // Replace fingerprint with Clerk ID in threads
+      await tx
+        .update(threads)
+        .set({ createdById: clerkId })
+        .where(
+          and(
+            eq(threads.sessionId, sessionId),
+            eq(threads.createdById, fingerprintId),
+          ),
+        );
+
+      // Replace fingerprint with Clerk ID in comments on this session's threads
+      await tx.execute(sql`
+        UPDATE comments 
+        SET created_by_id = ${clerkId}
+        WHERE created_by_id = ${fingerprintId}
+        AND thread_id IN (SELECT id FROM threads WHERE session_id = ${sessionId})
+      `);
+
+      // Replace fingerprint with Clerk ID in card edit history
+      await tx.execute(sql`
+        UPDATE card_edit_history 
+        SET user_id = ${clerkId}
+        WHERE user_id = ${fingerprintId}
+        AND card_id IN (SELECT id FROM cards WHERE session_id = ${sessionId})
+      `);
+
+      // Update votes in cards.votedBy (JSONB array)
+      await tx.execute(sql`
+        UPDATE cards 
+        SET voted_by = (
+          SELECT COALESCE(jsonb_agg(
+            CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END
+          ), '[]'::jsonb)
+          FROM jsonb_array_elements_text(voted_by) AS elem
+        )
+        WHERE session_id = ${sessionId}
+        AND voted_by @> ${JSON.stringify([fingerprintId])}::jsonb
+      `);
+
+      // Update reactions in cards.reactions (JSONB object)
+      await tx.execute(sql`
+        UPDATE cards
+        SET reactions = (
+          SELECT COALESCE(jsonb_object_agg(
+            key,
+            (SELECT COALESCE(jsonb_agg(
+              CASE WHEN elem = ${fingerprintId} THEN ${clerkId} ELSE elem END
+            ), '[]'::jsonb) FROM jsonb_array_elements_text(value) AS elem)
+          ), '{}'::jsonb)
+          FROM jsonb_each(reactions)
+        )
+        WHERE session_id = ${sessionId}
+        AND reactions::text LIKE ${`%${fingerprintId}%`}
+      `);
+
+      // Remove expiration (claiming makes it permanent)
+      await tx
+        .update(sessions)
+        .set({ expiresAt: null })
+        .where(eq(sessions.id, sessionId));
+    });
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error("Database error in claimSession:", error);
+    return { success: false, error: "Failed to claim session" };
+  }
+}
+
+/**
+ * Get all sessions where the authenticated user is the creator.
+ * This replaces the old getClaimedSessions which relied on claimedByUserId.
+ */
+export async function getClaimedSessions(): Promise<{
+  sessions: Array<{
+    id: string;
+    name: string;
+    createdAt: Date;
+    lastActivityAt: Date;
+    cardCount: number;
+  }>;
+  error: string | null;
+}> {
+  const { userId: clerkId } = await auth();
+  if (!clerkId) {
+    return { sessions: [], error: "Not authenticated" };
+  }
+
+  try {
+    // Get sessions where the Clerk user is the creator
+    const creatorParticipations = await db.query.sessionParticipants.findMany({
+      where: and(
+        eq(sessionParticipants.userId, clerkId),
+        eq(sessionParticipants.role, "creator"),
+      ),
+      with: {
+        session: {
+          with: {
+            cards: {
+              columns: { id: true },
+            },
+          },
+        },
+      },
+    });
+
+    const result = creatorParticipations.map((p) => ({
+      id: p.session.id,
+      name: p.session.name,
+      createdAt: p.session.createdAt,
+      lastActivityAt: p.session.lastActivityAt,
+      cardCount: p.session.cards.length,
+    }));
+
+    // Sort by lastActivityAt (most recent first)
+    result.sort(
+      (a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime(),
+    );
+
+    return { sessions: result, error: null };
+  } catch (error) {
+    console.error("Database error in getClaimedSessions:", error);
+    return { sessions: [], error: "Failed to fetch claimed sessions" };
+  }
+}
+
+/**
+ * Delete expired unclaimed sessions.
+ * This is called by a cron job to clean up old anonymous boards.
+ */
+export async function deleteExpiredSessions(): Promise<{
+  deletedCount: number;
+  error: string | null;
+}> {
+  try {
+    // First get the count of sessions to delete
+    const expiredSessions = await db.query.sessions.findMany({
+      where: and(
+        isNotNull(sessions.expiresAt),
+        lt(sessions.expiresAt, new Date()),
+      ),
+      columns: { id: true },
+    });
+
+    if (expiredSessions.length === 0) {
+      return { deletedCount: 0, error: null };
+    }
+
+    // Delete expired sessions
+    await db.delete(sessions).where(
+      inArray(
+        sessions.id,
+        expiredSessions.map((s) => s.id),
+      ),
+    );
+
+    return { deletedCount: expiredSessions.length, error: null };
+  } catch (error) {
+    console.error("Database error in deleteExpiredSessions:", error);
+    return { deletedCount: 0, error: "Failed to delete expired sessions" };
   }
 }

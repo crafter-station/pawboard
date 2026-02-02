@@ -54,6 +54,7 @@ import {
   updateSessionSettings,
   voteCard as voteCardAction,
 } from "@/app/actions";
+import { AnonymousWorkPrompt } from "@/components/anonymous-work-prompt";
 import { ChatPanel, ChatTrigger } from "@/components/chat/chat-drawer";
 import { ClusterCardsDialog } from "@/components/cluster-cards-dialog";
 import { CommandMenu } from "@/components/command-menu";
@@ -63,6 +64,7 @@ import {
   setIdeaCardNodeCallbacks,
 } from "@/components/idea-card-node";
 import { RealtimeCursors } from "@/components/realtime-cursors";
+import { SessionClaimBanner } from "@/components/session-claim-banner";
 import { CreateThreadPanel, ThreadNode } from "@/components/threads";
 import {
   AlertDialog,
@@ -93,11 +95,12 @@ import {
   useSessionCardEditors,
 } from "@/hooks/use-card-editors";
 import { useCatSound } from "@/hooks/use-cat-sound";
-import { useFingerprint } from "@/hooks/use-fingerprint";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import type { SessionSettings } from "@/hooks/use-realtime-cards";
 import { useRealtimeCards } from "@/hooks/use-realtime-cards";
 import { useRealtimePresence } from "@/hooks/use-realtime-presence";
 import { useSessionUsername } from "@/hooks/use-session-username";
+import { useInvalidateUser, usePrimeUserCache } from "@/hooks/use-users";
 import { DARK_COLORS, LIGHT_COLORS } from "@/lib/colors";
 import { findCardAtPoint, getThreadBubbleCenter } from "@/lib/geometry-utils";
 import { generateCardId } from "@/lib/nanoid";
@@ -160,11 +163,17 @@ function ReactFlowBoardInner({
 }: ReactFlowBoardProps) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
-  const { visitorId, isLoading: isFingerprintLoading } = useFingerprint();
+  const {
+    userId: visitorId,
+    fingerprintId,
+    isLoading: isFingerprintLoading,
+  } = useCurrentUser();
   const playSound = useCatSound();
   const isSidebarOpen = useSidebarStore((state) => state.isOpen);
   const setFocusedThread = useThreadFocusStore((s) => s.setFocusedThread);
   const invalidateCardEditors = useInvalidateCardEditors();
+  const primeUserCache = usePrimeUserCache();
+  const invalidateUser = useInvalidateUser();
 
   // React Flow hooks
   const {
@@ -333,6 +342,26 @@ function ReactFlowBoardInner({
     }
   }, []);
 
+  // Prime user cache from initial participants to avoid refetching in edit history
+  useEffect(() => {
+    if (initialParticipants.length > 0) {
+      primeUserCache(initialParticipants);
+    }
+  }, [initialParticipants, primeUserCache]);
+
+  // Prime user cache from session card editors when they load
+  useEffect(() => {
+    if (sessionEditorsData?.editors) {
+      // Flatten all editors from all cards and prime cache
+      const allUsers = Object.values(sessionEditorsData.editors)
+        .flat()
+        .map((e) => ({ visitorId: e.userId, username: e.username }));
+      if (allUsers.length > 0) {
+        primeUserCache(allUsers);
+      }
+    }
+  }, [sessionEditorsData, primeUserCache]);
+
   // Helper to get username for a user ID - derive from participantsWithCurrentUser
   const getUsernameForId = useCallback(
     (userId: string): string => {
@@ -349,8 +378,10 @@ function ReactFlowBoardInner({
         next.set(userId, newName);
         return next;
       });
+      // Update user cache with the new username
+      primeUserCache([{ visitorId: userId, username: newName }]);
     },
-    [],
+    [primeUserCache],
   );
 
   // Handle incoming session rename events from realtime
@@ -1494,9 +1525,11 @@ function ReactFlowBoardInner({
   const handleUpdateUsername = async (newUsername: string) => {
     const result = await updateUsername(newUsername);
     if (result.success && visitorId) {
+      // Invalidate user cache for this user to clear any stale batch queries
+      invalidateUser(visitorId);
       // Broadcast name change to other participants
       broadcastNameChange(visitorId, newUsername.trim());
-      // Update local participants map
+      // Update local participants map and prime cache with new username
       handleRemoteNameChange(visitorId, newUsername.trim());
     }
     return result;
@@ -1914,6 +1947,14 @@ function ReactFlowBoardInner({
 
         {/* AI Chat Trigger Button */}
         <ChatTrigger />
+
+        {/* Anonymous Work Migration Prompt */}
+        <AnonymousWorkPrompt sessionId={sessionId} session={session} />
+
+        {/* Session Claim Banner (for unclaimed boards) */}
+        {fingerprintId && (
+          <SessionClaimBanner session={session} fingerprintId={fingerprintId} />
+        )}
 
         {/* Fixed UI - Top Left */}
         <div className="fixed top-2 sm:top-4 left-2 sm:left-4 z-50 flex items-center gap-1.5 sm:gap-3">

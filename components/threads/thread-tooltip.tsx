@@ -40,8 +40,8 @@ export function ThreadTooltip({ thread }: ThreadTooltipProps) {
         <div className="relative shrink-0">
           {/* biome-ignore lint/performance/noImgElement: External avatar URL from DiceBear API */}
           <img
-            src={getAvatarForUser(latestComment.creator.id)}
-            alt={latestComment.creator.username}
+            src={getAvatarForUser(latestComment.createdById)}
+            alt={latestComment.creatorUsername}
             className="h-8 w-8 rounded-full bg-muted"
             style={{
               boxShadow: `0 0 0 2px ${colors.avatarRingMedium}`,
@@ -54,7 +54,7 @@ export function ThreadTooltip({ thread }: ThreadTooltipProps) {
               className="font-medium text-sm truncate"
               style={{ color: colors.textPrimary }}
             >
-              {latestComment.creator.username}
+              {latestComment.creatorUsername}
             </span>
             <span
               className="text-xs shrink-0"

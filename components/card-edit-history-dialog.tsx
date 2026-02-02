@@ -2,9 +2,7 @@
 
 import { Crown, History } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useState } from "react";
-import type { CardEditHistoryWithUser } from "@/app/actions";
-import { getCardEditHistory } from "@/app/actions";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +11,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useCardEditHistory } from "@/hooks/use-card-edit-history";
 import { getAvatarForUser } from "@/lib/utils";
 
 interface CardEditHistoryDialogProps {
@@ -43,39 +42,9 @@ export function CardEditHistoryDialog({
   trigger,
 }: CardEditHistoryDialogProps) {
   const [open, setOpen] = useState(false);
-  const [history, setHistory] = useState<CardEditHistoryWithUser[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-
-    let ignore = false;
-    setIsLoading(true);
-    setError(null);
-
-    getCardEditHistory(cardId)
-      .then(({ history, error }) => {
-        if (ignore) return;
-        if (error) {
-          setError(error);
-        } else {
-          setHistory(history);
-        }
-      })
-      .catch(() => {
-        if (ignore) return;
-        setError("Failed to load edit history");
-      })
-      .finally(() => {
-        if (ignore) return;
-        setIsLoading(false);
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, [open, cardId]);
+  // Use the cached hook - only fetches when dialog is open
+  const { history, isLoading, error } = useCardEditHistory(cardId, open);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -97,7 +66,7 @@ export function CardEditHistoryDialog({
             </p>
           ) : error ? (
             <p className="text-destructive text-sm text-center py-4">{error}</p>
-          ) : history.length === 0 ? (
+          ) : !history || history.length === 0 ? (
             <p className="text-muted-foreground text-sm text-center py-4">
               No edit history yet
             </p>
@@ -129,7 +98,7 @@ export function CardEditHistoryDialog({
                     </div>
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-medium truncate block">
-                        {entry.user.username}
+                        {entry.username}
                         {isCreator && (
                           <span className="ml-1.5 text-xs text-amber-600 dark:text-amber-400 font-normal">
                             Creator

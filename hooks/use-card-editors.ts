@@ -1,13 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { getCardEditors, getSessionCardEditors } from "@/app/actions";
+import { queryKeys } from "@/lib/query-keys";
 
-export const cardEditorsKeys = {
-  all: ["cardEditors"] as const,
-  byCard: (cardId: string) => [...cardEditorsKeys.all, cardId] as const,
-  bySession: (sessionId: string) =>
-    [...cardEditorsKeys.all, "session", sessionId] as const,
-};
+// Re-export for backwards compatibility
+export const cardEditorsKeys = queryKeys.cardEditors;
 
 // Fetch all editors for a session at once (preferred - reduces POST requests)
 export function useSessionCardEditors(sessionId: string) {

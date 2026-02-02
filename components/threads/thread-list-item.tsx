@@ -53,8 +53,8 @@ export function ThreadListItem({ thread, onClick }: ThreadListItemProps) {
       {/* Creator Avatar */}
       {/* biome-ignore lint/performance/noImgElement: External avatar URL from DiceBear API */}
       <img
-        src={getAvatarForUser(thread.creator.id)}
-        alt={thread.creator.username || "User"}
+        src={getAvatarForUser(thread.createdById)}
+        alt={thread.creatorUsername || "User"}
         className="h-8 w-8 rounded-full shrink-0"
       />
 
@@ -66,7 +66,7 @@ export function ThreadListItem({ thread, onClick }: ThreadListItemProps) {
             className="text-sm font-medium truncate"
             style={{ color: colors.textPrimary }}
           >
-            {thread.creator.username || "Anonymous"}
+            {thread.creatorUsername || "Anonymous"}
           </span>
           <span
             className="text-xs shrink-0"

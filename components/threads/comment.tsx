@@ -46,8 +46,8 @@ export const Comment = memo(function Comment({
       <div className="relative shrink-0">
         {/* biome-ignore lint/performance/noImgElement: External avatar URL from DiceBear API */}
         <img
-          src={getAvatarForUser(comment.creator.id)}
-          alt={comment.creator.username}
+          src={getAvatarForUser(comment.createdById)}
+          alt={comment.creatorUsername}
           className="h-8 w-8 rounded-full bg-muted"
           style={{
             boxShadow: `0 0 0 1px ${colors.border}`,
@@ -62,7 +62,7 @@ export const Comment = memo(function Comment({
             className="font-medium text-sm truncate"
             style={{ color: colors.textPrimary }}
           >
-            {comment.creator.username}
+            {comment.creatorUsername}
           </span>
           <span
             className="text-xs shrink-0"

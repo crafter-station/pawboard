@@ -32,7 +32,7 @@ export function useSessionUsername({
   const [error, setError] = useState<string | null>(null);
   const initializedRef = useRef(false);
 
-  // Initialize: join session (which also creates user if needed)
+  // Initialize: join session (which also creates user if needed for fingerprint users)
   useEffect(() => {
     if (!visitorId || initializedRef.current) return;
 
@@ -43,12 +43,11 @@ export function useSessionUsername({
       setIsLoading(true);
       setError(null);
 
-      // Join the session - this also calls getOrCreateUser internally
-      // and returns user, role, and any error
+      // Join the session - returns username directly (fetched from Clerk API or DB)
       const {
         role: userRole,
         error: joinError,
-        user,
+        username: joinedUsername,
       } = await joinSession(visitorId, sessionId);
 
       // Prevent state updates if effect was cleaned up (component unmounted
@@ -61,8 +60,8 @@ export function useSessionUsername({
         return;
       }
 
-      if (user) {
-        setUsername(user.username);
+      if (joinedUsername) {
+        setUsername(joinedUsername);
       }
 
       if (userRole) {
@@ -89,17 +88,15 @@ export function useSessionUsername({
         return { success: false, error: "Not authenticated" };
       }
 
-      const { user, error: dbError } = await updateUsernameAction(
-        visitorId,
-        newUsername.trim(),
-      );
+      const { username: updatedUsername, error: dbError } =
+        await updateUsernameAction(visitorId, newUsername.trim());
 
       if (dbError) {
         return { success: false, error: dbError };
       }
 
-      if (user) {
-        setUsername(user.username);
+      if (updatedUsername) {
+        setUsername(updatedUsername);
         return { success: true };
       }
 

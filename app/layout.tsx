@@ -1,3 +1,5 @@
+import { ClerkProvider } from "@clerk/nextjs";
+import { dark } from "@clerk/themes";
 import { Analytics } from "@vercel/analytics/react";
 import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
@@ -55,14 +57,20 @@ export default function RootLayout({
       <body
         className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans antialiased`}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange
+        <ClerkProvider
+          appearance={{
+            baseTheme: dark,
+          }}
         >
-          <Providers>{children}</Providers>
-        </ThemeProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="dark"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <Providers>{children}</Providers>
+          </ThemeProvider>
+        </ClerkProvider>
         <Analytics />
       </body>
     </html>
