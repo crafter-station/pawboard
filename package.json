@@ -24,6 +24,8 @@
     "@ai-sdk/gateway": "^3.0.11",
     "@ai-sdk/groq": "^3.0.1",
     "@ai-sdk/react": "^3.0.29",
+    "@clerk/nextjs": "^6.37.1",
+    "@clerk/themes": "^2.4.51",
     "@fingerprintjs/fingerprintjs": "^5.0.1",
     "@number-flow/react": "^0.5.10",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -74,6 +76,7 @@
     "react-dom": "19.2.3",
     "shiki": "^3.21.0",
     "streamdown": "^1.6.11",
+
     "tailwind-merge": "^3.4.0",
     "tokenlens": "^1.3.1",
     "use-stick-to-bottom": "^1.1.1",

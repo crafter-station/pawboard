@@ -32,25 +32,31 @@ export const DEFAULT_TIPTAP_CONTENT: TiptapContent = {
 // Tables
 
 export const users = pgTable("users", {
-  id: text("id").primaryKey(), // visitorId from fingerprint
+  id: text("id").primaryKey(), // visitorId from fingerprint ONLY - Clerk users are not stored
   username: text("username").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const sessions = pgTable("sessions", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  isLocked: boolean("is_locked").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
-});
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    isLocked: boolean("is_locked").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at"), // TTL for unclaimed boards (null = claimed/no expiry)
+  },
+  (table) => [
+    // Index for efficient cleanup of expired sessions
+    index("sessions_expires_at_idx").on(table.expiresAt),
+  ],
+);
 
 export const sessionParticipants = pgTable(
   "session_participants",
   {
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(), // Fingerprint or Clerk ID - no FK constraint
     sessionId: text("session_id")
       .notNull()
       .references(() => sessions.id, { onDelete: "cascade" }),
@@ -87,9 +93,7 @@ export const cards = pgTable(
       .notNull()
       .default({}),
     embedding: vector("embedding", { dimensions: 1536 }), // AI embedding for content similarity (text-embedding-3-small)
-    createdById: text("created_by_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    createdById: text("created_by_id").notNull(), // Fingerprint or Clerk ID - no FK constraint
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
@@ -110,9 +114,7 @@ export const cardEditHistory = pgTable(
     cardId: text("card_id")
       .notNull()
       .references(() => cards.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(), // Fingerprint or Clerk ID - no FK constraint
     editedAt: timestamp("edited_at").defaultNow().notNull(),
   },
   (table) => [index("card_edit_history_card_idx").on(table.cardId)],
@@ -130,9 +132,7 @@ export const threads = pgTable(
     y: real("y"),
     cardId: text("card_id").references(() => cards.id, { onDelete: "cascade" }), // Card attachment (null if canvas position)
     isResolved: boolean("is_resolved").notNull().default(false),
-    createdById: text("created_by_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    createdById: text("created_by_id").notNull(), // Fingerprint or Clerk ID - no FK constraint
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -151,9 +151,7 @@ export const comments = pgTable(
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
-    createdById: text("created_by_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    createdById: text("created_by_id").notNull(), // Fingerprint or Clerk ID - no FK constraint
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -182,10 +180,7 @@ export const sessionsRelations = relations(sessions, ({ many }) => ({
 export const sessionParticipantsRelations = relations(
   sessionParticipants,
   ({ one }) => ({
-    user: one(users, {
-      fields: [sessionParticipants.userId],
-      references: [users.id],
-    }),
+    // Note: user relation removed - userId can be fingerprint or Clerk ID
     session: one(sessions, {
       fields: [sessionParticipants.sessionId],
       references: [sessions.id],
@@ -198,10 +193,7 @@ export const cardsRelations = relations(cards, ({ one, many }) => ({
     fields: [cards.sessionId],
     references: [sessions.id],
   }),
-  creator: one(users, {
-    fields: [cards.createdById],
-    references: [users.id],
-  }),
+  // Note: creator relation removed - createdById can be fingerprint or Clerk ID
   editHistory: many(cardEditHistory),
   threads: many(threads),
 }));
@@ -213,10 +205,7 @@ export const cardEditHistoryRelations = relations(
       fields: [cardEditHistory.cardId],
       references: [cards.id],
     }),
-    user: one(users, {
-      fields: [cardEditHistory.userId],
-      references: [users.id],
-    }),
+    // Note: user relation removed - userId can be fingerprint or Clerk ID
   }),
 );
 
@@ -229,10 +218,7 @@ export const threadsRelations = relations(threads, ({ one, many }) => ({
     fields: [threads.cardId],
     references: [cards.id],
   }),
-  creator: one(users, {
-    fields: [threads.createdById],
-    references: [users.id],
-  }),
+  // Note: creator relation removed - createdById can be fingerprint or Clerk ID
   comments: many(comments),
 }));
 
@@ -241,10 +227,7 @@ export const commentsRelations = relations(comments, ({ one }) => ({
     fields: [comments.threadId],
     references: [threads.id],
   }),
-  creator: one(users, {
-    fields: [comments.createdById],
-    references: [users.id],
-  }),
+  // Note: creator relation removed - createdById can be fingerprint or Clerk ID
 }));
 
 // Types
@@ -265,12 +248,13 @@ export type NewThread = typeof threads.$inferInsert;
 export type Comment = typeof comments.$inferSelect;
 export type NewComment = typeof comments.$inferInsert;
 
-// Extended types with relations (for hooks/components)
+// Extended types with resolved usernames (for hooks/components)
+// Note: creator info is resolved separately via lib/user-utils.ts
 export type CommentWithCreator = Comment & {
-  creator: Pick<User, "id" | "username">;
+  creatorUsername: string;
 };
 
 export type ThreadWithDetails = Thread & {
   comments: CommentWithCreator[];
-  creator: Pick<User, "id" | "username">;
+  creatorUsername: string;
 };

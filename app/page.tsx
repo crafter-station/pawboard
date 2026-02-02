@@ -1,5 +1,6 @@
 "use client";
 
+import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { ArrowRight, ListTodo } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -467,6 +468,22 @@ export default function Home() {
           <div className="bg-card/60 backdrop-blur-sm px-2 py-1 rounded-lg border border-border/50">
             <ThemeSwitcherToggle />
           </div>
+          <SignedOut>
+            <SignInButton mode="modal">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg border-border/50 bg-card/60 backdrop-blur-sm"
+              >
+                Sign in
+              </Button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <div className="bg-card/60 backdrop-blur-sm p-1 rounded-lg border border-border/50">
+              <UserButton />
+            </div>
+          </SignedIn>
         </div>
 
         <div className="flex flex-col items-center gap-4">

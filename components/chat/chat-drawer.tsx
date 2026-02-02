@@ -38,6 +38,7 @@ interface ChatPanelProps {
   onThreadClick?: (threadId: string) => void;
   participants?: Map<string, string>;
   onlineUsers?: Set<string>;
+  creatorId?: string;
 }
 
 export function ChatPanel({
@@ -47,6 +48,7 @@ export function ChatPanel({
   onThreadClick,
   participants = EMPTY_PARTICIPANTS,
   onlineUsers = EMPTY_ONLINE_USERS,
+  creatorId,
 }: ChatPanelProps) {
   const { isOpen, setOpen, toggle, activeTab, setActiveTab } =
     useSidebarStore();
@@ -263,6 +265,7 @@ export function ChatPanel({
               participants={participants}
               currentUserId={userId}
               onlineUsers={onlineUsers}
+              creatorId={creatorId}
             />
           )}
         </motion.div>
