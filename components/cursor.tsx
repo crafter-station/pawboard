@@ -18,6 +18,7 @@ export const Cursor = ({
   color,
   cursorImage,
   name,
+  instant = false,
 }: {
   className?: string;
   x: number;
@@ -25,6 +26,7 @@ export const Cursor = ({
   color: string;
   cursorImage: string;
   name: string;
+  instant?: boolean;
 }) => {
   const textColor = getContrastColor(color);
 
@@ -34,12 +36,16 @@ export const Cursor = ({
       style={{ zIndex: 2000 }}
       initial={{ x, y }}
       animate={{ x, y }}
-      transition={{
-        type: "spring",
-        damping: 30,
-        mass: 0.8,
-        stiffness: 350,
-      }}
+      transition={
+        instant
+          ? { duration: 0 }
+          : {
+              type: "spring",
+              damping: 30,
+              mass: 0.8,
+              stiffness: 350,
+            }
+      }
     >
       <Image
         src={cursorImage}

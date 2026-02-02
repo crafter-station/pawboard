@@ -13,6 +13,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
+  useOnViewportChange,
   useReactFlow,
   type Viewport,
 } from "@xyflow/react";
@@ -234,6 +235,11 @@ function ReactFlowBoardInner({
     new Set(),
   );
   const [zoom, setZoom] = useState(1);
+  const [viewport, setViewportState] = useState<Viewport>({
+    x: 0,
+    y: 0,
+    zoom: 1,
+  });
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [isReactFlowReady, setIsReactFlowReady] = useState(false);
@@ -272,6 +278,11 @@ function ReactFlowBoardInner({
 
   // Derive isMobile from viewportSize - avoids recalculating in multiple places
   const isMobile = viewportSize.width > 0 && viewportSize.width < 640;
+
+  // Track viewport changes to trigger cursor re-renders during pan/zoom
+  useOnViewportChange({
+    onChange: (vp) => setViewportState(vp),
+  });
 
   const {
     username,
@@ -2152,6 +2163,7 @@ function ReactFlowBoardInner({
                 username={username}
                 screenToWorld={screenToWorld}
                 worldToScreen={flowToScreenPosition}
+                viewport={viewport}
               />
             </div>
 
