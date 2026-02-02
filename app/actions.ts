@@ -698,7 +698,7 @@ export async function getAllUserSessions(fingerprintId: string): Promise<{
 
 export async function getSessionParticipants(
   sessionId: string,
-): Promise<{ visitorId: string; username: string }[]> {
+): Promise<{ visitorId: string; username: string; role?: SessionRole }[]> {
   try {
     // Get participants and card creators in parallel
     const [participants, cardCreators] = await Promise.all([
@@ -715,6 +715,12 @@ export async function getSessionParticipants(
         .where(eq(cards.sessionId, sessionId)),
     ]);
 
+    // Build a map of userId -> role from participants
+    const userRoles = new Map<string, SessionRole>();
+    for (const p of participants) {
+      userRoles.set(p.userId, p.role as SessionRole);
+    }
+
     // Collect all unique user IDs
     const allUserIds = new Set<string>();
     for (const p of participants) {
@@ -730,6 +736,7 @@ export async function getSessionParticipants(
     return Array.from(allUserIds).map((userId) => ({
       visitorId: userId,
       username: usernames.get(userId) ?? "Anonymous",
+      role: userRoles.get(userId),
     }));
   } catch (error) {
     console.error("Database error in getSessionParticipants:", error);

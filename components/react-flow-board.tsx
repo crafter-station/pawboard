@@ -86,6 +86,7 @@ import { UserBadge } from "@/components/user-badge";
 import type {
   Card,
   Session,
+  SessionRole,
   ThreadWithDetails,
   TiptapContent,
 } from "@/db/schema";
@@ -134,6 +135,7 @@ const EMPTY_EDITORS: Record<
 export interface Participant {
   visitorId: string;
   username: string;
+  role?: SessionRole;
 }
 
 interface ReactFlowBoardProps {
@@ -304,6 +306,12 @@ function ReactFlowBoardInner({
     updated.set(visitorId, username);
     return updated;
   }, [participants, visitorId, username]);
+
+  // Extract the creator ID from initial participants
+  const creatorId = useMemo(() => {
+    const creator = initialParticipants.find((p) => p.role === "creator");
+    return creator?.visitorId;
+  }, [initialParticipants]);
 
   // Update viewport size
   useEffect(() => {
@@ -2247,6 +2255,7 @@ function ReactFlowBoardInner({
         onThreadClick={handleFocusThread}
         participants={participantsWithCurrentUser}
         onlineUsers={onlineUsers}
+        creatorId={creatorId}
       />
     </div>
   );

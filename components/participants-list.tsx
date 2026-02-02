@@ -1,19 +1,26 @@
 "use client";
 
-import { Users } from "lucide-react";
+import { Crown, Users } from "lucide-react";
 import Image from "next/image";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { getAvatarForUser } from "@/lib/utils";
 
 interface ParticipantsListProps {
   participants: Map<string, string>;
   currentUserId: string;
   onlineUsers?: Set<string>;
+  creatorId?: string;
 }
 
 export function ParticipantsList({
   participants,
   currentUserId,
   onlineUsers = new Set(),
+  creatorId,
 }: ParticipantsListProps) {
   const participantsList = Array.from(participants.entries()).map(
     ([visitorId, username]) => ({
@@ -21,13 +28,15 @@ export function ParticipantsList({
       username,
       isCurrentUser: visitorId === currentUserId,
       isOnline: onlineUsers.has(visitorId),
+      isCreator: visitorId === creatorId,
     }),
   );
 
-  // Sort: current user first, then online users, then alphabetically
+  // Sort: current user first, then creator, then online users, then alphabetically
   participantsList.sort((a, b) => {
     if (a.isCurrentUser) return -1;
     if (b.isCurrentUser) return 1;
+    if (a.isCreator !== b.isCreator) return a.isCreator ? -1 : 1;
     if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
     return a.username.localeCompare(b.username);
   });
@@ -61,7 +70,7 @@ export function ParticipantsList({
         ) : (
           <ul className="space-y-1">
             {participantsList.map(
-              ({ visitorId, username, isCurrentUser, isOnline }) => {
+              ({ visitorId, username, isCurrentUser, isOnline, isCreator }) => {
                 const avatar = getAvatarForUser(visitorId);
                 return (
                   <li
@@ -89,6 +98,14 @@ export function ParticipantsList({
                     <span className="text-sm font-medium flex-1 truncate">
                       {username}
                     </span>
+                    {isCreator && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Crown className="w-4 h-4 text-amber-500 shrink-0" />
+                        </TooltipTrigger>
+                        <TooltipContent>Board owner</TooltipContent>
+                      </Tooltip>
+                    )}
                     {isCurrentUser && (
                       <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                         You
