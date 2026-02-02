@@ -169,10 +169,10 @@ export default function TermsPage() {
               If you have any questions about these Terms of Service, please
               contact us at{" "}
               <a
-                href="mailto:legal@pawboard.dev"
+                href="mailto:contact@crafterstation.com"
                 className="text-primary hover:underline"
               >
-                legal@pawboard.dev
+                contact@crafterstation.com
               </a>
               .
             </p>
