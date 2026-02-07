@@ -468,6 +468,15 @@ export default function Home() {
           <div className="bg-card/60 backdrop-blur-sm px-2 py-1 rounded-lg border border-border/50">
             <ThemeSwitcherToggle />
           </div>
+          <Link href="/pricing">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-lg border-border/50 bg-card/60 backdrop-blur-sm"
+            >
+              Pricing
+            </Button>
+          </Link>
           <SignedOut>
             <SignInButton mode="modal">
               <Button
