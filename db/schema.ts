@@ -161,6 +161,47 @@ export const comments = pgTable(
   ],
 );
 
+// Polar subscriptions table
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: text("id").primaryKey(), // Polar subscription ID
+    userId: text("user_id").notNull(), // Clerk user ID
+    polarCustomerId: text("polar_customer_id").notNull(),
+    productId: text("product_id").notNull(),
+    tier: text("tier").notNull(), // "pro" | "team"
+    status: text("status").notNull(), // "active" | "canceled" | "incomplete" | "trialing" | "past_due"
+    currentPeriodStart: timestamp("current_period_start"),
+    currentPeriodEnd: timestamp("current_period_end"),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("subscriptions_user_idx").on(table.userId),
+    index("subscriptions_status_idx").on(table.status),
+  ],
+);
+
+// Polar orders table (for one-time payments)
+export const orders = pgTable(
+  "orders",
+  {
+    id: text("id").primaryKey(), // Polar order ID
+    userId: text("user_id").notNull(), // Clerk user ID
+    polarCustomerId: text("polar_customer_id").notNull(),
+    productId: text("product_id").notNull(),
+    amount: integer("amount").notNull(), // Amount in cents
+    currency: text("currency").notNull().default("usd"),
+    status: text("status").notNull(), // "succeeded" | "pending" | "failed"
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("orders_user_idx").on(table.userId),
+    index("orders_status_idx").on(table.status),
+  ],
+);
+
 // Relations
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -230,6 +271,14 @@ export const commentsRelations = relations(comments, ({ one }) => ({
   // Note: creator relation removed - createdById can be fingerprint or Clerk ID
 }));
 
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+  // Note: user relation removed - userId is Clerk ID
+}));
+
+export const ordersRelations = relations(orders, ({ one }) => ({
+  // Note: user relation removed - userId is Clerk ID
+}));
+
 // Types
 
 export type User = typeof users.$inferSelect;
@@ -247,6 +296,10 @@ export type Thread = typeof threads.$inferSelect;
 export type NewThread = typeof threads.$inferInsert;
 export type Comment = typeof comments.$inferSelect;
 export type NewComment = typeof comments.$inferInsert;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type NewSubscription = typeof subscriptions.$inferInsert;
+export type Order = typeof orders.$inferSelect;
+export type NewOrder = typeof orders.$inferInsert;
 
 // Extended types with resolved usernames (for hooks/components)
 // Note: creator info is resolved separately via lib/user-utils.ts
