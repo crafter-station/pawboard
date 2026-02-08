@@ -1159,8 +1159,8 @@ export async function resizeCard(
     }
 
     // Clamp to constraints
-    const clampedWidth = Math.max(150, Math.min(600, Math.round(width)));
-    const clampedHeight = Math.max(100, Math.min(400, Math.round(height)));
+    const clampedWidth = Math.max(180, Math.min(600, Math.round(width)));
+    const clampedHeight = Math.max(150, Math.min(400, Math.round(height)));
 
     const [card] = await db
       .update(cards)
