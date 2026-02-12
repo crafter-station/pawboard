@@ -15,7 +15,7 @@
   Where ideas land on their feet
   <br />
   <br />
-  <a href="https://pawboard.app">Website</a>
+  <a href="https://pawboard.dev">Website</a>
   ·
   <a href="https://github.com/crafter-station/pawboard/issues">Issues</a>
   ·
