@@ -65,9 +65,9 @@ import { cn, getAvatarForUser } from "@/lib/utils";
 const REACTION_EMOJIS = ["👍", "❤️", "🔥", "💡", "🎯"] as const;
 
 // Resize constraints
-const MIN_WIDTH = 150;
+const MIN_WIDTH = 180;
 const MAX_WIDTH = 600;
-const MIN_HEIGHT = 100;
+const MIN_HEIGHT = 150;
 const MAX_HEIGHT = 400;
 
 export interface IdeaCardNodeCallbacks {
