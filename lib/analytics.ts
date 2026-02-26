@@ -41,6 +41,7 @@ type EventMap = {
   "Session Blurred": { isBlurred: boolean };
 
   // P2 - Fine-grained
+  "Feedback Portal Opened": { source: "home_footer" | "command_menu" };
   "Command Menu Opened": Record<string, never>;
   "Anonymous Work Claimed": {
     cardsCreated: number;
