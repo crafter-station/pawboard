@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { cosineDistance, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { cards } from "@/db/schema";
+import { cards, sessions } from "@/db/schema";
 import { generateEmbedding } from "@/lib/embeddings";
 import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
 import description from "./find-similar.md";
@@ -20,7 +20,7 @@ const inputSchema = z.object({
 
 export const findSimilarTool = ({
   sessionId,
-  userId: _userId,
+  userId,
   userRole: _userRole,
 }: ToolParams) =>
   tool({
@@ -70,6 +70,7 @@ export const findSimilarTool = ({
           .select({
             id: cards.id,
             content: cards.content,
+            createdById: cards.createdById,
             similarity,
           })
           .from(cards)
@@ -91,12 +92,23 @@ export const findSimilarTool = ({
           return "No similar cards found. The cards on this board may cover different topics.";
         }
 
+        // When blur is active, hide content for cards not owned by requesting user
+        const session = await db.query.sessions.findFirst({
+          where: eq(sessions.id, sessionId),
+        });
+
         const resultText = meaningfulResults
           .map((r, i) => {
-            const textContent = r.content
-              ? extractTextFromTiptap(r.content)
-              : "";
-            return `${i + 1}. [${Math.round((r.similarity || 0) * 100)}% match] ${textContent.substring(0, 80)}${textContent.length > 80 ? "..." : ""} (ID: ${r.id})`;
+            const isHidden = session?.isBlurred && r.createdById !== userId;
+            const textContent = isHidden
+              ? "[content hidden - blur mode]"
+              : r.content
+                ? extractTextFromTiptap(r.content)
+                : "";
+            const displayText = isHidden
+              ? textContent
+              : `${textContent.substring(0, 80)}${textContent.length > 80 ? "..." : ""}`;
+            return `${i + 1}. [${Math.round((r.similarity || 0) * 100)}% match] ${displayText} (ID: ${r.id})`;
           })
           .join("\n");
 

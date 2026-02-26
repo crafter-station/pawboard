@@ -6,6 +6,7 @@ import type { Card } from "@/db/schema";
 import { cards, sessions } from "@/db/schema";
 import { DARK_COLORS, LIGHT_COLORS } from "@/lib/colors";
 import { generateCardId } from "@/lib/nanoid";
+import { obfuscateTiptapContent } from "@/lib/obfuscate";
 import { canAddCard } from "@/lib/permissions";
 import { broadcastCardEvent } from "@/lib/supabase/broadcast";
 import { createTiptapContent } from "@/lib/tiptap-utils";
@@ -146,9 +147,17 @@ export const createCardTool = ({ sessionId, userId, userRole }: ToolParams) =>
           .returning();
 
         // Broadcast to realtime so all clients see the new card
+        // Obfuscate content on the wire when blur is on for security;
+        // the owner's client will fetch real content from the DB
+        const broadcastCard = session.isBlurred
+          ? {
+              ...newCard,
+              content: obfuscateTiptapContent(newCard.content),
+            }
+          : newCard;
         await broadcastCardEvent(sessionId, {
           type: "card:add",
-          card: newCard,
+          card: broadcastCard,
         });
 
         return `Successfully created card with ID: ${newCard.id}. Content: "${content.substring(0, 50)}${content.length > 50 ? "..." : ""}"`;

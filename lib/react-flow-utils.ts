@@ -34,6 +34,8 @@ export interface IdeaCardNodeData extends Record<string, unknown> {
   session: Session;
   userRole: SessionRole | null;
   visitorId: string;
+  /** Fingerprint ID for dual-ID blur ownership check (anonymous → authenticated transition) */
+  fingerprintId: string | null;
   creatorName: string;
   // UI state
   isEditing: boolean;
@@ -61,6 +63,7 @@ function cardToNode(
   session: Session,
   userRole: SessionRole | null,
   visitorId: string,
+  fingerprintId: string | null,
   creatorName: string,
   options?: {
     autoFocus?: boolean;
@@ -80,6 +83,7 @@ function cardToNode(
       session,
       userRole,
       visitorId,
+      fingerprintId,
       creatorName,
       isEditing: options?.isEditing ?? false,
       autoFocus: options?.autoFocus ?? false,
@@ -101,6 +105,7 @@ export function cardsToNodes(
   session: Session,
   userRole: SessionRole | null,
   visitorId: string,
+  fingerprintId: string | null,
   getCreatorName: (userId: string) => string,
   autoFocusCardId?: string | null,
   threadsByCardId?: Map<string, ThreadWithDetails[]>,
@@ -114,6 +119,7 @@ export function cardsToNodes(
       session,
       userRole,
       visitorId,
+      fingerprintId,
       getCreatorName(card.createdById),
       {
         autoFocus: card.id === autoFocusCardId,
@@ -135,6 +141,7 @@ export function updateNodeData(
   session: Session,
   userRole: SessionRole | null,
   visitorId: string,
+  fingerprintId: string | null,
   getCreatorName: (userId: string) => string,
   threadsByCardId?: Map<string, ThreadWithDetails[]>,
   threadHandlers?: CardThreadHandlers,
@@ -157,6 +164,7 @@ export function updateNodeData(
           session,
           userRole,
           visitorId,
+          fingerprintId,
           creatorName: getCreatorName(card.createdById),
           attachedThreads: threadsByCardId?.get(card.id),
           threadHandlers,
@@ -171,6 +179,7 @@ export function updateNodeData(
       session,
       userRole,
       visitorId,
+      fingerprintId,
       getCreatorName(card.createdById),
       {
         attachedThreads: threadsByCardId?.get(card.id),

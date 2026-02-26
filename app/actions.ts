@@ -22,6 +22,7 @@ import {
   users,
 } from "@/db/schema";
 import { generateSessionName, generateUsername } from "@/lib/names";
+import { obfuscateTiptapContent } from "@/lib/obfuscate";
 import {
   canAddCard,
   canChangeColor,
@@ -194,6 +195,7 @@ export async function updateSessionName(
 
 export interface SessionSettings {
   isLocked: boolean;
+  isBlurred: boolean;
 }
 
 export async function updateSessionSettings(
@@ -757,6 +759,41 @@ export async function getSessionCards(sessionId: string) {
   }
 }
 
+/**
+ * Returns only cards created by the given user in a session.
+ * Used during blur mode hydration so users can see their own unobfuscated cards.
+ */
+export async function getMyCards(
+  sessionId: string,
+  userId: string,
+): Promise<Card[]> {
+  try {
+    return await db.query.cards.findMany({
+      where: and(eq(cards.sessionId, sessionId), eq(cards.createdById, userId)),
+    });
+  } catch (error) {
+    console.error("Database error in getMyCards:", error);
+    return [];
+  }
+}
+
+/**
+ * Returns a single card by ID, or null if not found.
+ * Used by blur mode to fetch real content for own cards after receiving
+ * an obfuscated broadcast.
+ */
+export async function getCardById(cardId: string): Promise<Card | null> {
+  try {
+    const card = await db.query.cards.findFirst({
+      where: eq(cards.id, cardId),
+    });
+    return card ?? null;
+  } catch (error) {
+    console.error("Database error in getCardById:", error);
+    return null;
+  }
+}
+
 export type CardEditHistoryWithUser = {
   id: string;
   cardId: string;
@@ -1244,7 +1281,17 @@ export async function voteCard(
     // Update activity timestamps
     await updateActivityTimestamps(existing.sessionId, visitorId);
 
-    return { card, action: hasVoted ? "removed" : "added", error: null };
+    // Obfuscate content when blur is on and card doesn't belong to requester
+    const safeCard =
+      session.isBlurred && card.createdById !== visitorId
+        ? { ...card, content: obfuscateTiptapContent(card.content) }
+        : card;
+
+    return {
+      card: safeCard,
+      action: hasVoted ? "removed" : "added",
+      error: null,
+    };
   } catch (error) {
     console.error("Database error in voteCard:", error);
     return { card: null, action: "denied", error: "Failed to vote on card" };
@@ -1315,7 +1362,17 @@ export async function toggleReaction(
     // Update activity timestamps
     await updateActivityTimestamps(existing.sessionId, userId);
 
-    return { card, action: hasReacted ? "removed" : "added", error: null };
+    // Obfuscate content when blur is on and card doesn't belong to requester
+    const safeCard =
+      session.isBlurred && card.createdById !== userId
+        ? { ...card, content: obfuscateTiptapContent(card.content) }
+        : card;
+
+    return {
+      card: safeCard,
+      action: hasReacted ? "removed" : "added",
+      error: null,
+    };
   } catch (error) {
     console.error("Database error in toggleReaction:", error);
     return { card: null, action: "denied", error: "Failed to toggle reaction" };

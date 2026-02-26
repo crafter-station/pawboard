@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import type { Card } from "@/db/schema";
-import { cards } from "@/db/schema";
+import { cards, sessions } from "@/db/schema";
 import { extractTextFromTiptap, isContentEmpty } from "@/lib/tiptap-utils";
 import type { ToolParams } from "./index";
 import description from "./summarize-cards.md";
@@ -22,7 +22,7 @@ const inputSchema = z.object({
 
 export const summarizeCardsTool = ({
   sessionId,
-  userId: _userId,
+  userId,
   userRole: _userRole,
 }: ToolParams) =>
   tool({
@@ -45,12 +45,30 @@ export const summarizeCardsTool = ({
           });
         }
 
+        // When blur is active, only summarize the user's own cards
+        const session = await db.query.sessions.findFirst({
+          where: eq(sessions.id, sessionId),
+        });
+        const totalCount = cardsToSummarize.length;
+        let hiddenCount = 0;
+        if (session?.isBlurred) {
+          const ownCards = cardsToSummarize.filter(
+            (c) => c.createdById === userId,
+          );
+          hiddenCount = totalCount - ownCards.length;
+          cardsToSummarize = ownCards;
+        }
+
         const cardsWithContent = cardsToSummarize.filter(
           (c) => !isContentEmpty(c.content),
         );
 
         if (cardsWithContent.length === 0) {
-          return "Error: No cards with content found to summarize";
+          const hiddenMsg =
+            hiddenCount > 0
+              ? ` (${hiddenCount} other card(s) are hidden due to blur mode)`
+              : "";
+          return `Error: No cards with content found to summarize${hiddenMsg}`;
         }
 
         const cardContents = cardsWithContent
@@ -74,7 +92,11 @@ Keep the summary clear and actionable. Use bullet points where appropriate.`;
           temperature: 0.3,
         });
 
-        return `Summary of ${cardsWithContent.length} cards:\n\n${summary}`;
+        const hiddenMsg =
+          hiddenCount > 0
+            ? ` (${hiddenCount} other card(s) are hidden due to blur mode and not included)`
+            : "";
+        return `Summary of ${cardsWithContent.length} card(s)${hiddenMsg}:\n\n${summary}`;
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to summarize cards";

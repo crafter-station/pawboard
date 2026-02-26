@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN IF NOT EXISTS "is_blurred" boolean DEFAULT false NOT NULL;

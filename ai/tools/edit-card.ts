@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { cards, sessions } from "@/db/schema";
+import { obfuscateTiptapContent } from "@/lib/obfuscate";
 import { canEditCard } from "@/lib/permissions";
 import { broadcastCardEvent } from "@/lib/supabase/broadcast";
 import { createTiptapContent } from "@/lib/tiptap-utils";
@@ -52,9 +53,17 @@ export const editCardTool = ({ sessionId, userId, userRole }: ToolParams) =>
           .returning();
 
         // Broadcast to realtime so all clients see the update
+        // Obfuscate content on the wire when blur is on for security;
+        // the owner's client will fetch real content from the DB
+        const broadcastCard = session.isBlurred
+          ? {
+              ...updatedCard,
+              content: obfuscateTiptapContent(updatedCard.content),
+            }
+          : updatedCard;
         await broadcastCardEvent(sessionId, {
           type: "card:update",
-          card: updatedCard,
+          card: broadcastCard,
         });
 
         return `Successfully updated card ${cardId}. New content: "${content.substring(0, 50)}${content.length > 50 ? "..." : ""}"`;

@@ -68,7 +68,14 @@ jobs:
                 },
               }
             );
-            const { deployments } = await deploymentsRes.json();
+            const deploymentsData = await deploymentsRes.json();
+            const deployments = deploymentsData.deployments;
+            
+            if (!Array.isArray(deployments)) {
+              core.warning(`Vercel API did not return deployments array. Response: ${JSON.stringify(deploymentsData).slice(0, 500)}`);
+              return;
+            }
+            
             const deployment = deployments.find(d => d.meta?.githubCommitRef === branch);
             
             if (!deployment) {
@@ -175,7 +182,14 @@ jobs:
                 },
               }
             );
-            const { deployments } = await deploymentsRes.json();
+            const deploymentsData = await deploymentsRes.json();
+            const deployments = deploymentsData.deployments;
+            
+            if (!Array.isArray(deployments)) {
+              core.warning(`Vercel API did not return deployments array. Response: ${JSON.stringify(deploymentsData).slice(0, 500)}`);
+              return;
+            }
+            
             const deployment = deployments.find(d => d.meta?.githubCommitRef === branch);
             
             if (!deployment) {

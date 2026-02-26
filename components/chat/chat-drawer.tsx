@@ -34,6 +34,7 @@ const EMPTY_ONLINE_USERS = new Set<string>();
 interface ChatPanelProps {
   sessionId: string;
   userId: string;
+  fingerprintId?: string | null;
   threads?: ThreadWithDetails[];
   onThreadClick?: (threadId: string) => void;
   participants?: Map<string, string>;
@@ -44,6 +45,7 @@ interface ChatPanelProps {
 export function ChatPanel({
   sessionId,
   userId,
+  fingerprintId,
   threads = EMPTY_THREADS,
   onThreadClick,
   participants = EMPTY_PARTICIPANTS,
@@ -59,9 +61,9 @@ export function ChatPanel({
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
-        body: { sessionId, userId },
+        body: { sessionId, userId, fingerprintId: fingerprintId ?? undefined },
       }),
-    [sessionId, userId],
+    [sessionId, userId, fingerprintId],
   );
 
   const { messages, sendMessage, status, error, setMessages } = useChat({
