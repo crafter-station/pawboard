@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Eye,
+  EyeOff,
   FileText,
   Home,
   ListTodo,
@@ -40,6 +42,8 @@ interface CommandMenuProps {
   isSessionCreator?: boolean;
   isLocked?: boolean;
   onToggleLock?: () => void;
+  isBlurred?: boolean;
+  onToggleBlur?: () => void;
   onDeleteSession?: () => void;
   onClusterCards?: () => void;
   onCleanupEmptyCards?: () => void;
@@ -56,6 +60,8 @@ export function CommandMenu({
   isSessionCreator,
   isLocked,
   onToggleLock,
+  isBlurred,
+  onToggleBlur,
   onDeleteSession,
   onClusterCards,
   onCleanupEmptyCards,
@@ -155,6 +161,26 @@ export function CommandMenu({
                   <Lock className="mr-2 h-4 w-4" />
                 )}
                 {isLocked ? "Unlock session" : "Lock session"}
+              </CommandItem>
+            )}
+            {onToggleBlur && (
+              <CommandItem
+                keywords={[
+                  "blur",
+                  "hide",
+                  "blind",
+                  "anonymous",
+                  "private",
+                  "reveal",
+                ]}
+                onSelect={() => runCommand(onToggleBlur)}
+              >
+                {isBlurred ? (
+                  <Eye className="mr-2 h-4 w-4" />
+                ) : (
+                  <EyeOff className="mr-2 h-4 w-4" />
+                )}
+                {isBlurred ? "Reveal all cards" : "Blur card contents"}
               </CommandItem>
             )}
             {onClusterCards && (

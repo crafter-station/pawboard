@@ -21,6 +21,7 @@ import "@xyflow/react/dist/style.css";
 import {
   Check,
   Command,
+  EyeOff,
   Home,
   Lock,
   Maximize2,
@@ -46,6 +47,8 @@ import {
   deleteSession,
   deleteThread as deleteThreadAction,
   detachThreadFromCard as detachThreadFromCardAction,
+  getMyCards,
+  getSessionCards,
   moveThread as moveThreadAction,
   resizeCard,
   resolveThread as resolveThreadAction,
@@ -298,6 +301,7 @@ function ReactFlowBoardInner({
   const userRole = sessionRole ?? null;
   const isSessionCreator = userRole === "creator";
   const isLocked = session.isLocked;
+  const isBlurred = session.isBlurred;
 
   // Track online presence for participants
   const { onlineUsers } = useRealtimePresence({
@@ -440,6 +444,10 @@ function ReactFlowBoardInner({
     applyClusterPositions,
     broadcastClusterPositions,
     batchMoveCards,
+    // Blur mode functions
+    revealAllCards,
+    patchOwnCards,
+    broadcastRevealCards,
     // Thread functions
     threads,
     addThread,
@@ -455,7 +463,10 @@ function ReactFlowBoardInner({
     initialCards,
     initialThreads,
     visitorId || "",
+    fingerprintId ?? null,
     username,
+    isBlurred,
+    userRole,
     handleRemoteNameChange,
     handleRemoteSessionRename,
     handleRemoteSessionSettingsChange,
@@ -466,6 +477,30 @@ function ReactFlowBoardInner({
   useEffect(() => {
     cardsRef.current = cards;
   }, [cards]);
+
+  // Blur mode hydration: fetch own unobfuscated cards after SSR sends obfuscated data
+  // Fetch for both visitorId (current active ID) and fingerprintId (pre-auth cards)
+  useEffect(() => {
+    if (isBlurred && visitorId) {
+      const fetchPromises: Promise<Card[]>[] = [
+        getMyCards(sessionId, visitorId),
+      ];
+      // If user is authenticated, also fetch cards created with their fingerprint ID
+      if (fingerprintId && fingerprintId !== visitorId) {
+        fetchPromises.push(getMyCards(sessionId, fingerprintId));
+      }
+      Promise.all(fetchPromises).then((results) => {
+        const allMyCards = results.flat();
+        // Deduplicate by card ID
+        const unique = Array.from(
+          new Map(allMyCards.map((c) => [c.id, c])).values(),
+        );
+        if (unique.length > 0) {
+          patchOwnCards(unique);
+        }
+      });
+    }
+  }, [isBlurred, visitorId, fingerprintId, sessionId, patchOwnCards]);
 
   // Create thread handlers for card-attached threads
   const cardThreadHandlers = useMemo<CardThreadHandlers>(
@@ -574,6 +609,7 @@ function ReactFlowBoardInner({
           session,
           userRole,
           visitorId,
+          fingerprintId ?? null,
           getUsernameForId,
           newCardId,
           threadsByCardId,
@@ -589,6 +625,7 @@ function ReactFlowBoardInner({
         session,
         userRole,
         visitorId,
+        fingerprintId ?? null,
         getUsernameForId,
         threadsByCardId,
         cardThreadHandlers,
@@ -601,6 +638,7 @@ function ReactFlowBoardInner({
     session,
     userRole,
     visitorId,
+    fingerprintId,
     getUsernameForId,
     newCardId,
     isDragging,
@@ -1572,6 +1610,7 @@ function ReactFlowBoardInner({
 
   const handleUpdateSessionSettings = async (settings: {
     isLocked?: boolean;
+    isBlurred?: boolean;
   }) => {
     if (!visitorId) return { success: false, error: "Not logged in" };
 
@@ -1588,6 +1627,7 @@ function ReactFlowBoardInner({
       // Broadcast to other participants
       broadcastSessionSettings({
         isLocked: updatedSession.isLocked,
+        isBlurred: updatedSession.isBlurred,
       });
       return { success: true };
     }
@@ -1596,6 +1636,22 @@ function ReactFlowBoardInner({
 
   const handleToggleLock = async () => {
     const result = await handleUpdateSessionSettings({ isLocked: !isLocked });
+    return result;
+  };
+
+  const handleToggleBlur = async () => {
+    const newBlurred = !isBlurred;
+    const result = await handleUpdateSessionSettings({
+      isBlurred: newBlurred,
+    });
+
+    if (result.success && !newBlurred) {
+      // Turning blur OFF — fetch real cards and broadcast reveal to all
+      const realCards = await getSessionCards(sessionId);
+      revealAllCards(realCards);
+      broadcastRevealCards(realCards);
+    }
+
     return result;
   };
 
@@ -1875,6 +1931,8 @@ function ReactFlowBoardInner({
           isSessionCreator={isSessionCreator}
           isLocked={isLocked}
           onToggleLock={handleToggleLock}
+          isBlurred={isBlurred}
+          onToggleBlur={handleToggleBlur}
           onDeleteSession={() => setDeleteSessionDialogOpen(true)}
           onClusterCards={() => setClusterDialogOpen(true)}
           onCleanupEmptyCards={handleCleanupEmptyCards}
@@ -1964,11 +2022,20 @@ function ReactFlowBoardInner({
         <ChatTrigger />
 
         {/* Anonymous Work Migration Prompt */}
-        <AnonymousWorkPrompt sessionId={sessionId} session={session} />
+        <AnonymousWorkPrompt
+          sessionId={sessionId}
+          session={session}
+          onWorkClaimed={() => router.refresh()}
+          onStartFresh={() => router.refresh()}
+        />
 
         {/* Session Claim Banner (for unclaimed boards) */}
         {fingerprintId && (
-          <SessionClaimBanner session={session} fingerprintId={fingerprintId} />
+          <SessionClaimBanner
+            session={session}
+            fingerprintId={fingerprintId}
+            onSessionClaimed={() => router.refresh()}
+          />
         )}
 
         {/* Fixed UI - Top Left */}
@@ -2007,6 +2074,17 @@ function ReactFlowBoardInner({
               <Lock className="w-3.5 h-3.5" />
               <span className="text-xs font-medium hidden sm:inline">
                 Locked
+              </span>
+            </div>
+          )}
+          {isBlurred && (
+            <div
+              className="flex items-center gap-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2.5 h-8 sm:h-9 rounded-lg border border-blue-500/20"
+              title="Card contents are blurred"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              <span className="text-xs font-medium hidden sm:inline">
+                Blurred
               </span>
             </div>
           )}
@@ -2259,6 +2337,7 @@ function ReactFlowBoardInner({
       <ChatPanel
         sessionId={sessionId}
         userId={visitorId}
+        fingerprintId={fingerprintId}
         threads={threads}
         onThreadClick={handleFocusThread}
         participants={participantsWithCurrentUser}

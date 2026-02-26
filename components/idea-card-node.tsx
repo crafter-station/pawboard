@@ -103,6 +103,7 @@ function IdeaCardNodeComponent({
     session,
     userRole,
     visitorId,
+    fingerprintId,
     creatorName,
     autoFocus,
     attachedThreads,
@@ -151,6 +152,13 @@ function IdeaCardNodeComponent({
   const allowRefine = canRefine(session, card, visitorId, role);
   const allowVote = canVote(session, card, visitorId, role);
   const allowReact = canReact(session, card, visitorId, role);
+
+  // Blur mode: content is blurred for non-own cards when session is blurred
+  // Check both visitorId (current active ID) and fingerprintId (pre-auth cards)
+  const isOwnCard =
+    card.createdById === visitorId ||
+    (fingerprintId !== null && card.createdById === fingerprintId);
+  const isContentBlurred = session.isBlurred && !isOwnCard;
 
   useEffect(() => {
     setMounted(true);
@@ -500,26 +508,32 @@ function IdeaCardNodeComponent({
               <div
                 className={cn(
                   "flex-1 min-h-0 overflow-y-auto nowheel",
-                  isEditing && "nodrag nopan",
-                  !isEditing && allowEdit && "cursor-pointer",
+                  isEditing && !isContentBlurred && "nodrag nopan",
+                  !isEditing &&
+                    allowEdit &&
+                    !isContentBlurred &&
+                    "cursor-pointer",
+                  isContentBlurred && "blur-sm select-none pointer-events-none",
                 )}
-                onClick={startEditing}
+                onClick={isContentBlurred ? undefined : startEditing}
               >
                 {isContentEmpty(card.content) && !isEditing ? (
                   <span className={mutedTextClass}>
-                    {allowEdit
-                      ? isMobile
-                        ? "Tap to edit..."
-                        : "Click to add idea..."
-                      : "No content yet"}
+                    {isContentBlurred
+                      ? ""
+                      : allowEdit
+                        ? isMobile
+                          ? "Tap to edit..."
+                          : "Click to add idea..."
+                        : "No content yet"}
                   </span>
                 ) : (
                   <CardEditor
                     content={card.content}
                     onChange={handleContentChange}
                     onBlur={handleContentBlur}
-                    editable={isEditing && allowEdit}
-                    autoFocus={isEditing}
+                    editable={isEditing && allowEdit && !isContentBlurred}
+                    autoFocus={isEditing && !isContentBlurred}
                     placeholder="Type your idea..."
                     className={cn(
                       "text-[11px] sm:text-[13px] leading-relaxed h-full",
@@ -527,7 +541,7 @@ function IdeaCardNodeComponent({
                     )}
                     cardId={card.id}
                     userId={visitorId}
-                    allowRefine={allowRefine}
+                    allowRefine={allowRefine && !isContentBlurred}
                   />
                 )}
               </div>

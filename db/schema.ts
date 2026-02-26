@@ -43,6 +43,7 @@ export const sessions = pgTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     isLocked: boolean("is_locked").notNull().default(false),
+    isBlurred: boolean("is_blurred").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
     expiresAt: timestamp("expires_at"), // TTL for unclaimed boards (null = claimed/no expiry)

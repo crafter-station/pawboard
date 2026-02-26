@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, Settings, Trash2, Unlock } from "lucide-react";
+import { Eye, EyeOff, Lock, Settings, Trash2, Unlock } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,7 @@ interface SessionSettingsDialogProps {
   session: Session;
   onUpdateSettings: (settings: {
     isLocked?: boolean;
+    isBlurred?: boolean;
   }) => Promise<{ success: boolean; error?: string }>;
   onDeleteSession: () => Promise<{ success: boolean; error?: string }>;
   trigger?: React.ReactNode;
@@ -39,6 +40,7 @@ export function SessionSettingsDialog({
     ? (value: boolean) => controlledOnOpenChange?.(value)
     : setInternalOpen;
   const [isLocked, setIsLocked] = useState(session.isLocked);
+  const [isBlurred, setIsBlurred] = useState(session.isBlurred);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +51,7 @@ export function SessionSettingsDialog({
     if (newOpen) {
       // Reset to current session values
       setIsLocked(session.isLocked);
+      setIsBlurred(session.isBlurred);
       setError(null);
       setShowDeleteConfirm(false);
     }
@@ -84,6 +87,22 @@ export function SessionSettingsDialog({
     }
   };
 
+  const handleBlurToggle = async () => {
+    const newBlurred = !isBlurred;
+    setIsBlurred(newBlurred);
+    setIsSaving(true);
+    setError(null);
+
+    const result = await onUpdateSettings({ isBlurred: newBlurred });
+
+    setIsSaving(false);
+
+    if (!result.success) {
+      setIsBlurred(!newBlurred); // Revert
+      setError(result.error ?? "Failed to update blur status");
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       {trigger ? (
@@ -102,7 +121,7 @@ export function SessionSettingsDialog({
             Session Settings
           </DialogTitle>
           <DialogDescription>
-            Lock the session or delete it permanently.
+            Manage session lock, blur, or delete it permanently.
           </DialogDescription>
         </DialogHeader>
 
@@ -132,6 +151,35 @@ export function SessionSettingsDialog({
                 disabled={isSaving}
               >
                 {isLocked ? "Unlock" : "Lock"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Blur Toggle */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <span className="text-sm font-medium flex items-center gap-2">
+                  {isBlurred ? (
+                    <EyeOff className="h-4 w-4 text-blue-600" />
+                  ) : (
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  Card Blur
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  {isBlurred
+                    ? "Card contents are hidden. Each user can only see their own cards."
+                    : "All card contents are visible to everyone."}
+                </p>
+              </div>
+              <Button
+                variant={isBlurred ? "default" : "outline"}
+                size="sm"
+                onClick={handleBlurToggle}
+                disabled={isSaving}
+              >
+                {isBlurred ? "Reveal" : "Blur"}
               </Button>
             </div>
           </div>

@@ -10,6 +10,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { ReactFlowBoard as Board } from "@/components/react-flow-board";
 import { db } from "@/db";
 import { sessions } from "@/db/schema";
+import { obfuscateTiptapContent } from "@/lib/obfuscate";
 
 interface Props {
   params: Promise<{ sessionId: string }>;
@@ -78,12 +79,23 @@ export default async function SessionPage({ params }: Props) {
     );
   }
 
-  const [initialCards, initialParticipants, { threads: initialThreads }] =
+  const [allCards, initialParticipants, { threads: initialThreads }] =
     await Promise.all([
       getSessionCards(sessionId),
       getSessionParticipants(sessionId),
       getSessionThreads(sessionId),
     ]);
+
+  // When blur mode is active, obfuscate ALL card content at SSR level
+  // to prevent content from being visible in the network tab.
+  // Every user (including the creator) will patch in their own cards after hydration.
+  let initialCards = allCards;
+  if (session.isBlurred) {
+    initialCards = allCards.map((card) => ({
+      ...card,
+      content: obfuscateTiptapContent(card.content),
+    }));
+  }
 
   return (
     <ErrorBoundary

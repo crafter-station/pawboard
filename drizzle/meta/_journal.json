@@ -113,6 +113,13 @@
       "when": 1770058354198,
       "tag": "0015_special_husk",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1771997213662,
+      "tag": "0016_freezing_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,7 @@ export const chatRequestSchema = z.object({
     .min(1, "Session ID is required")
     .max(50, "Session ID too long"),
   userId: z.string().min(1, "User ID is required").max(100, "User ID too long"),
+  fingerprintId: z.string().max(100).optional(),
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
