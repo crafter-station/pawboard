@@ -67,6 +67,7 @@ import {
   IdeaCardNode,
   setIdeaCardNodeCallbacks,
 } from "@/components/idea-card-node";
+import { LoadingTip } from "@/components/loading-tip";
 import { RealtimeCursors } from "@/components/realtime-cursors";
 import { SessionClaimBanner } from "@/components/session-claim-banner";
 import { CreateThreadPanel, ThreadNode } from "@/components/threads";
@@ -223,6 +224,7 @@ function ReactFlowBoardInner({
   const [editSessionNameOpen, setEditSessionNameOpen] = useState(false);
   const [clusterDialogOpen, setClusterDialogOpen] = useState(false);
   const [deleteSessionDialogOpen, setDeleteSessionDialogOpen] = useState(false);
+  const [showBoard, setShowBoard] = useState(false);
   const [session, setSession] = useState<Session>(initialSession);
   const [participants, setParticipants] = useState<Map<string, string>>(
     () => new Map(initialParticipants.map((p) => [p.visitorId, p.username])),
@@ -1929,13 +1931,19 @@ function ReactFlowBoardInner({
     [screenToFlowPosition],
   );
 
-  if (!username || isFingerprintLoading || isUsernameLoading || !visitorId) {
+  const isDataReady =
+    !!username && !isFingerprintLoading && !isUsernameLoading && !!visitorId;
+
+  if (!showBoard) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
-      </div>
+      <LoadingTip isReady={isDataReady} onComplete={() => setShowBoard(true)} />
     );
   }
+
+  // At this point, showBoard is true which means isDataReady was true,
+  // guaranteeing username and visitorId are non-null.
+  const resolvedUsername = username as string;
+  const resolvedVisitorId = visitorId as string;
 
   return (
     <div className="h-screen flex overflow-hidden">
@@ -1966,7 +1974,7 @@ function ReactFlowBoardInner({
         <ClusterCardsDialog
           cards={cards}
           sessionId={sessionId}
-          userId={visitorId || ""}
+          userId={resolvedVisitorId}
           onCluster={handleClusterCards}
           open={clusterDialogOpen}
           onOpenChange={setClusterDialogOpen}
@@ -1998,7 +2006,7 @@ function ReactFlowBoardInner({
 
         {/* Edit Username Dialog - controlled by command menu */}
         <EditNameDialog
-          currentName={username}
+          currentName={resolvedUsername}
           onSave={handleUpdateUsername}
           open={editNameOpen}
           onOpenChange={setEditNameOpen}
@@ -2074,12 +2082,12 @@ function ReactFlowBoardInner({
           </Link>
           {/* User badge - compact on mobile, full on desktop */}
           <EditNameDialog
-            currentName={username}
+            currentName={resolvedUsername}
             onSave={handleUpdateUsername}
             trigger={
               <UserBadge
-                username={username}
-                avatar={getAvatarForUser(visitorId)}
+                username={resolvedUsername}
+                avatar={getAvatarForUser(resolvedVisitorId)}
                 editable
                 compact
               />
@@ -2257,7 +2265,7 @@ function ReactFlowBoardInner({
             >
               <RealtimeCursors
                 roomName={`session:${sessionId}`}
-                username={username}
+                username={resolvedUsername}
                 screenToWorld={screenToWorld}
                 worldToScreen={flowToScreenPosition}
                 viewport={viewport}
@@ -2270,11 +2278,7 @@ function ReactFlowBoardInner({
                 <div className="text-center">
                   <div className="w-16 h-16 mx-auto mb-4 opacity-20">
                     <Image
-                      src={
-                        visitorId
-                          ? getAvatarForUser(visitorId)
-                          : "/cat-purple.svg"
-                      }
+                      src={getAvatarForUser(resolvedVisitorId)}
                       alt=""
                       width={64}
                       height={64}
@@ -2359,7 +2363,7 @@ function ReactFlowBoardInner({
       </div>
       <ChatPanel
         sessionId={sessionId}
-        userId={visitorId}
+        userId={resolvedVisitorId}
         fingerprintId={fingerprintId}
         threads={threads}
         onThreadClick={handleFocusThread}
