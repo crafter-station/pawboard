@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { Session } from "@/db/schema";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { trackEvent } from "@/lib/analytics";
 
 interface AnonymousWorkPromptProps {
   sessionId: string;
@@ -105,6 +106,10 @@ export function AnonymousWorkPrompt({
         // localStorage unavailable
       }
       setIsDismissed(true);
+      trackEvent("Anonymous Work Claimed", {
+        cardsCreated: stats?.cardsCreated ?? 0,
+        commentsCreated: stats?.commentsCreated ?? 0,
+      });
       onWorkClaimed?.();
     } else {
       console.error("Failed to claim work:", claimError);
@@ -112,7 +117,13 @@ export function AnonymousWorkPrompt({
     }
 
     setIsClaimingWork(false);
-  }, [fingerprintId, sessionId, onWorkClaimed]);
+  }, [
+    fingerprintId,
+    sessionId,
+    onWorkClaimed,
+    stats?.cardsCreated,
+    stats?.commentsCreated,
+  ]);
 
   const handleStartFresh = useCallback(async () => {
     setIsStartingFresh(true);

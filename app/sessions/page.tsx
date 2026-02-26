@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import type { SessionRole } from "@/db/schema";
 import { useCatSound } from "@/hooks/use-cat-sound";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { trackEvent } from "@/lib/analytics";
 import { generateSessionId } from "@/lib/nanoid";
 
 interface SessionData {
@@ -49,6 +50,9 @@ export default function SessionsPage() {
         setError(fetchError);
       } else {
         setSessions(fetchedSessions);
+        trackEvent("Sessions List Viewed", {
+          sessionCount: fetchedSessions.length,
+        });
       }
       setIsLoading(false);
     }
@@ -61,6 +65,7 @@ export default function SessionsPage() {
   const handleCreateSession = () => {
     playSound();
     setIsCreating(true);
+    trackEvent("Session Created", { source: "sessions_page" });
     const id = generateSessionId();
     router.push(`/${id}`);
   };

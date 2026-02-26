@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import { type NextRequest, NextResponse } from "next/server";
+import { trackServerEvent } from "@/lib/analytics";
 import {
   getClientIdentifier,
   rateLimit,
@@ -70,6 +71,8 @@ export async function POST(req: NextRequest) {
       temperature: 0,
       response_format: "verbose_json",
     });
+
+    await trackServerEvent("Voice Input Used");
 
     return NextResponse.json({ text: transcription.text });
   } catch (error) {

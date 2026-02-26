@@ -21,6 +21,7 @@ import {
   type User,
   users,
 } from "@/db/schema";
+import { trackServerEvent } from "@/lib/analytics";
 import { generateSessionName, generateUsername } from "@/lib/names";
 import { obfuscateTiptapContent } from "@/lib/obfuscate";
 import {
@@ -469,6 +470,14 @@ export async function joinSession(
             eq(sessionParticipants.sessionId, sessionId),
           ),
         );
+      after(async () => {
+        await trackServerEvent("Session Joined", {
+          role: existing.role as string,
+          participantCount: 0,
+          cardCount: 0,
+          isNewSession: false,
+        });
+      });
       return {
         success: true,
         role: existing.role as SessionRole,
@@ -489,6 +498,15 @@ export async function joinSession(
       userId,
       sessionId,
       role,
+    });
+
+    after(async () => {
+      await trackServerEvent("Session Joined", {
+        role,
+        participantCount: existingParticipants.length + 1,
+        cardCount: 0,
+        isNewSession: existingParticipants.length === 0,
+      });
     });
 
     return { success: true, role, username, error: null };
@@ -1287,6 +1305,12 @@ export async function voteCard(
         ? { ...card, content: obfuscateTiptapContent(card.content) }
         : card;
 
+    after(async () => {
+      await trackServerEvent("Card Voted", {
+        action: hasVoted ? "removed" : "added",
+      });
+    });
+
     return {
       card: safeCard,
       action: hasVoted ? "removed" : "added",
@@ -1367,6 +1391,13 @@ export async function toggleReaction(
       session.isBlurred && card.createdById !== userId
         ? { ...card, content: obfuscateTiptapContent(card.content) }
         : card;
+
+    after(async () => {
+      await trackServerEvent("Card Reacted", {
+        action: hasReacted ? "removed" : "added",
+        emoji,
+      });
+    });
 
     return {
       card: safeCard,
@@ -1602,6 +1633,13 @@ export async function clusterCards(
         .where(eq(cards.id, position.id));
     }
 
+    after(async () => {
+      await trackServerEvent("Cluster Cards Used", {
+        cardsProcessed: cardsWithEmbeddings.length,
+        clusterCount,
+      });
+    });
+
     return {
       positions,
       clusterCount,
@@ -1761,6 +1799,12 @@ export async function createThread(
         creatorUsername: usernames.get(comment.createdById) ?? "Anonymous",
       })),
     };
+
+    after(async () => {
+      await trackServerEvent("Thread Created", {
+        target: data.cardId ? "card" : "canvas",
+      });
+    });
 
     return { thread: threadWithDetails, error: null };
   } catch (error) {
@@ -2663,6 +2707,10 @@ export async function claimSession(
         .update(sessions)
         .set({ expiresAt: null })
         .where(eq(sessions.id, sessionId));
+    });
+
+    after(async () => {
+      await trackServerEvent("Session Claimed");
     });
 
     return { success: true, error: null };
