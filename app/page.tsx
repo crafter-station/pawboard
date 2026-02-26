@@ -598,6 +598,20 @@ export default function Home() {
           >
             Terms of Service
           </Link>
+          {process.env.NEXT_PUBLIC_FEATUREBASE_ORG && (
+            <>
+              <span>·</span>
+              <a
+                href={`https://${process.env.NEXT_PUBLIC_FEATUREBASE_ORG}.featurebase.app`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={playSound}
+                className="hover:text-foreground/50 transition-colors"
+              >
+                Feedback
+              </a>
+            </>
+          )}
         </div>
       </div>
     </ImageMouseTrail>

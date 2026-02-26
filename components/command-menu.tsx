@@ -8,6 +8,7 @@ import {
   ListTodo,
   Lock,
   MessageCircle,
+  MessageSquarePlus,
   Moon,
   Pencil,
   Plus,
@@ -31,6 +32,10 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { trackEvent } from "@/lib/analytics";
+
+const FEATUREBASE_URL = process.env.NEXT_PUBLIC_FEATUREBASE_ORG
+  ? `https://${process.env.NEXT_PUBLIC_FEATUREBASE_ORG}.featurebase.app`
+  : null;
 
 interface CommandMenuProps {
   open: boolean;
@@ -240,6 +245,26 @@ export function CommandMenu({
             Dark mode
           </CommandItem>
         </CommandGroup>
+        {FEATUREBASE_URL && (
+          <CommandGroup heading="Help">
+            <CommandItem
+              keywords={[
+                "feedback",
+                "bug",
+                "report",
+                "feature",
+                "request",
+                "suggest",
+              ]}
+              onSelect={() =>
+                runCommand(() => window.open(FEATUREBASE_URL, "_blank"))
+              }
+            >
+              <MessageSquarePlus className="mr-2 h-4 w-4" />
+              Send feedback
+            </CommandItem>
+          </CommandGroup>
+        )}
       </CommandList>
     </CommandDialog>
   );
