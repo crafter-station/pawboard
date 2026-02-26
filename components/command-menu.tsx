@@ -257,7 +257,12 @@ export function CommandMenu({
                 "suggest",
               ]}
               onSelect={() =>
-                runCommand(() => window.open(FEATUREBASE_URL, "_blank"))
+                runCommand(() => {
+                  trackEvent("Feedback Portal Opened", {
+                    source: "command_menu",
+                  });
+                  window.open(FEATUREBASE_URL, "_blank");
+                })
               }
             >
               <MessageSquarePlus className="mr-2 h-4 w-4" />

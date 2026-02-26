@@ -605,7 +605,12 @@ export default function Home() {
                 href={`https://${process.env.NEXT_PUBLIC_FEATUREBASE_ORG}.featurebase.app`}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={playSound}
+                onClick={() => {
+                  playSound();
+                  trackEvent("Feedback Portal Opened", {
+                    source: "home_footer",
+                  });
+                }}
                 className="hover:text-foreground/50 transition-colors"
               >
                 Feedback
