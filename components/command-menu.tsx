@@ -30,6 +30,7 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import { trackEvent } from "@/lib/analytics";
 
 interface CommandMenuProps {
   open: boolean;
@@ -74,6 +75,9 @@ export function CommandMenu({
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
+        if (!open) {
+          trackEvent("Command Menu Opened");
+        }
         onOpenChange(!open);
       }
     };

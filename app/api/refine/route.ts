@@ -8,6 +8,7 @@ import {
   sessions,
   type TiptapContent,
 } from "@/db/schema";
+import { trackServerEvent } from "@/lib/analytics";
 import { canRefine } from "@/lib/permissions";
 import {
   getClientIdentifier,
@@ -150,6 +151,10 @@ Return ONLY the JSON object, nothing else:`;
         ],
       };
     }
+
+    await trackServerEvent("AI Refine Used", {
+      textLength: selectedText.length,
+    });
 
     return Response.json({ refined });
   } catch (error) {

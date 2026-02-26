@@ -23,6 +23,7 @@ import { ThreadList } from "@/components/threads/thread-list";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ThreadWithDetails } from "@/db/schema";
+import { trackEvent } from "@/lib/analytics";
 import { useSidebarStore } from "@/stores/sidebar-store";
 import { ChatMessages } from "./chat-messages";
 
@@ -127,6 +128,7 @@ export function ChatPanel({
       if (!message.text.trim() || isLoading) return;
 
       try {
+        trackEvent("AI Chat Sent", { messageLength: message.text.length });
         await sendMessage({ text: message.text });
         setInputValue("");
       } catch (err) {

@@ -17,6 +17,7 @@ import { PawboardHero } from "@/components/pawboard-hero";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCatSound } from "@/hooks/use-cat-sound";
+import { trackEvent } from "@/lib/analytics";
 import { generateSessionId } from "@/lib/nanoid";
 
 const cursorImages = [
@@ -261,6 +262,7 @@ export default function Home() {
   const handleCreateSession = async () => {
     playSound();
     setIsCreating(true);
+    trackEvent("Session Created", { source: "home" });
     const id = generateSessionId();
     router.push(`/${id}`);
   };
@@ -474,6 +476,7 @@ export default function Home() {
                 variant="outline"
                 size="sm"
                 className="h-8 rounded-lg border-border/50 bg-card/60 backdrop-blur-sm"
+                onClick={() => trackEvent("User Signed In")}
               >
                 Sign in
               </Button>

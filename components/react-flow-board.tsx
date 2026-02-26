@@ -106,6 +106,7 @@ import { useRealtimeCards } from "@/hooks/use-realtime-cards";
 import { useRealtimePresence } from "@/hooks/use-realtime-presence";
 import { useSessionUsername } from "@/hooks/use-session-username";
 import { useInvalidateUser, usePrimeUserCache } from "@/hooks/use-users";
+import { trackEvent } from "@/lib/analytics";
 import { DARK_COLORS, LIGHT_COLORS } from "@/lib/colors";
 import { findCardAtPoint, getThreadBubbleCenter } from "@/lib/geometry-utils";
 import { generateCardId } from "@/lib/nanoid";
@@ -843,15 +844,21 @@ function ReactFlowBoardInner({
           invalidateCardEditors(id);
           // Broadcast to other clients so they also refetch editors
           broadcastEditorsChanged(id);
+          trackEvent("Card Edited", {
+            hasContent: true,
+            isOwnCard: updatedCard.createdById === visitorId,
+          });
         }
       },
       onPersistColor: async (id: string, color: string) => {
         if (!visitorId) return;
         await updateCard(id, { color }, visitorId);
+        trackEvent("Card Color Changed");
       },
       onPersistDelete: async (id: string) => {
         if (!visitorId) return;
         await deleteCard(id, visitorId);
+        trackEvent("Card Deleted");
       },
       onDuplicate: (cardId: string) => {
         // Use ref to access current cards without adding to dependencies
@@ -1165,6 +1172,7 @@ function ReactFlowBoardInner({
     setNewCardId(cardId);
     addCard(newCard);
     await createCard(newCard, visitorId);
+    trackEvent("Card Created", { source: "button" });
   }, [
     username,
     visitorId,
@@ -1360,6 +1368,7 @@ function ReactFlowBoardInner({
     setNewCardId(cardId);
     addCard(newCard);
     await createCard(newCard, visitorId);
+    trackEvent("Card Created", { source: "shortcut" });
   }, [
     username,
     visitorId,
@@ -1441,6 +1450,7 @@ function ReactFlowBoardInner({
     setContextMenuPosition(null);
     setBoardMenuOpen(false);
     await createCard(newCard, visitorId);
+    trackEvent("Card Created", { source: "context_menu" });
   }, [
     username,
     visitorId,
@@ -1537,6 +1547,8 @@ function ReactFlowBoardInner({
         if (result.error) {
           console.error("Failed to duplicate card:", result.error);
           removeCard(cardId);
+        } else {
+          trackEvent("Card Created", { source: "duplicate" });
         }
       } catch (error) {
         console.error("Error duplicating card:", error);
@@ -1566,6 +1578,7 @@ function ReactFlowBoardInner({
     try {
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
+      trackEvent("Session Shared");
       const timeoutId = setTimeout(() => {
         if (mountedRef.current) setCopied(false);
       }, 2000);
@@ -1636,6 +1649,9 @@ function ReactFlowBoardInner({
 
   const handleToggleLock = async () => {
     const result = await handleUpdateSessionSettings({ isLocked: !isLocked });
+    if (result.success) {
+      trackEvent("Session Locked", { isLocked: !isLocked });
+    }
     return result;
   };
 
@@ -1644,6 +1660,10 @@ function ReactFlowBoardInner({
     const result = await handleUpdateSessionSettings({
       isBlurred: newBlurred,
     });
+
+    if (result.success) {
+      trackEvent("Session Blurred", { isBlurred: newBlurred });
+    }
 
     if (result.success && !newBlurred) {
       // Turning blur OFF — fetch real cards and broadcast reveal to all
@@ -1660,6 +1680,7 @@ function ReactFlowBoardInner({
 
     const { success, error } = await deleteSession(sessionId, visitorId);
     if (success) {
+      trackEvent("Session Deleted");
       router.push("/");
       return { success: true };
     }
@@ -1810,6 +1831,8 @@ function ReactFlowBoardInner({
         console.error("Failed to paste card:", result.error);
         // Remove from local state if server creation failed
         removeCard(cardId);
+      } else {
+        trackEvent("Card Created", { source: "paste" });
       }
     } catch (error) {
       console.error("Error pasting card:", error);
