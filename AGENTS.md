@@ -80,6 +80,7 @@ bun dev                 # Start Next.js dev server
 | State      | Zustand                                 |
 | AI         | Vercel AI SDK + Groq                    |
 | Animation  | Motion (Framer Motion v12)              |
+| Payments   | Polar (subscriptions & one-time)        |
 | Package    | Bun                                     |
 
 ## Code Style Guidelines
@@ -251,6 +252,40 @@ export const cards = pgTable("cards", {
 import { cn } from "@/lib/utils";
 
 <div className={cn("rounded-lg p-4", isActive && "border-primary")} />
+```
+
+### Polar Payments
+
+Polar integration for subscriptions and one-time payments:
+
+**Configuration:**
+- Client setup in `lib/polar/client.ts`
+- Product IDs and types in `lib/polar/types.ts`
+- Environment variables in `.env.local.example`
+
+**Database Tables:**
+- `subscriptions` - Tracks active subscriptions (Pro, Team)
+- `orders` - Tracks one-time purchases
+
+**API Routes:**
+- `/api/polar/checkout` - Creates checkout session (POST)
+- `/api/polar/webhook` - Handles Polar webhooks (POST)
+
+**Webhook Events Handled:**
+- `subscription.created` - New subscription
+- `subscription.updated` - Subscription changes
+- `subscription.canceled` - Subscription cancellation
+- `order.created` - One-time payment completed
+
+**Usage Example:**
+```typescript
+// Client-side checkout
+const response = await fetch("/api/polar/checkout", {
+  method: "POST",
+  body: JSON.stringify({ productId, tier: "pro" }),
+});
+const { checkoutUrl } = await response.json();
+window.location.href = checkoutUrl;
 ```
 
 ## Directory Structure
